@@ -17,8 +17,16 @@ class SignClipSerializer(serializers.ModelSerializer):
         model = SignClip
         fields = ["id", "gloss", "kind", "video_url", "duration_ms"]
 
-    def get_video_url(self, clip: SignClip) -> str:
-        return clip.video.url
+    def get_video_url(self, clip: SignClip) -> str | None:
+        """
+        The clip's playable URL, or null when it has not been filmed.
+
+        FileField.url raises when the field is empty, so this cannot simply
+        return it. A clip without footage is a normal state, see ADR 009, and
+        it reaches this serializer wherever clips are nested inside something
+        else, such as an answer option in the question bank.
+        """
+        return clip.video.url if clip.video else None
 
 
 class ResolvedClipSerializer(serializers.Serializer):

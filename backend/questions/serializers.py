@@ -1,17 +1,21 @@
 from rest_framework import serializers
 
 from clips.serializers import SignClipSerializer, SignSequenceSerializer
-from questions.models import AnswerOption, ClinicalQuestion
+from questions.models import AnswerOption, ClinicalQuestion, QuestionType
 
 
 class AnswerOptionSerializer(serializers.ModelSerializer):
     """One tappable answer, with the sign video the patient actually taps."""
 
     clip = SignClipSerializer(read_only=True)
+    is_playable = serializers.SerializerMethodField()
 
     class Meta:
         model = AnswerOption
-        fields = ["id", "english_text", "clip", "order"]
+        fields = ["id", "english_text", "clip", "is_playable", "order"]
+
+    def get_is_playable(self, option) -> bool:
+        return option.clip.is_resolvable
 
 
 class ClinicalQuestionSerializer(serializers.ModelSerializer):
@@ -55,11 +59,25 @@ class ClinicalQuestionSerializer(serializers.ModelSerializer):
 
     def get_is_playable(self, question):
         """
-        Whether the patient would actually see anything.
+        Whether this question can safely be asked as it stands.
 
-        Reported rather than used to hide the question, so the doctor can see
-        that a question exists but cannot be signed yet. Hiding it would make
-        the gap invisible and look like the bank is simply small.
+        Reported rather than used to hide the question, so the doctor sees that
+        a question exists but cannot be signed yet. Hiding it would make the gap
+        invisible and look like the bank is simply small.
+
+        A selection question additionally needs **every** answer option filmed.
+        A partial grid is worse than no grid: if "where does it hurt" can only
+        offer three body parts, the patient taps the nearest wrong one, and the
+        doctor has no way to tell that from a correct answer.
         """
         sequence = self.context["sequences"][question.pk]
-        return any(segment.clips for segment in sequence.segments)
+        if not any(segment.clips for segment in sequence.segments):
+            return False
+
+        if question.question_type == QuestionType.SELECTION:
+            options = list(question.options.all())
+            return bool(options) and all(
+                option.clip.is_resolvable for option in options
+            )
+
+        return True

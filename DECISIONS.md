@@ -583,3 +583,40 @@ per question, because the doctor opens the whole bank at once and per question
 resolution would be two queries each. `prompt_clip` was removed from the model.
 A question with no coverage is marked in the bank rather than hidden, so the
 gap is visible instead of looking like a small bank.
+
+---
+
+## ADR 022, A partial answer grid is withheld, not shown
+
+**Context.** A selection question offers the patient a grid of sign video
+answers, for example eight body locations for "where does it hurt". Those
+clips are filmed over time, so for a while only some of them exist.
+
+The obvious behaviour is to show whichever options are filmed and add the rest
+later.
+
+**Decision.** A selection question is only offered when **every** one of its
+answer options is filmed and approved. A partial grid is withheld entirely and
+the doctor is told to ask the question in person.
+
+**Why.** A patient shown three body parts when their pain is in a fourth will
+tap the nearest available one. They have answered honestly from what they were
+offered, the doctor receives "chest" when the truth is "stomach", and nothing
+about the answer looks wrong. Misdiagnosis risk from exactly this kind of
+constrained answer is one of the problems the project exists to reduce, so
+producing it ourselves would be worse than asking the question some other way.
+
+The same reasoning does not apply to a yes or no question. A nod needs no
+footage, so that path stays usable while the clip library is still being
+filmed, and it is the only usable path today.
+
+**Consequence.** `is_playable` on a question accounts for its options, not just
+its own wording, and each option reports its own playability so the admin can
+see which ones are outstanding. Questions with an incomplete grid stay visible
+in the bank, marked, so the gap is something the team can see and close rather
+than something invisible.
+
+This was found by the bank returning a 500 in the browser while every test
+passed, because the test fixture always created filmed option clips. The real
+lesson is narrower than the fix: a fixture whose defaults are the *healthy*
+case will not exercise the state the system actually spends its early life in.

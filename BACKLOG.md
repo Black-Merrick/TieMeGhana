@@ -107,7 +107,7 @@ rather than claiming the browser cannot record. Typing works either way.
 | 2.2 | Answer saved, determines the interaction path for the visit | 3 | `done`, visit scoped per ADR 020 |
 | 2.3 | Literate patients proceed to free captioning and typed responses | 3 | `done` |
 | 2.4 | Non literate patients use Guided Interrogation, doctor picks from a preset clinical question bank, played as sign video | 4 | `done`, stitched from word clips per ADR 021 |
-| 2.5 | Selection questions present a grid of sign video answer options | 4 | `done`, grid of sign video options |
+| 2.5 | Selection questions present a grid of sign video answer options | 4 | `done`, withheld until every option is filmed, ADR 022 |
 | 2.6 | Yes or no questions instruct the patient in sign video to nod or shake, observed in person. No camera gesture detection | 4 | `done`, nod instruction clip appended, no camera used |
 | 2.7 | Doctor taps to confirm the observed answer, and that confirmation is what gets logged | 4 | `done`, doctor's confirmation is what is recorded |
 

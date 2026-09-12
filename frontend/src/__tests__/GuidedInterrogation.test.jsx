@@ -338,3 +338,81 @@ describe("the consultation log", () => {
     expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
   });
 });
+
+describe("an incomplete answer grid", () => {
+  const partiallyFilmed = {
+    ...selectionQuestion,
+    is_playable: false,
+    options: [
+      { ...selectionQuestion.options[0], is_playable: true },
+      { ...selectionQuestion.options[1], is_playable: false },
+    ],
+  };
+
+  it("withholds the grid rather than offering some of the answers", async () => {
+    // The clinical safety property. If "where does it hurt" can only show
+    // three body parts, the patient taps the nearest wrong one and the doctor
+    // cannot tell that from a correct answer.
+    fetchQuestions.mockResolvedValue([partiallyFilmed]);
+    const user = userEvent.setup();
+    await openBank();
+
+    await user.click(screen.getByTestId("ask-question-1"));
+
+    expect(screen.queryByTestId("answer-option-11")).not.toBeInTheDocument();
+    expect(screen.getByTestId("incomplete-grid")).toBeInTheDocument();
+  });
+
+  it("withholds the grid when no answer has been filmed at all", async () => {
+    fetchQuestions.mockResolvedValue([
+      {
+        ...selectionQuestion,
+        is_playable: false,
+        options: selectionQuestion.options.map((o) => ({
+          ...o,
+          is_playable: false,
+        })),
+      },
+    ]);
+    const user = userEvent.setup();
+    await openBank();
+
+    await user.click(screen.getByTestId("ask-question-1"));
+
+    expect(screen.getByTestId("incomplete-grid")).toBeInTheDocument();
+  });
+
+  it("still lets a yes or no question be answered before any filming", async () => {
+    // A nod needs no footage, so this path must keep working while the clip
+    // library is still empty. It is the only usable path today.
+    fetchQuestions.mockResolvedValue([{ ...yesNoQuestion, is_playable: false }]);
+    const user = userEvent.setup();
+    await openBank(yesNoQuestion.id);
+
+    await user.click(screen.getByTestId(`ask-question-${yesNoQuestion.id}`));
+    await user.click(screen.getByTestId("choice-yes"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exchange-log")).toHaveTextContent("Yes");
+    });
+  });
+
+  it("shows the grid when every answer is filmed", async () => {
+    fetchQuestions.mockResolvedValue([
+      {
+        ...selectionQuestion,
+        options: selectionQuestion.options.map((o) => ({
+          ...o,
+          is_playable: true,
+        })),
+      },
+    ]);
+    const user = userEvent.setup();
+    await openBank();
+
+    await user.click(screen.getByTestId("ask-question-1"));
+
+    expect(screen.getByTestId("answer-option-11")).toBeInTheDocument();
+    expect(screen.queryByTestId("incomplete-grid")).not.toBeInTheDocument();
+  });
+});

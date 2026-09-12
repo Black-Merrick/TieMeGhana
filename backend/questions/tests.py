@@ -271,8 +271,8 @@ class TestQuestionApi:
         # Reported rather than used to hide the question, so the doctor sees the
         # gap instead of a bank that merely looks small.
         make_clip("HEAD")
-        make_question("Head?", order=0)
-        make_question("Xylophone?", order=1)
+        make_question("Head?", question_type=QuestionType.YES_NO, order=0)
+        make_question("Xylophone?", question_type=QuestionType.YES_NO, order=1)
 
         body = api_client.get(reverse("question-list")).json()
 
@@ -400,3 +400,98 @@ class TestSeedQuestionsCommand:
         for question in ClinicalQuestion.objects.all():
             positions = list(question.options.values_list("order", flat=True))
             assert len(positions) == len(set(positions))
+
+
+@pytest.mark.django_db
+class TestUnfilmedAnswerOptions:
+    """
+    The state the bank is actually in before filming: options exist, footage
+    does not. This reached a 500 in the browser while every test passed,
+    because the option fixture always created filmed clips.
+    """
+
+    def test_an_unfilmed_option_has_no_video_url_rather_than_erroring(
+        self, api_client, make_question, make_clip
+    ):
+        question = make_question(question_type=QuestionType.SELECTION)
+        AnswerOption.objects.create(
+            question=question,
+            english_text="Head",
+            clip=make_clip("HEAD", filmed=False),
+            order=0,
+        )
+
+        response = api_client.get(reverse("question-list"))
+
+        assert response.status_code == 200
+        assert response.json()[0]["options"][0]["clip"]["video_url"] is None
+
+    def test_each_option_reports_whether_it_can_be_shown(
+        self, api_client, make_question, make_clip, make_option
+    ):
+        question = make_question(question_type=QuestionType.SELECTION)
+        make_option(question, "Head", gloss="HEAD")
+        AnswerOption.objects.create(
+            question=question,
+            english_text="Chest",
+            clip=make_clip("CHEST", filmed=False),
+            order=1,
+        )
+
+        options = api_client.get(reverse("question-list")).json()[0]["options"]
+
+        assert [o["is_playable"] for o in options] == [True, False]
+
+    def test_a_selection_question_with_a_partial_grid_is_not_playable(
+        self, api_client, make_question, make_clip, make_option
+    ):
+        # The clinical safety property. If only some body parts can be shown,
+        # the patient taps the nearest wrong one and the doctor cannot tell
+        # that from a correct answer, so a partial grid must not be offered.
+        make_clip("WHERE")
+        question = make_question("Where hurt?", question_type=QuestionType.SELECTION)
+        make_option(question, "Head", gloss="HEAD")
+        AnswerOption.objects.create(
+            question=question,
+            english_text="Chest",
+            clip=make_clip("CHEST", filmed=False),
+            order=1,
+        )
+
+        body = api_client.get(reverse("question-list")).json()
+
+        assert body[0]["is_playable"] is False
+
+    def test_a_selection_question_with_a_complete_grid_is_playable(
+        self, api_client, make_question, make_clip, make_option
+    ):
+        make_clip("WHERE")
+        question = make_question("Where hurt?", question_type=QuestionType.SELECTION)
+        make_option(question, "Head", gloss="HEAD")
+        make_option(question, "Chest", gloss="CHEST")
+
+        body = api_client.get(reverse("question-list")).json()
+
+        assert body[0]["is_playable"] is True
+
+    def test_a_selection_question_with_no_options_is_not_playable(
+        self, api_client, make_question, make_clip
+    ):
+        # An empty grid gives the patient nothing to tap.
+        make_clip("WHERE")
+        make_question("Where hurt?", question_type=QuestionType.SELECTION)
+
+        body = api_client.get(reverse("question-list")).json()
+
+        assert body[0]["is_playable"] is False
+
+    def test_the_whole_seeded_bank_serializes_without_footage(self, api_client):
+        # Exactly the browser's situation right now. Nothing is filmed, and the
+        # bank must still load rather than returning a 500.
+        call_command("seed_questions", stdout=StringIO())
+
+        response = api_client.get(reverse("question-list"))
+
+        assert response.status_code == 200
+        assert len(response.json()) == 9
+        assert all(q["is_playable"] is False for q in response.json())

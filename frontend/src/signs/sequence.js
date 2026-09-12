@@ -9,7 +9,10 @@
 
 /** Wrap one clip as a sequence, so it plays through the shared player. */
 export function singleClipSequence(clip) {
-  if (!clip) {
+  // A clip row can exist before its footage does, see ADR 009, in which case
+  // video_url is null. Treated as nothing to play so the player shows its
+  // empty state instead of a video element pointed at null.
+  if (!clip?.video_url) {
     return {
       source_text: "",
       segments: [],

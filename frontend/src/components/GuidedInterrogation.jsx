@@ -157,6 +157,18 @@ function QuestionBank({ questions, onAsk }) {
   );
 }
 
+/**
+ * Whether every answer this question offers can actually be shown.
+ *
+ * All or nothing on purpose. See the comment where this is used.
+ */
+function hasCompleteGrid(question) {
+  return (
+    question.options.length > 0 &&
+    question.options.every((option) => option.is_playable !== false)
+  );
+}
+
 /** One question being asked, and however the patient answers it. */
 function AskingQuestion({ question, onAnswer, onCancel }) {
   const isYesNo = question.question_type === "yes_no";
@@ -182,7 +194,8 @@ function AskingQuestion({ question, onAnswer, onCancel }) {
       {isYesNo ? (
         <>
           {/* FR 2.6. The instruction to nod is carried by the sign video
-              above. This line is for the doctor, who does the observing. */}
+              above. This line is for the doctor, who does the observing.
+              A nod needs no footage, so this path works even before filming. */}
           <p className="asking__instruction" data-testid="nod-instruction">
             Watch the patient nod or shake their head, then tap what you saw.
             This confirmation is what gets recorded.
@@ -193,13 +206,23 @@ function AskingQuestion({ question, onAnswer, onCancel }) {
             }
           />
         </>
-      ) : (
+      ) : hasCompleteGrid(question) ? (
         <AnswerOptionGrid
           options={question.options}
           onChoose={(option) =>
             onAnswer(question, option.english_text, ANSWERED_BY.PATIENT)
           }
         />
+      ) : (
+        /* A partial grid is worse than no grid. If only some body parts can be
+           shown, the patient taps the nearest wrong one and the doctor cannot
+           tell that from a correct answer, so the grid is withheld entirely. */
+        <p className="asking__gap" data-testid="incomplete-grid" role="alert">
+          Only some answers for this question have been filmed, so the grid is
+          not shown. Showing part of it would push the patient towards an
+          answer that is merely the closest available. Ask this question in
+          person instead.
+        </p>
       )}
 
       <button

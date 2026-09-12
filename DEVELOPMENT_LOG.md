@@ -758,3 +758,41 @@ appears automatically as word clips are filmed.
 **Recorded answers are held in memory.** The durable transcript on the
 patient's own device is FR 4.1 to 4.3, next sprint. The shape already matches
 what that will persist, and the screen says plainly that nothing is saved yet.
+
+---
+
+## Sprint 4 follow up, the bank returned a 500 in the browser
+
+**Symptom.** The app showed "Could not load the question bank" while every
+test passed and the health check was green.
+
+**Cause.** `SignClipSerializer.get_video_url` returned `clip.video.url`, and
+Django's `FileField.url` **raises** when the field is empty. It had only ever
+been used on `resolvable()` clips, which always have footage. Nesting clips
+inside answer options exposed it to unfilmed ones, which is the state the
+seeded bank is in.
+
+Every test passed because the `make_option` fixture always created a filmed
+clip. The narrow lesson is the fix. The broader one is that a fixture whose
+defaults are the healthy case will not exercise the state the system actually
+spends its early life in, which here is "nothing is filmed yet".
+
+**The more important thing this surfaced.** Once unfilmed options render
+correctly, a selection question would show a partial grid. That is worse than
+showing nothing: a patient offered three body parts when their pain is in a
+fourth taps the nearest available one, the doctor receives a plausible wrong
+answer, and nothing about it looks wrong. Misdiagnosis risk from constrained
+answers is one of the problems this project exists to reduce.
+
+So a selection question is now only offered when every one of its options is
+filmed and approved, and an incomplete grid is withheld with an instruction to
+ask in person. Yes or no questions are unaffected, because a nod needs no
+footage, and that is the only usable path today. See ADR 022.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 119 passed |
+| Frontend suite | 140 passed |
+| Live `/api/questions/` | 200, nine questions, all correctly reported as not yet playable |
