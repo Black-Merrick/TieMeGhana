@@ -664,3 +664,97 @@ before filming is done; routing silently would defeat the check. The gloss
 staff facing notice. It deliberately tells the doctor not to fall back to typed
 captions for that patient, because doing so is the specific harm FR 2.4 exists
 to avoid. Sprint 4 builds it.
+
+---
+
+## Sprint 4, Guided Interrogation Mode
+
+**Goal.** FR 2.4 to 2.7. The path for a patient fluent in GhSL who does not
+read print: the doctor picks from a fixed clinical bank, the app asks the
+question in sign video, and the patient answers by tapping or by nodding.
+
+### A design change part way through
+
+The first implementation gave every question its own filmed prompt clip. That
+made each new question cost a recording and a consultant review before it could
+be asked at all.
+
+Reworked so a question is **stitched from the word clips already in the
+library**, exactly as a caption is. Adding a question is now a row in the bank
+rather than a filming session, coverage improves automatically as the library
+grows, and a question can be reworded without reshooting anything. The
+`prompt_clip` field was removed. See ADR 021.
+
+FR 2.6's instruction to nod or shake is one clip, `NOD_OR_SHAKE`, appended to
+every yes or no question rather than filmed into each one.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `questions` app | The fixed, pre reviewed bank, SRS section 4.3 |
+| `resolve_sign_sequences()` | Batched resolution, so the whole bank shares one clip lookup |
+| `resolve_question_sequences()` | Stitches each question, appending the nod instruction to yes or no ones |
+| `GET /api/questions/` | The bank, with options nested and each question's video resolved |
+| `GuidedInterrogation` | The doctor's bank, the question player, and the answer flow |
+| `AnswerOptionGrid` | FR 2.5, sign video options the patient taps |
+| `seed_questions` | Nine intake, symptom, and history questions |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 113 passed |
+| Frontend suite | 136 passed, 12 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Production build | PWA builds |
+| Seeded bank | 9 questions, 0 signable yet, which is correct with no footage |
+
+### Properties the SRS and standards asked for by name
+
+**Deleting a question deletes its answer options.** Named in
+`ENGINEERING_STANDARDS.md` section 4, because an orphaned option would offer an
+answer belonging to no question. Tested, along with the case where deleting one
+question must leave another's options alone.
+
+**`/api/questions/` returns options nested inside each question.** Also named
+in section 4 as a contract the frontend assumes, so it is asserted directly
+rather than inferred from the serializer.
+
+**No camera based gesture detection.** FR 2.6 is explicit, and there is a test
+asserting it, because adding gesture detection later would be a change to a
+stated design decision rather than an improvement.
+
+**What gets recorded for a yes or no question is the doctor's confirmation**,
+per FR 2.7, not a reading of the patient's head movement. The record carries
+who answered, so a transcript can never imply the patient tapped something they
+never touched.
+
+### Problems hit, and the fixes
+
+**The answer option fixture collided with its own uniqueness constraint.**
+Grid positions are unique per question, and the fixture defaulted every option
+to position zero, so a test about cascade deletion failed on layout. The
+fixture now assigns positions itself.
+
+**The bank was fetched and resolved twice per request.** Overriding
+`get_serializer_context` to supply resolved sequences re evaluated the queryset,
+so `list()` and the context each resolved the whole bank. Caught by the query
+count test: 9 queries where 6 were expected. Questions are now fetched once and
+resolved once.
+
+**`askable()` was written with leftover scaffolding in it**, a dead
+`if False else` expression left from working out how to reference the review
+status. Replaced with a plain reference to `ReviewStatus.APPROVED`, then removed
+entirely when the prompt clip went away.
+
+### Known limitations, deliberate
+
+**No footage, so no question can be signed yet.** All nine are seeded and the
+bank reports zero signable, which is correct rather than broken. Coverage
+appears automatically as word clips are filmed.
+
+**Recorded answers are held in memory.** The durable transcript on the
+patient's own device is FR 4.1 to 4.3, next sprint. The shape already matches
+what that will persist, and the screen says plainly that nothing is saved yet.

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
+import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import { LiteracyPath, endVisit, loadVisit } from "./visit/visit.js";
 
@@ -90,19 +91,17 @@ export default function App() {
   );
 }
 
-/** Whichever consultation flow the literacy answer selected. */
+/**
+ * Whichever consultation flow the literacy answer selected.
+ *
+ * The two paths are mutually exclusive by construction. A patient on the
+ * guided path is never rendered a caption input, which is the structural
+ * version of the constraint in SRS section 4.3 rather than a rule someone has
+ * to remember.
+ */
 function PatientPath({ path }) {
   if (path === LiteracyPath.LITERATE) return <DoctorConsultation />;
-
-  // Guided Interrogation Mode, FR 2.4 to 2.7, is the next sprint. Staff facing
-  // rather than patient facing, since it is the doctor who drives that flow.
-  return (
-    <p className="consultation__note" data-testid="guided-not-built">
-      This patient needs Guided Interrogation Mode, which is not built yet.
-      Use the clinical question bank on paper for now, and do not fall back to
-      typed captions for this patient.
-    </p>
-  );
+  return <GuidedInterrogation />;
 }
 
 // Status wording is user facing, so it lives in one place rather than being

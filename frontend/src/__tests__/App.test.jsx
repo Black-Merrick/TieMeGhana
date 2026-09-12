@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
+import { fetchQuestions } from "../api/questions.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchClipByGloss: vi.fn() };
 });
+vi.mock("../api/questions.js", () => ({ fetchQuestions: vi.fn() }));
 
 beforeEach(() => {
   localStorage.clear();
@@ -19,6 +21,16 @@ beforeEach(() => {
     video_url: "/media/clips/prompt.webm",
     duration_ms: 3000,
   });
+  fetchQuestions.mockResolvedValue([
+    {
+      id: 1,
+      english_text: "Where does it hurt?",
+      question_type: "selection",
+      category: "intake",
+      prompt_clip: { gloss: "WHERE", video_url: "/media/clips/where.webm" },
+      options: [],
+    },
+  ]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -93,9 +105,10 @@ describe("routing by literacy path", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("guided-not-built")).toBeInTheDocument();
+      expect(screen.getByTestId("ask-question-1")).toBeInTheDocument();
     });
     expect(screen.queryByLabelText(/message for the patient/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("routes straight after the patient answers, without a reload", async () => {

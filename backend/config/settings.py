@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "core",
     "clips",
     "consultations",
+    "questions",
 ]
 
 MIDDLEWARE = [
@@ -210,7 +211,7 @@ LOGGING = {
     # root logger has no handler of its own, so nothing is logged twice.
     "loggers": {
         app: {"handlers": ["console"], "level": "INFO", "propagate": True}
-        for app in ("core", "clips", "consultations")
+        for app in ("core", "clips", "consultations", "questions")
     },
 }
 

@@ -8,7 +8,7 @@ resolution and none of them should reimplement it.
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from clips.models import ClipKind, SignClip
@@ -101,6 +101,24 @@ class SignSequence:
         ]
 
 
+def with_appended_clip(sequence: SignSequence, clip) -> SignSequence:
+    """
+    Return the sequence with one more clip played at the end.
+
+    Used to attach the FR 2.6 instruction to nod or shake to a yes or no
+    question, so the patient is told how to answer in GhSL rather than only in
+    text the doctor can read.
+    """
+    extra = SignSegment(
+        token=clip.gloss.lower(),
+        match=SegmentMatch.GLOSS,
+        clips=(_to_resolved_clip(clip),),
+    )
+    return SignSequence(
+        source_text=sequence.source_text, segments=(*sequence.segments, extra)
+    )
+
+
 def tokenize(text: str) -> list[str]:
     """Split caption text into lowercase word tokens, discarding punctuation."""
     return [match.group(0).lower() for match in _TOKEN_PATTERN.finditer(text)]
@@ -115,15 +133,32 @@ def resolve_sign_sequence(text: str) -> SignSequence:
     and almost all of that budget belongs to speech recognition and
     translation, so a per token query here would be the thing that breaks it.
     """
-    tokens = tokenize(text)
-    if not tokens:
-        return SignSequence(source_text=text, segments=())
+    return resolve_sign_sequences([text])[0]
 
-    word_clips = _resolvable_clips_by_gloss(ClipKind.WORD, {t.upper() for t in tokens})
+
+def resolve_sign_sequences(texts: Sequence[str]) -> list[SignSequence]:
+    """
+    Resolve several texts while looking the clip library up only once.
+
+    The clinical question bank needs every question resolved at the moment the
+    doctor opens it. Resolving them one at a time would be two queries per
+    question, so a bank of a few dozen questions would be slow to open mid
+    consultation. Sharing one lookup across all of them keeps it at two
+    queries for the whole bank.
+    """
+    tokenized = [tokenize(text) for text in texts]
+    every_token = [token for tokens in tokenized for token in tokens]
+
+    if not every_token:
+        return [SignSequence(source_text=text, segments=()) for text in texts]
+
+    word_clips = _resolvable_clips_by_gloss(
+        ClipKind.WORD, {token.upper() for token in every_token}
+    )
 
     # The alphabet is only needed for tokens that had no sign of their own, so
-    # a fully covered sentence costs one query rather than two.
-    unmatched = [token for token in tokens if token.upper() not in word_clips]
+    # fully covered text costs one query rather than two.
+    unmatched = [token for token in every_token if token.upper() not in word_clips]
     letter_clips = (
         _resolvable_clips_by_gloss(
             ClipKind.LETTER, {char.upper() for token in unmatched for char in token}
@@ -132,10 +167,15 @@ def resolve_sign_sequence(text: str) -> SignSequence:
         else {}
     )
 
-    segments = tuple(
-        _resolve_token(token, word_clips, letter_clips) for token in tokens
-    )
-    return SignSequence(source_text=text, segments=segments)
+    return [
+        SignSequence(
+            source_text=text,
+            segments=tuple(
+                _resolve_token(token, word_clips, letter_clips) for token in tokens
+            ),
+        )
+        for text, tokens in zip(texts, tokenized, strict=True)
+    ]
 
 
 def _resolve_token(

@@ -11,7 +11,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * doctor's question, a patient's answer option, and a prescription instruction
  * all render through it, so a patient who learns one player knows them all.
  */
-export default function SignSequencePlayer({ sequence, onFinished }) {
+export default function SignSequencePlayer({
+  sequence,
+  onFinished,
+  // Answer options in a selection grid are themselves the tap target, so the
+  // card carries the control and the video must not. A video's own controls
+  // inside a button would swallow the tap. Section 4.4 still holds: it is the
+  // same player, presented without its controls.
+  controls = true,
+  loop = false,
+}) {
   // Segments exist so the caller can explain coverage per word. Playback only
   // cares about the flat ordered run of clips.
   const clips = useMemo(
@@ -78,7 +87,8 @@ export default function SignSequencePlayer({ sequence, onFinished }) {
         className="player__video"
         src={current.video_url}
         onEnded={handleEnded}
-        controls
+        controls={controls}
+        loop={loop}
         playsInline
         // muted because these are sign clips with no meaningful audio, and an
         // unmuted autoplay would be blocked by the browser outright.
@@ -96,9 +106,11 @@ export default function SignSequencePlayer({ sequence, onFinished }) {
         />
       ) : null}
 
-      <p className="player__progress">
-        Sign {safeIndex + 1} of {clips.length}, {current.gloss}
-      </p>
+      {controls ? (
+        <p className="player__progress">
+          Sign {safeIndex + 1} of {clips.length}, {current.gloss}
+        </p>
+      ) : null}
     </div>
   );
 }

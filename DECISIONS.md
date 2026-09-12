@@ -548,3 +548,38 @@ One bug found writing this is worth recording: the staleness guard originally
 tested `!visit.startedAt`, which rejects a legitimate timestamp of `0`. A
 falsy check on a numeric field is the kind of fault that hides until a clock or
 a fixture happens to produce that one value.
+
+---
+
+## ADR 021, A clinical question is stitched from word clips, not filmed as one
+
+**Context.** Guided Interrogation asks the patient a question in GhSL. The
+first implementation gave each question its own filmed prompt clip, which meant
+every question added to the bank needed a new recording, a new consultant
+review, and could not be asked until both were done.
+
+**Decision.** A question carries no clip of its own. Its English text is
+resolved through the existing clip library exactly as a caption is, and the
+matched word clips are played as one stitched sequence. Adding a question is
+then a row in the bank, not a filming session.
+
+FR 2.6's instruction to nod or shake is one reviewed clip, `NOD_OR_SHAKE`,
+appended to every yes or no question rather than filmed into each one.
+
+**Why.** Filming is the project's real bottleneck, not code. Reusing the word
+clips already being recorded means the bank's coverage improves automatically
+as the library grows, and a question can be reworded without reshooting
+anything. It also means the same reviewed sign for "pain" is used in a caption
+and in a question, which is the consistency section 4.4 asks for and which a
+separately filmed question could quietly break.
+
+The cost is that a question is only as good as its wording. Words the library
+does not have will fingerspell, so the bank is written using words the library
+already contains, and `is_playable` plus the unavailable word list tell the
+doctor when a question would not actually reach the patient.
+
+**Consequence.** Resolving the bank happens in one batched lookup rather than
+per question, because the doctor opens the whole bank at once and per question
+resolution would be two queries each. `prompt_clip` was removed from the model.
+A question with no coverage is marked in the bank rather than hidden, so the
+gap is visible instead of looking like a small bank.
