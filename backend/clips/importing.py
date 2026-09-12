@@ -102,6 +102,28 @@ def import_footage(
     return report
 
 
+def _kind_for(gloss: str) -> str:
+    """
+    Guess a new clip's kind from its filename.
+
+    A one character gloss is a fingerspelling letter. Getting that wrong would
+    let a letter be matched as a whole word sign and break the FR 1.6 fallback.
+
+    An underscored gloss is a phrase, `what_is_your_name.mp4`, which is how a
+    whole sentence filmed as one clip arrives. Only applied to a new clip: an
+    existing row keeps its kind, so the prompts and emergency alerts that also
+    carry underscores are not reclassified underneath them.
+
+    A guess, so the admin can correct it. It cannot be more than a guess from a
+    filename alone.
+    """
+    if len(gloss) == 1:
+        return ClipKind.LETTER
+    if "_" in gloss:
+        return ClipKind.PHRASE
+    return ClipKind.WORD
+
+
 def _import_one(
     path: Path,
     report: ImportReport,
@@ -124,11 +146,7 @@ def _import_one(
 
     is_new = clip is None
     if is_new:
-        # A one character gloss is a fingerspelling letter. Getting this wrong
-        # would let a letter be matched as a whole word sign and break the
-        # FR 1.6 fallback.
-        kind = ClipKind.LETTER if len(gloss) == 1 else ClipKind.WORD
-        clip = SignClip(gloss=gloss, kind=kind)
+        clip = SignClip(gloss=gloss, kind=_kind_for(gloss))
 
     with path.open("rb") as handle:
         clip.video.save(path.name, File(handle), save=False)

@@ -11,6 +11,9 @@ class ClipKind(models.TextChoices):
     """
 
     WORD = "word", "Word sign"
+    #: A whole phrase signed as one clip, e.g. WHAT_IS_YOUR_NAME. Preferred
+    #: over stitching the same words individually, see ADR 038.
+    PHRASE = "phrase", "Phrase sign"
     LETTER = "letter", "Fingerspelling letter"
     ALERT = "alert", "Emergency alert"
     # A question the app itself asks, such as the FR 2.1 literacy check. Kept

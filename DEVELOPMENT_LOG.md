@@ -1499,3 +1499,73 @@ The reproduction needed `enforce_csrf_checks=True` plus a logged in user. The
 default test client skips the check, which is why 416 tests passed while a real
 browser could not send a message. A suite that only exercises the API the way
 curl does cannot see this class of bug.
+
+---
+
+## Phrase clips, and a negation that was escaping the safety gate
+
+**The question.** What happens with a clip of a whole sentence, when word clips
+for the same words also exist?
+
+Answering it turned up something worse first.
+
+### The negation hole
+
+```
+"do not take the medicine"  ->  blocking: [not]  ->  refused
+"don't take the medicine"   ->  blocking: []     ->  allowed
+```
+
+`"don't"` tokenized to `don` and `t`. Neither is a negation, so the ADR 033
+gate saw nothing to refuse. The same instruction, written two ways, and only
+one caught. With `TAKE` and `MEDICINE` filmed, the second would have played as
+`TAKE MEDICINE`, the opposite of what the doctor wrote, past a gate built
+specifically to stop exactly that.
+
+It was masked because those two clips are not filmed, so the sentence was
+refused for an unrelated reason. The hole would have opened as the library
+grew, which is the worst possible timing.
+
+Contractions are now expanded while tokenizing, before any other code sees a
+token, and curly apostrophes are normalized first because phone keyboards
+produce them. A possessive loses its affix rather than the word, since GhSL
+does not mark possession and an apostrophe has no letter clip, so `patient's`
+would otherwise refuse a sentence over punctuation. See ADR 037.
+
+### Phrase clips
+
+A clip can now cover a phrase, `WHAT_IS_YOUR_NAME`, and resolution matches the
+longest phrase available before falling back to individual words.
+
+The preference is linguistic, not an optimisation. Sign languages have their
+own grammar, so word signs played in English order come out closer to Signed
+Exact English than to GhSL. A phrase filmed by a native signer carries correct
+word order, the facial expression that marks a question or a negation, which is
+grammatical rather than decorative in sign languages, and the rhythm between
+clauses. None of that exists in a sequence of isolated word clips. See ADR 038.
+
+`"what's your name"` now reaches a filmed `WHAT_IS_YOUR_NAME`, because ADR 037
+expands the contraction before matching. The two changes only work together.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 189 passed, 18 new |
+| Frontend suite | 261 passed |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+
+The query budget moved from three to four: word glosses, reviewed aliases, the
+alphabet, and the phrase clips. Still constant however long the sentence is,
+which is the property the test pins.
+
+Phrase clips are loaded unfiltered, because a phrase spans several tokens and
+cannot be narrowed by an IN clause on the tokens in hand. There will only ever
+be a few dozen.
+
+### What this changes about filming
+
+**Film whole phrases for anything asked often.** The word library is the
+fallback for combinations nobody anticipated, not the goal. An underscored
+filename, `what_is_your_name.mp4`, imports as a phrase, and the kind is a guess
+from the filename that the admin can correct.

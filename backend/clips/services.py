@@ -14,10 +14,56 @@ from dataclasses import dataclass
 from clips.models import ClipAlias, ClipKind, SignClip
 from clips.safety import TokenRisk, classify
 
-# Letters and digits only, so punctuation never becomes a token. Digits are
-# kept because dosage instructions like "2 times daily" are real content, and
-# the character class is unicode aware so Twi letters such as ɛ and ɔ survive.
-_TOKEN_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
+# Letters and digits, plus apostrophes inside a word so a contraction survives
+# tokenizing as one piece. Digits are kept because dosage instructions like
+# "2 times daily" are real content, and the character class is unicode aware so
+# Twi letters such as ɛ and ɔ survive.
+_TOKEN_PATTERN = re.compile(r"[^\W_]+(?:['’][^\W_]+)*", re.UNICODE)
+
+# Contractions are expanded before anything else looks at a token.
+#
+# This is a safety fix, not tidying. "don't" split into "don" and "t", so the
+# negation disappeared: `classify` never saw a blocking word, the sentence
+# passed the ADR 033 gate, and "don't take the medicine" would have played as
+# TAKE MEDICINE, the opposite instruction. Meanwhile "do not take the medicine"
+# was correctly refused. Two ways of writing the same sentence, one caught and
+# one not. See ADR 037.
+_CONTRACTIONS = {
+    "don't": ("do", "not"),
+    "doesn't": ("does", "not"),
+    "didn't": ("did", "not"),
+    "can't": ("cannot",),
+    "won't": ("will", "not"),
+    "shan't": ("shall", "not"),
+    "isn't": ("is", "not"),
+    "aren't": ("are", "not"),
+    "wasn't": ("was", "not"),
+    "weren't": ("were", "not"),
+    "haven't": ("have", "not"),
+    "hasn't": ("has", "not"),
+    "hadn't": ("had", "not"),
+    "couldn't": ("could", "not"),
+    "shouldn't": ("should", "not"),
+    "wouldn't": ("would", "not"),
+    "mustn't": ("must", "not"),
+    "what's": ("what", "is"),
+    "who's": ("who", "is"),
+    "where's": ("where", "is"),
+    "it's": ("it", "is"),
+    "that's": ("that", "is"),
+    "there's": ("there", "is"),
+    "he's": ("he", "is"),
+    "she's": ("she", "is"),
+    "i'm": ("i", "am"),
+    "you're": ("you", "are"),
+    "they're": ("they", "are"),
+    "we're": ("we", "are"),
+    "i've": ("i", "have"),
+    "you've": ("you", "have"),
+    "i'll": ("i", "will"),
+    "you'll": ("you", "will"),
+    "let's": ("let", "us"),
+}
 
 
 class SegmentMatch:
@@ -28,6 +74,8 @@ class SegmentMatch:
     """
 
     GLOSS = "gloss"
+    #: A whole phrase covered by one clip, preferred over stitching its words.
+    PHRASE = "phrase"
     FINGERSPELL = "fingerspell"
     #: A word GhSL does not use, left out deliberately. See ADR 033.
     OMITTED = "omitted"
@@ -186,8 +234,43 @@ def with_appended_clip(sequence: SignSequence, clip) -> SignSequence:
 
 
 def tokenize(text: str) -> list[str]:
-    """Split caption text into lowercase word tokens, discarding punctuation."""
-    return [match.group(0).lower() for match in _TOKEN_PATTERN.finditer(text)]
+    """
+    Split text into lowercase word tokens, expanding contractions.
+
+    Contractions are expanded rather than split on the apostrophe, because
+    splitting loses the negation in "don't" and everything downstream, the
+    safety classification included, then sees a sentence that does not contain
+    one. See ADR 037.
+    """
+    tokens: list[str] = []
+
+    for match in _TOKEN_PATTERN.finditer(text):
+        # Curly apostrophes arrive from phone keyboards and word processors,
+        # and are the same character as far as meaning goes.
+        raw = match.group(0).lower().replace("’", "'")
+
+        if raw in _CONTRACTIONS:
+            tokens.extend(_CONTRACTIONS[raw])
+            continue
+
+        tokens.append(_strip_possessive(raw))
+
+    return tokens
+
+
+def _strip_possessive(token: str) -> str:
+    """
+    Reduce "patient's" to "patient", and drop any other stray apostrophe.
+
+    GhSL does not mark possession with an affix, so the 's carries nothing to
+    sign. Left in place it would make the token unmatchable and unspellable,
+    since there is no letter clip for an apostrophe, and the whole sentence
+    would be refused over punctuation.
+    """
+    if token.endswith("'s"):
+        token = token[:-2]
+
+    return token.replace("'", "")
 
 
 def resolve_sign_sequence(text: str) -> SignSequence:
@@ -240,15 +323,98 @@ def resolve_sign_sequences(texts: Sequence[str]) -> list[SignSequence]:
         else {}
     )
 
+    # Every resolvable phrase clip, unfiltered. A phrase spans several tokens,
+    # so it cannot be narrowed by an IN clause on the tokens we have, and there
+    # will only ever be a few dozen of them. One query for the whole call.
+    phrase_clips = _resolvable_phrase_clips()
+
     return [
         SignSequence(
             source_text=text,
-            segments=tuple(
-                _resolve_token(token, word_clips, letter_clips) for token in tokens
-            ),
+            segments=_resolve_tokens(tokens, phrase_clips, word_clips, letter_clips),
         )
         for text, tokens in zip(texts, tokenized, strict=True)
     ]
+
+
+def _resolve_tokens(
+    tokens: list[str],
+    phrase_clips: dict[tuple[str, ...], SignClip],
+    word_clips: dict[str, SignClip],
+    letter_clips: dict[str, SignClip],
+) -> tuple[SignSegment, ...]:
+    """
+    Resolve a token list, preferring the longest phrase available.
+
+    Longest match first, because a clip of a whole phrase signed by a native
+    signer is better GhSL than the same words stitched together. Sign languages
+    have their own grammar, so word signs played in English order produce
+    something closer to signed English, and a filmed phrase carries the facial
+    expression and rhythm that individual word clips cannot. See ADR 038.
+    """
+    longest = max((len(phrase) for phrase in phrase_clips), default=0)
+
+    segments: list[SignSegment] = []
+    position = 0
+
+    while position < len(tokens):
+        phrase = _longest_phrase_at(tokens, position, phrase_clips, longest)
+
+        if phrase is not None:
+            length, clip = phrase
+            segments.append(
+                SignSegment(
+                    token=" ".join(tokens[position : position + length]),
+                    match=SegmentMatch.PHRASE,
+                    clips=(_to_resolved_clip(clip),),
+                )
+            )
+            position += length
+            continue
+
+        segments.append(_resolve_token(tokens[position], word_clips, letter_clips))
+        position += 1
+
+    return tuple(segments)
+
+
+def _longest_phrase_at(
+    tokens: list[str],
+    position: int,
+    phrase_clips: dict[tuple[str, ...], SignClip],
+    longest: int,
+) -> tuple[int, SignClip] | None:
+    """
+    The longest phrase clip starting at this position, if any.
+
+    Counts down from the longest so "what is your name" wins over a shorter
+    "your name" that happens to also be filmed. Stops at two tokens, because a
+    single token is a word sign and is handled by the ordinary lookup.
+    """
+    available = min(longest, len(tokens) - position)
+
+    for length in range(available, 1, -1):
+        key = tuple(tokens[position : position + length])
+        clip = phrase_clips.get(key)
+        if clip is not None:
+            return length, clip
+
+    return None
+
+
+def _resolvable_phrase_clips() -> dict[tuple[str, ...], SignClip]:
+    """
+    Phrase clips keyed by the token sequence they cover.
+
+    The gloss carries the phrase with underscores, WHAT_IS_YOUR_NAME, so the
+    tokens it matches are recovered by splitting it. That keeps one field as
+    the single identifier for a clip rather than storing the phrase twice and
+    letting the two drift.
+    """
+    return {
+        tuple(clip.gloss.lower().split("_")): clip
+        for clip in SignClip.objects.resolvable().filter(kind=ClipKind.PHRASE)
+    }
 
 
 def _resolve_token(

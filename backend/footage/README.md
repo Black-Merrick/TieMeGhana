@@ -19,8 +19,29 @@ cannot_breathe.webm -> gloss CANNOT_BREATHE
 Case does not matter, the gloss is stored uppercase either way.
 
 A **single character** filename is imported as a fingerspelling letter rather
-than a word sign, which is what FR 1.6's fallback needs. Everything longer is
-imported as a word sign.
+than a word sign, which is what FR 1.6's fallback needs.
+
+An **underscored** filename is imported as a phrase, and a phrase is preferred
+over stitching the same words individually:
+
+```
+what_is_your_name.mp4   -> the whole question, signed as one clip
+do_not_take_medicine.mp4
+```
+
+That preference is deliberate rather than an optimisation. Sign languages have
+their own grammar, so word signs played in English order come out closer to
+signed English than to GhSL, and a phrase filmed by a native signer carries
+the facial expression and rhythm that separate word clips cannot. **Film whole
+phrases for anything you ask often.** See ADR 038.
+
+Write the phrase the way it would be typed, expanded rather than contracted:
+`what_is_your_name`, not `whats_your_name`. A doctor typing "what's your name"
+has it expanded to "what is your name" before matching, so the expanded form is
+the one that gets found.
+
+Anything else is imported as a word sign. All of these are guesses from a
+filename, and the admin can correct the kind.
 
 Accepted formats are `.webm`, `.mp4`, `.m4v`, and `.mov`. These are what a
 browser can play in a `<video>` element without transcoding.

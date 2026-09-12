@@ -171,9 +171,13 @@ class TestResolveSignSequence:
         # which is spent on speech recognition and translation. A per token
         # query would make a long sentence miss that budget, so lookups are
         # batched and this test locks that in.
+        #
+        # Four: word glosses, reviewed aliases for what did not match, the
+        # alphabet for fingerspelling, and the phrase clips. Constant however
+        # long the sentence is, which is the property being pinned.
         make_clip("HEAD")
 
-        with django_assert_num_queries(3):
+        with django_assert_num_queries(4):
             resolve_sign_sequence("head chest stomach arm leg back hurts badly today")
 
 

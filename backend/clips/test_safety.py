@@ -350,3 +350,198 @@ class TestReviewedAliases:
         feeling.delete()
 
         assert not ClipAlias.objects.exists()
+
+
+class TestContractions:
+    """
+    ADR 037. "don't" split into "don" and "t", so the negation disappeared
+    before anything could classify it, and the sentence passed the ADR 033
+    gate. "do not take the medicine" was refused while "don't take the
+    medicine" was not, and the second would have played as TAKE MEDICINE.
+    """
+
+    def test_a_contracted_negation_is_still_a_negation(self):
+        from clips.services import tokenize
+
+        assert tokenize("don't take it") == ["do", "not", "take", "it"]
+
+    def test_both_ways_of_writing_it_tokenize_the_same(self):
+        from clips.services import tokenize
+
+        assert tokenize("don't take") == tokenize("do not take")
+
+    def test_cant_becomes_cannot(self):
+        from clips.services import tokenize
+
+        assert tokenize("you can't eat") == ["you", "cannot", "eat"]
+
+    def test_a_curly_apostrophe_is_the_same_word(self):
+        # Phone keyboards and word processors produce these, and a doctor
+        # pasting from either would otherwise bypass the negation check.
+        from clips.services import tokenize
+
+        assert tokenize("don’t take") == ["do", "not", "take"]
+
+    def test_a_possessive_loses_its_affix_rather_than_the_word(self):
+        # GhSL does not mark possession with an affix, and leaving the 's in
+        # place would make the token unspellable, since there is no letter clip
+        # for an apostrophe, refusing the sentence over punctuation.
+        from clips.services import tokenize
+
+        assert tokenize("the patient's head") == ["the", "patient", "head"]
+
+    def test_an_unknown_apostrophe_word_keeps_its_letters(self):
+        from clips.services import tokenize
+
+        assert tokenize("o'clock") == ["oclock"]
+
+
+@pytest.mark.django_db
+class TestContractedNegationIsRefused:
+    def test_a_contracted_negation_stops_the_sentence(self, make_clip, alphabet):
+        # The failure this closes. Both TAKE and MEDICINE filmed, so without
+        # the fix the sentence would have played as TAKE MEDICINE and passed
+        # the gate: the opposite instruction, silently.
+        make_clip("TAKE")
+        make_clip("MEDICINE")
+
+        sequence = resolve_sign_sequence("don't take medicine")
+
+        assert sequence.blocking_tokens == ["not"]
+        assert sequence.is_safe_to_show is False
+
+    def test_the_uncontracted_form_behaves_identically(self, make_clip, alphabet):
+        make_clip("TAKE")
+        make_clip("MEDICINE")
+
+        contracted = resolve_sign_sequence("don't take medicine")
+        spelled_out = resolve_sign_sequence("do not take medicine")
+
+        assert contracted.blocking_tokens == spelled_out.blocking_tokens
+        assert contracted.is_safe_to_show == spelled_out.is_safe_to_show
+
+    def test_a_filmed_negation_makes_the_contracted_form_showable(
+        self, make_clip, alphabet
+    ):
+        make_clip("NOT")
+        make_clip("TAKE")
+        make_clip("MEDICINE")
+        make_clip("DO")
+
+        sequence = resolve_sign_sequence("don't take medicine")
+
+        assert sequence.is_safe_to_show is True
+        assert "NOT" in sequence.back_translation
+
+
+@pytest.mark.django_db
+class TestPhraseClips:
+    """
+    ADR 038. A whole phrase filmed as one clip is preferred over stitching the
+    same words, because sign languages have their own grammar: word signs
+    played in English order are closer to signed English than to GhSL, and a
+    filmed phrase carries facial expression and rhythm that separate word clips
+    cannot.
+    """
+
+    def test_a_phrase_clip_is_preferred_over_its_individual_words(
+        self, make_clip, alphabet
+    ):
+        from clips.models import ClipKind
+
+        # Every word is filmed, and so is the whole phrase.
+        for word in ["WHAT", "IS", "YOUR", "NAME"]:
+            make_clip(word)
+        make_clip("WHAT_IS_YOUR_NAME", kind=ClipKind.PHRASE, duration_ms=2500)
+
+        sequence = resolve_sign_sequence("what is your name")
+
+        assert sequence.back_translation == ["WHAT_IS_YOUR_NAME"]
+        assert [s.match for s in sequence.segments] == ["phrase"]
+
+    def test_the_words_are_used_when_no_phrase_clip_exists(self, make_clip, alphabet):
+        for word in ["WHAT", "IS", "YOUR", "NAME"]:
+            make_clip(word)
+
+        sequence = resolve_sign_sequence("what is your name")
+
+        assert sequence.back_translation == ["WHAT", "IS", "YOUR", "NAME"]
+
+    def test_a_contracted_sentence_reaches_the_phrase_clip(self, make_clip, alphabet):
+        # "what's your name" expands to "what is your name" before matching,
+        # so the doctor's natural phrasing finds the filmed phrase. ADR 037
+        # and ADR 038 together.
+        from clips.models import ClipKind
+
+        make_clip("WHAT_IS_YOUR_NAME", kind=ClipKind.PHRASE)
+
+        sequence = resolve_sign_sequence("what's your name?")
+
+        assert sequence.back_translation == ["WHAT_IS_YOUR_NAME"]
+
+    def test_the_longest_phrase_wins(self, make_clip, alphabet):
+        from clips.models import ClipKind
+
+        make_clip("YOUR_NAME", kind=ClipKind.PHRASE)
+        make_clip("WHAT_IS_YOUR_NAME", kind=ClipKind.PHRASE)
+
+        sequence = resolve_sign_sequence("what is your name")
+
+        assert sequence.back_translation == ["WHAT_IS_YOUR_NAME"]
+
+    def test_a_phrase_mixes_with_words_around_it(self, make_clip, alphabet):
+        from clips.models import ClipKind
+
+        make_clip("YOUR_NAME", kind=ClipKind.PHRASE)
+        make_clip("TELL")
+
+        sequence = resolve_sign_sequence("tell your name")
+
+        assert sequence.back_translation == ["TELL", "YOUR_NAME"]
+
+    def test_a_phrase_covering_a_negation_is_safe_to_show(self, make_clip, alphabet):
+        # The negation is signed, as part of the phrase, so ADR 033 has nothing
+        # to refuse. A phrase clip is the best way to sign a negation, since a
+        # native signer marks it with expression as well as a sign.
+        from clips.models import ClipKind
+
+        make_clip("DO_NOT_TAKE_MEDICINE", kind=ClipKind.PHRASE)
+
+        sequence = resolve_sign_sequence("do not take medicine")
+
+        assert sequence.blocking_tokens == []
+        assert sequence.is_safe_to_show is True
+
+    def test_an_unreviewed_phrase_is_not_used(self, make_clip, alphabet):
+        from clips.models import ClipKind
+
+        for word in ["WHAT", "IS", "YOUR", "NAME"]:
+            make_clip(word)
+        make_clip("WHAT_IS_YOUR_NAME", kind=ClipKind.PHRASE, approved=False)
+
+        sequence = resolve_sign_sequence("what is your name")
+
+        assert sequence.back_translation == ["WHAT", "IS", "YOUR", "NAME"]
+
+    def test_an_unfilmed_phrase_is_not_used(self, make_clip, alphabet):
+        from clips.models import ClipKind
+
+        make_clip("TELL")
+        make_clip("YOUR_NAME", kind=ClipKind.PHRASE, filmed=False)
+        make_clip("YOUR")
+        make_clip("NAME")
+
+        sequence = resolve_sign_sequence("tell your name")
+
+        assert sequence.back_translation == ["TELL", "YOUR", "NAME"]
+
+    def test_a_phrase_is_never_matched_as_a_single_word(self, make_clip, alphabet):
+        # A one token gloss is a word sign. Treating it as a phrase would make
+        # the phrase lookup shadow the ordinary one for no reason.
+        from clips.models import ClipKind
+
+        make_clip("PAIN", kind=ClipKind.PHRASE)
+
+        sequence = resolve_sign_sequence("pain")
+
+        assert sequence.back_translation != ["PAIN"]

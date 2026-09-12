@@ -1193,3 +1193,91 @@ That second test matters more than the fix. The default test client skips CSRF,
 which is why the whole suite passed while a real browser could not send a
 message. A test that only exercises the API the way `curl` does cannot see this
 class of bug at all.
+
+---
+
+## ADR 037, Contractions are expanded before anything classifies a word
+
+**Context.** The tokenizer split on non-word characters, so `"don't"` became
+`don` and `t`. Neither is a negation, so `classify` saw no blocking word, and
+the ADR 033 safety gate let the sentence through.
+
+```
+"do not take the medicine"  ->  blocking: [not]  ->  refused
+"don't take the medicine"   ->  blocking: []     ->  allowed
+```
+
+The same instruction, written two ways, and only one of them was caught. With
+`TAKE` and `MEDICINE` filmed, the second would have played as `TAKE MEDICINE`:
+the opposite of what the doctor wrote, past a gate built specifically to stop
+that.
+
+It was masked only because those two clips are not filmed yet, so the sentence
+was refused for a different reason. The hole would have opened the moment the
+library grew.
+
+**Decision.** Contractions are expanded during tokenizing, before any other
+code sees a token. `don't` becomes `do not`, `can't` becomes `cannot`,
+`what's` becomes `what is`. Curly apostrophes are normalized first, since
+phone keyboards and word processors produce them and a doctor pasting from
+either would otherwise bypass the check.
+
+A possessive loses its affix rather than the word: `patient's` becomes
+`patient`. GhSL does not mark possession with an affix, and leaving the `'s`
+in place would make the token unmatchable and unspellable, since there is no
+letter clip for an apostrophe, so the sentence would be refused over
+punctuation.
+
+**Why expand rather than split.** Splitting is what caused the bug. The
+negation lives in the second half of the contraction, and any approach that
+discards or mangles it hides a blocking word from the classifier.
+
+**Consequence.** Two ways of writing the same sentence now produce identical
+tokens, and a test asserts that directly rather than checking each form
+separately. The contraction list is English and finite, so it is data rather
+than logic, and adding to it is safe.
+
+---
+
+## ADR 038, A phrase clip is preferred over stitching its words
+
+**Context.** With word clips for `WHAT`, `IS`, `YOUR`, `NAME`, the sentence
+"what is your name" was rendered by stitching four clips. If a clip of the
+whole phrase also existed, it was never used, because the tokenizer produces
+single words and the lookup only ever matched single glosses.
+
+**Decision.** Clips can cover a phrase, `WHAT_IS_YOUR_NAME`, and resolution
+matches the longest phrase available at each position before falling back to
+individual words.
+
+**Why the phrase is better, not merely fewer clips.** Sign languages have
+their own grammar. GhSL word order, and its use of space, expression and
+timing, are not English. Word signs played in English order produce something
+closer to Signed Exact English than to GhSL, and a Deaf patient may follow it
+with effort or not at all.
+
+A phrase filmed by a native signer carries what individual clips cannot:
+correct word order for the language, the facial expression that marks a
+question or a negation, and the rhythm that separates one clause from the next.
+Facial expression in particular is grammatical in sign languages rather than
+decorative, and it simply is not present in a sequence of isolated word clips.
+
+It also removes every stitching artefact for that sentence, since there is
+nothing to join.
+
+**Consequence.** Longest match wins, so a filmed `WHAT_IS_YOUR_NAME` beats a
+filmed `YOUR_NAME` inside it. Phrases mix with words around them, so `"tell
+your name"` can play `TELL` followed by a `YOUR_NAME` phrase clip.
+
+A phrase covering a negation is safe to show under ADR 033 without the negation
+being separately filmed, because it is signed as part of the phrase. That is
+the best way to sign a negation anyway, since a native signer marks it with
+expression as well as with a sign.
+
+Phrase glosses are written expanded rather than contracted,
+`WHAT_IS_YOUR_NAME`, because ADR 037 expands a doctor's `"what's"` before
+matching and the expanded form is what the lookup sees.
+
+The guidance for filming changes as a result: **film whole phrases for
+anything asked often**, and keep word clips for the combinations nobody
+anticipated. The word library is the fallback, not the goal.
