@@ -4,6 +4,7 @@ import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
+import { clearTranscript } from "./transcript/transcript.js";
 import {
   LiteracyPath,
   OutputLanguage,
@@ -51,6 +52,14 @@ export default function App() {
    */
   const startNewPatient = () => {
     endVisit();
+
+    // The transcript goes with the visit. This device is handed from one
+    // patient to the next, and these consultations are about pregnancy,
+    // sexually transmitted infections, and HIV status. Leaving one behind for
+    // a stranger to read is the precise harm the project exists to prevent.
+    // See ADR 026.
+    clearTranscript();
+
     setVisit(null);
   };
 

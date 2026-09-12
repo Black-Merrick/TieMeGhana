@@ -41,6 +41,19 @@ based gesture detection.
 patient's own device, never on a shared server. That is a structural property
 of the system, not a permissions setting that could be misconfigured.
 
+## Status
+
+**P0 is complete.** All four core groups are built and tested: doctor to
+patient captioning with GhSL rendering, the literacy check and Guided
+Interrogation, patient responses spoken aloud, and the on device transcript.
+312 tests, both halves green.
+
+What the system still needs is not code. It needs **filmed GhSL footage**: the
+clip library holds 95 glosses and zero usable clips, so captions and questions
+correctly report that they cannot be signed yet. Drop recordings into
+`backend/footage/` and coverage appears with no code change. See
+[BACKLOG.md](BACKLOG.md) for the full picture.
+
 ## Architecture
 
 | Layer | Choice | Why |

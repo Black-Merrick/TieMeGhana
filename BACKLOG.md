@@ -22,7 +22,7 @@ Status key: `todo`, `wip`, `done`
 | 3 ✅ | Interaction foundations, literacy check | Vibration vocabulary, sign video player, and Yes/No icons built once before the first patient facing screen needs them |
 | 4 | Guided Interrogation Mode | Completes P0.2, the differentiating feature. Depends on sprint 3's shared components |
 | 5 ✅ | Patient to doctor spoken output | Completes P0.3. Depends on sprint 2's TTS provider |
-| 6 | Session transcript, on device | Completes P0.4. **P0 complete, system is demonstrable end to end** |
+| 6 ✅ | Session transcript, on device | **P0 complete. The system is demonstrable end to end** |
 | 7 | Emergency Visual Triage Mode | P1.1. Reuses sprint 5's TTS and sprint 3's tap pattern, no new technology |
 | 8 | GhSL Prescription Playback with QR | P1.2. Reuses the clip library and the PWA cache already in place |
 
@@ -129,9 +129,9 @@ project exists to serve, so the branching logic gets direct test coverage.
 
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
-| 4.1 | Every exchange logged with direction, text, and timestamp | 6 | `todo` |
-| 4.2 | Full transcript stored only on the patient's own device, not uploaded | 6 | `todo` |
-| 4.3 | Patient can view, scroll, and delete their own transcript | 6 | `todo` |
+| 4.1 | Every exchange logged with direction, text, and timestamp | 6 | `done`, both directions |
+| 4.2 | Full transcript stored only on the patient's own device, not uploaded | 6 | `done`, no endpoint exists to send one, asserted by test |
+| 4.3 | Patient can view, scroll, and delete their own transcript | 6 | `done`, plus save a copy per ADR 026 |
 
 Architecture decision: the transcript is canonical in IndexedDB on the
 patient's device. The backend holds only the live exchange needed to keep the
@@ -200,7 +200,7 @@ A new feature reuses one of these. It does not invent a sixth.
 | 1 | Speech to sign video within 5 seconds for an average sentence | Timed instrumentation on the pipeline, measured under throttled network | `todo` |
 | 2 | Every interactive element satisfies Feedback and Affordance at minimum | Per screen checklist against SRS §4 before a screen is called finished | `todo` |
 | 3 | Vibration degrades gracefully where unsupported, never fails silently | Unit test with the Vibration API absent | `todo` |
-| 4 | Transcript never transmitted without explicit patient action | Satisfied by architecture, asserted by a test that no transcript endpoint exists | `todo` |
+| 4 | Transcript never transmitted without explicit patient action | Satisfied by architecture, asserted by a test that walks every route and fails if one could carry a transcript | `done` |
 | 5 | Usable under intermittent connectivity, core vocabulary cached | Service worker cache verified with the network offline in devtools | `todo` |
 | 6 | Works on current Chrome, Safari, Firefox, on Android and iOS | Manual device pass before submission | `todo` |
 

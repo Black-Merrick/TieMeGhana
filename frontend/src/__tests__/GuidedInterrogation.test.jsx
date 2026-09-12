@@ -74,6 +74,9 @@ const filmedLocations = [
 ];
 
 beforeEach(() => {
+  // The transcript persists on the device now, so it has to be cleared between
+  // tests or one consultation's record leaks into the next.
+  localStorage.clear();
   captionUtterance.mockResolvedValue(caption());
   fetchBodyLocations.mockResolvedValue(filmedLocations);
   speakResponse.mockResolvedValue({
@@ -99,6 +102,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -211,11 +215,11 @@ describe("the patient answering yes or no", () => {
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent(
+      expect(screen.getByTestId("transcript")).toHaveTextContent(
         "Did you vomit?",
       );
     });
-    expect(screen.getByTestId("exchange-log")).toHaveTextContent("Yes");
+    expect(screen.getByTestId("transcript")).toHaveTextContent("Yes");
   });
 
   it("records a no the same way", async () => {
@@ -225,7 +229,7 @@ describe("the patient answering yes or no", () => {
     await user.click(screen.getByTestId("choice-no"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent("No");
+      expect(screen.getByTestId("transcript")).toHaveTextContent("No");
     });
   });
 
@@ -238,7 +242,7 @@ describe("the patient answering yes or no", () => {
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent(
+      expect(screen.getByTestId("transcript")).toHaveTextContent(
         "confirmed by the doctor",
       );
     });
@@ -295,9 +299,9 @@ describe("asking where it hurts", () => {
     await user.click(screen.getByTestId("answer-option-STOMACH"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent("Stomach");
+      expect(screen.getByTestId("transcript")).toHaveTextContent("Stomach");
     });
-    expect(screen.getByTestId("exchange-log")).toHaveTextContent(
+    expect(screen.getByTestId("transcript")).toHaveTextContent(
       "tapped by the patient",
     );
   });
@@ -368,20 +372,37 @@ describe("asking where it hurts", () => {
 });
 
 describe("the consultation log", () => {
-  it("shows nothing before the first answer", () => {
+  it("shows nothing before the first exchange", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
-    expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("transcript")).not.toBeInTheDocument();
   });
 
-  it("says plainly that the log is not saved yet", async () => {
+  it("says the record is kept on this device and nowhere else", async () => {
+    // FR 4.2 and NFR 4. The patient has to be able to see that, because it is
+    // the reason they would use this rather than bring a relative to interpret.
     const user = await askFreely();
 
     await waitFor(() => screen.getByTestId("choice-yes"));
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("log-not-saved")).toBeInTheDocument();
+      expect(screen.getByTestId("transcript-privacy")).toBeInTheDocument();
+    });
+  });
+
+  it("records the question as well as the answer, both directions", async () => {
+    // FR 4.1 requires both directions, so a record showing only answers would
+    // not say what the patient was actually asked.
+    const user = await askFreely();
+
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
+
+    await waitFor(() => {
+      const list = screen.getByTestId("transcript-list");
+      expect(list).toHaveTextContent("Did you vomit?");
+      expect(list).toHaveTextContent("Yes");
     });
   });
 });

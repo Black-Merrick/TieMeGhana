@@ -6,8 +6,11 @@ import AnswerOptionGrid from "./AnswerOptionGrid.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
 import SpokenResponse from "./SpokenResponse.jsx";
+import TranscriptView from "./TranscriptView.jsx";
 import YesNoChoice from "./YesNoChoice.jsx";
 import useSpokenResponse from "../hooks/useSpokenResponse.js";
+import useTranscript from "../hooks/useTranscript.js";
+import { Direction } from "../transcript/transcript.js";
 
 /**
  * Guided Interrogation Mode, SRS FR 2.4 to FR 2.7.
@@ -33,7 +36,7 @@ const ANSWERED_BY = { PATIENT: "patient", DOCTOR: "doctor" };
 export default function GuidedInterrogation({ outputLanguage }) {
   const { result, status, send, clear } = useCaption();
   const spoken = useSpokenResponse();
-  const [exchanges, setExchanges] = useState([]);
+  const transcript = useTranscript();
   const [bodyLocations, setBodyLocations] = useState(null);
   const [awaitingLocation, setAwaitingLocation] = useState(false);
 
@@ -74,16 +77,16 @@ export default function GuidedInterrogation({ outputLanguage }) {
       outputLanguage,
     });
 
-    setExchanges((previous) => [
-      ...previous,
-      {
-        id: `${previous.length}`,
-        question: result?.transcript ?? "",
-        answer: answerText,
-        answeredBy,
-        at: new Date().toISOString(),
-      },
-    ]);
+    // FR 4.1. `answeredBy` is kept because FR 2.7 is specific: for a yes or no
+    // question it is the doctor's confirmation of what they observed that gets
+    // logged, so the record can never imply the patient tapped something they
+    // never touched.
+    transcript.record({
+      direction: Direction.TO_DOCTOR,
+      text: answerText,
+      answeredBy,
+    });
+
     setAwaitingLocation(false);
     clear();
   };
@@ -93,6 +96,8 @@ export default function GuidedInterrogation({ outputLanguage }) {
       sourceLanguage: "en",
       text: WHERE_DOES_IT_HURT,
     });
+    if (caption) recordQuestion(caption);
+
     // Only switch to the location grid if the question actually reached the
     // patient. Otherwise they would be asked to point at nothing.
     setAwaitingLocation(caption !== null);
@@ -100,7 +105,21 @@ export default function GuidedInterrogation({ outputLanguage }) {
 
   const askFreely = async (payload) => {
     setAwaitingLocation(false);
-    await send(payload);
+    const caption = await send(payload);
+
+    // FR 4.1, both directions. Recorded only once the question actually
+    // reached the patient, so a failed request does not leave the record
+    // claiming something was asked.
+    if (caption) recordQuestion(caption);
+  };
+
+  /** Put a question the patient was shown into the record. */
+  const recordQuestion = (caption) => {
+    transcript.record({
+      direction: Direction.TO_PATIENT,
+      text: caption.transcript,
+      caption: caption.caption,
+    });
   };
 
   return (
@@ -161,7 +180,10 @@ export default function GuidedInterrogation({ outputLanguage }) {
 
       <SpokenResponse status={spoken.status} result={spoken.result} />
 
-      {exchanges.length > 0 ? <ExchangeLog exchanges={exchanges} /> : null}
+      <TranscriptView
+        entries={transcript.entries}
+        onDiscard={transcript.discard}
+      />
     </section>
   );
 }
@@ -207,36 +229,4 @@ function BodyLocationAnswer({ locations, onChoose }) {
   }
 
   return <AnswerOptionGrid options={locations} onChoose={onChoose} />;
-}
-
-/**
- * Answers recorded so far this consultation.
- *
- * Held in memory for now. FR 4.1 to 4.3 make this a durable transcript on the
- * patient's own device, which is the next sprint, so the shape here already
- * matches what that will persist: direction, text, and a timestamp.
- */
-function ExchangeLog({ exchanges }) {
-  return (
-    <div className="log" data-testid="exchange-log">
-      <h2 className="log__title">This consultation</h2>
-      <ol className="log__list">
-        {exchanges.map((exchange) => (
-          <li key={exchange.id} className="log__entry">
-            <span className="log__question">{exchange.question}</span>
-            <span className="log__answer">{exchange.answer}</span>
-            <span className="log__by">
-              {exchange.answeredBy === ANSWERED_BY.DOCTOR
-                ? "confirmed by the doctor"
-                : "tapped by the patient"}
-            </span>
-          </li>
-        ))}
-      </ol>
-      <p className="log__warning" data-testid="log-not-saved">
-        Not saved yet. The durable transcript on the patient&apos;s own device
-        arrives with FR 4.1 to 4.3.
-      </p>
-    </div>
-  );
 }

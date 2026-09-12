@@ -685,3 +685,109 @@ body {
   margin: 0;
   font-size: 1.1rem;
 }
+
+/* The patient's record, FR 4.1 to 4.3. Presented as theirs, because the point
+   is that it reduces the pressure to bring a relative along to interpret. */
+.transcript {
+  margin-top: 2rem;
+  border-top: 1px solid #e3e8e6;
+  padding-top: 1.5rem;
+}
+
+.transcript__title {
+  font-size: 1.1rem;
+  margin: 0 0 0.4rem;
+  color: var(--colour-primary);
+}
+
+.transcript__privacy {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--colour-muted);
+}
+
+/* Scrollable per FR 4.3, so a long consultation stays readable without pushing
+   the delete and save controls off screen. */
+.transcript__list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.transcript__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background: #f4f7f6;
+}
+
+/* The patient's own words sit apart from the doctor's, so the record reads as
+   a conversation rather than a list. */
+.transcript__entry--to_doctor {
+  background: #eef5f1;
+  border-left: 3px solid var(--colour-primary);
+}
+
+.transcript__who {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--colour-muted);
+}
+
+.transcript__text {
+  flex: 1 1 12rem;
+}
+
+.transcript__by,
+.transcript__time {
+  font-size: 0.75rem;
+  color: var(--colour-muted);
+}
+
+.transcript__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.transcript__save,
+.transcript__delete,
+.transcript__cancel {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.transcript__save {
+  border: 2px solid var(--colour-primary);
+  background: transparent;
+  color: var(--colour-primary);
+  font-weight: 600;
+}
+
+.transcript__delete {
+  border: 1px solid var(--colour-offline);
+  background: transparent;
+  color: var(--colour-offline);
+}
+
+.transcript__cancel {
+  border: 1px solid #c8d2ce;
+  background: transparent;
+}
+
+.transcript__confirm {
+  font-weight: 600;
+}

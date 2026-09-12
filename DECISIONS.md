@@ -733,3 +733,69 @@ would be sent to the server, rejected, and turn an old visit into a broken
 consultation. `saveOutputLanguage` returns null when there is no visit, so a
 language cannot be set against a visit that already ended and inherited by the
 next patient.
+
+---
+
+## ADR 026, The transcript is deleted when the visit ends
+
+**Context.** FR 4.3 gives the patient a record they can view and delete. The
+abstract goes further: it promises a Deaf patient "documented proof of what the
+doctor actually communicated", which reads like something they keep.
+
+But this app runs on a device hospital staff hand from one patient to the next.
+A transcript that outlived its visit would show the next patient the previous
+patient's consultation. Those consultations are about pregnancy, sexually
+transmitted infections, and HIV status. Exposing one to a stranger is the
+precise harm the project exists to prevent, and it would be our doing rather
+than the hospital's.
+
+**Decision.** The transcript lives on the device for the duration of the visit
+and is deleted when the visit ends, by the same "New patient" control that
+clears the literacy answer. The patient can also delete it themselves at any
+time, per FR 4.3, behind a confirmation.
+
+Because it is deleted, the patient can take a copy: one tap produces a plain
+text file of the consultation. That is an explicit patient action, which is the
+exact wording NFR 4 uses for the only circumstance in which the transcript may
+leave the device.
+
+**Why.** The abstract's promise and the shared device are both real, and only
+one of them can be satisfied by persistence. Deleting and offering a copy
+satisfies both: the patient leaves with proof if they want it, and the next
+patient finds nothing.
+
+Keeping it would also make the privacy claim false in the most damaging way
+possible. Telling a Deaf patient their consultation is private, and then
+leaving it on a screen for the next person, is worse than never promising it.
+
+**Consequence.** Ending a visit destroys a record that cannot be recovered, so
+the "save a copy" button sits next to the transcript rather than behind
+anything. Two tests assert the deletion directly, including one that puts "I am
+HIV positive" in a transcript and checks the next patient cannot see it, because
+that is the case that actually matters.
+
+---
+
+## ADR 027, The transcript is stored in localStorage, not IndexedDB
+
+**Context.** ADR 002 said the transcript would be canonical in IndexedDB.
+
+**Decision.** `localStorage` instead.
+
+**Why.** A consultation's transcript is a few kilobytes of text. localStorage
+holds several megabytes, is synchronous, and works in the test environment
+without a polyfill, so the failure paths that matter, storage blocked in a
+private window, storage full, a corrupt record, are all directly testable.
+IndexedDB would buy capacity and asynchrony that text does not need, at the
+cost of a wrapper and a polyfill.
+
+**Consequence.** If the transcript ever holds audio or video, this decision is
+wrong and IndexedDB is the answer. Every read is wrapped, so an unavailable
+store reads as an empty transcript rather than taking down the consultation
+screen, and a write failure still returns the exchange to the caller so the
+consultation continues without it being saved.
+
+This supersedes the storage mechanism named in ADR 002. The substance of
+ADR 002, that the transcript is canonical on the device and never on a server,
+is unchanged and is what the absence tests in
+`core/test_no_transcript_endpoint.py` defend.

@@ -940,3 +940,88 @@ audio was stub silence. A bare audio body could not carry that.
 **Nothing is saved yet.** The consultation log is still in memory. FR 4.1 to
 4.3 make it a durable transcript on the patient's own device, which is the next
 sprint and completes P0.
+
+---
+
+## Sprint 6, The session transcript. P0 complete
+
+**Goal.** FR 4.1 to 4.3, the patient's own record of the consultation, and with
+it the last of P0.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `transcript/transcript.js` | The record, on the device, with every read and write guarded |
+| `useTranscript` | Reads what is already stored on mount, so a reload loses nothing |
+| `TranscriptView` | FR 4.3, view, scroll, delete behind a confirmation, and save a copy |
+| Both paths recording | FR 4.1, both directions, on the literate and guided paths alike |
+| `core/test_no_transcript_endpoint.py` | NFR 4, asserted against the API surface itself |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 104 passed |
+| Frontend suite | 208 passed, 17 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Production build | PWA builds |
+
+### The privacy property, and how it is defended
+
+FR 4.2 says the transcript is stored only on the patient's device. That is kept
+by there being nowhere to send one. Two tests walk the entire URL configuration
+and fail if any route's path or name suggests it could carry a consultation
+record, and a second pins the named API surface so adding an endpoint is a
+deliberate act rather than something that happens quietly.
+
+Tests about absence are easy to forget to write, and this is the one property
+the project's privacy claim rests on.
+
+The harder half is the shared device. A transcript that outlived its visit would
+show the next patient the previous patient's consultation, and these
+consultations are about pregnancy, sexually transmitted infections, and HIV
+status. So the transcript is deleted when the visit ends, by the same control
+that clears the literacy answer, and the patient can take a plain text copy
+first. One test puts "I am HIV positive" into a transcript, ends the visit, and
+checks the next patient sees nothing, because that is the case that actually
+matters. See ADR 026.
+
+### A decision revised
+
+ADR 002 said IndexedDB. The transcript is a few kilobytes of text, so
+localStorage is enough, synchronous, and testable without a polyfill, which
+means the failure paths that matter are directly covered: storage blocked,
+storage full, a corrupt record. Recorded as ADR 027, which supersedes only the
+storage mechanism in ADR 002, not its substance.
+
+### Problems hit, and the fixes
+
+**The stubbed localStorage had no `clear()`,** which the test hooks call, so
+four tests failed on teardown rather than on their subject. Stubs gained the
+method and the teardown now unstubs before clearing.
+
+**FR 2.7's attribution was stored but not shown.** The transcript kept whether
+an answer was the patient's tap or the doctor's confirmation, and then rendered
+neither. Two tests caught it. A patient reading their record later has to be
+able to tell which answers were their own, so it is displayed.
+
+**The route pinning test broke itself.** Normalizing regex anchors with
+`replace("^", "")` also gutted the character class in `[^/.]`, turning it into
+`[/.]`. Rewritten to compare route names, which are readable and stable, rather
+than patterns.
+
+### Where the project stands
+
+P0 is complete. The remaining work is not code:
+
+- **Filmed GhSL footage.** 95 glosses, zero usable clips. Captions and
+  questions correctly report they cannot be signed yet, and coverage appears
+  with no code change once footage is imported.
+- **Consultant review** of the question wording and emergency alerts.
+- **The NFR pass**: the five second budget under a throttled network, and a
+  Safari and iOS device check.
+
+P1, Emergency Visual Triage and Prescription Playback, is genuinely optional
+and was always scoped that way.

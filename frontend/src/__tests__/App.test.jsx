@@ -225,3 +225,61 @@ describe("the spoken output language", () => {
     expect(screen.queryByTestId("output-language")).not.toBeInTheDocument();
   });
 });
+
+
+describe("the transcript and the shared device", () => {
+  it("destroys the record when the visit ends", async () => {
+    // The most important privacy property in the app. This device is handed
+    // from one patient to the next, and these consultations are about
+    // pregnancy, sexually transmitted infections, and HIV status. Leaving one
+    // behind for a stranger to read is the precise harm the project exists to
+    // prevent. ADR 026.
+    const { appendEntry, Direction, readTranscript } = await import(
+      "../transcript/transcript.js"
+    );
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "I am HIV positive" });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("new-patient"));
+    await user.click(screen.getByTestId("new-patient"));
+
+    expect(readTranscript()).toEqual([]);
+  });
+
+  it("shows the next patient nothing from the previous consultation", async () => {
+    const { appendEntry, Direction } = await import(
+      "../transcript/transcript.js"
+    );
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "I am HIV positive" });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("new-patient"));
+    await user.click(screen.getByTestId("new-patient"));
+
+    await waitFor(() => screen.getByTestId("literacy-check"));
+    expect(screen.queryByText(/HIV positive/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the record across a reload within the same visit", async () => {
+    // A patient who reloads mid consultation must not lose what has been said,
+    // which is the other half of FR 4.2: stored on the device, and actually
+    // stored rather than held in memory.
+    const { appendEntry, Direction } = await import(
+      "../transcript/transcript.js"
+    );
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "Yes" });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("transcript-list")).toHaveTextContent("Yes");
+    });
+  });
+});
