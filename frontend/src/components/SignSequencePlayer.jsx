@@ -6,13 +6,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * ADR 008 returns an ordered playlist rather than a server stitched video, so
  * making the joins invisible is this component's whole job.
  *
- * It uses two stacked video elements rather than one. Swapping the `src` of a
- * single element forces the browser to tear down the current video, load the
- * next, and decode its first frame, which shows as a flash of black between
- * every word. Instead, while one element plays, the other already holds the
- * next clip fully loaded. When the first ends they swap, the next clip is
- * already decoded, and it starts on the following frame, so the sentence reads
- * as one video. See ADR 030.
+ * When the backend has stitched the sentence into a single file, that file is
+ * played directly: one video, one timeline, one duration. See ADR 031. That is
+ * the preferred path, because two clips played back to back still show two
+ * lengths in the control bar and restart the timer at every word, which reads
+ * as several videos however smooth the picture is.
+ *
+ * Without a stitched file, because ffmpeg is unavailable or the encode failed,
+ * it falls back to two stacked video elements. Swapping the `src` of a single
+ * element forces the browser to tear down the current video, load the next, and
+ * decode its first frame, which shows as a flash of black between every word.
+ * So while one element plays, the other already holds the next clip fully
+ * loaded, and when the first ends they swap. See ADR 030.
  *
  * This is the only sign video player in the app, per SRS section 4.4. A
  * doctor's question, a patient's answer option, and a prescription instruction
@@ -34,6 +39,9 @@ export default function SignSequencePlayer({
     () => (sequence?.segments ?? []).flatMap((segment) => segment.clips),
     [sequence],
   );
+
+  // One file for the whole sentence, when the backend could produce it.
+  const stitched = sequence?.stitched_video_url ?? null;
 
   const [index, setIndex] = useState(0);
   const [active, setActive] = useState(0);
@@ -77,6 +85,29 @@ export default function SignSequencePlayer({
         <p className="player__message">
           No sign video available for this message yet.
         </p>
+      </div>
+    );
+  }
+
+  // The whole sentence as one file. No handover, no second element, and the
+  // control bar shows the sentence's own length rather than a single word's.
+  if (stitched) {
+    return (
+      <div className="player">
+        <div className="player__stage">
+          <video
+            data-testid="sign-video"
+            className="player__video"
+            src={stitched}
+            onEnded={onFinished}
+            controls={controls}
+            loop={loop}
+            playsInline
+            autoPlay
+            preload="auto"
+            muted
+          />
+        </div>
       </div>
     );
   }

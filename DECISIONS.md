@@ -904,3 +904,57 @@ concatenation with ffmpeg, cached per resolved sentence so the cost is paid
 once. That is a larger change and it gives up per clip caching, so it is worth
 doing only if this proves insufficient with clips that are actually filmed.
 Recorded here so the option is not forgotten.
+
+---
+
+## ADR 031, A sentence is concatenated into one video file
+
+**Context.** ADR 008 chose a clip playlist, and ADR 030 made the picture
+continuous with two buffers. That removed the flash of black, but the result is
+still several videos, and it shows: the native control bar reports each clip's
+own length, the timeline restarts at every word, and a two word sentence reads
+"0:01 / 0:01" twice rather than one duration.
+
+FR 1.7 says matched clips are "stitched into a single sign video". The playlist
+was a reasonable reading of that. Watching it is not: a patient sees a sequence
+of short videos, not a sentence.
+
+**Decision.** The backend concatenates the resolved clips into one real MP4 with
+ffmpeg and returns its URL alongside the sequence. The player uses that file
+when it exists: one video, one timeline, one duration.
+
+Each stitched file is cached under a key derived from the exact ordered clips it
+contains, so a sentence is encoded once and every later request for it is served
+from disk. Order is part of the key, because "head hurts" and "hurts head" use
+the same clips and are different sentences.
+
+**Why this is worth reversing ADR 008's reasoning.** Two of the three
+objections in ADR 008 were about cost rather than correctness, and caching
+answers both. The first encode of a novel sentence costs a second or two; every
+repeat costs nothing, and a consultation repeats its phrases constantly. The
+third objection, that a stitched file cannot be cached per clip, still stands,
+which is why the clips themselves are still served and cached individually for
+FR 6.2's offline replay. The stitched file is an addition, not a replacement.
+
+The remaining cost is ffmpeg in the runtime image, which is one apt package.
+
+**Why re-encode rather than stream copy.** Clips are filmed on whatever phone
+is to hand, so they differ in resolution, aspect ratio, frame rate and codec.
+Concatenation without normalizing either refuses outright or produces a
+stretched result. Each input is scaled and **padded** to a common frame, never
+cropped, because cropping could cut a signer's hands out of shot and a sign
+without its hands is a different sign or none at all.
+
+Audio is dropped entirely. Sign clips carry no meaningful sound, and mismatched
+audio streams are the commonest reason concatenation fails.
+
+**Consequence.** ffmpeg is a soft dependency, not a hard one. If it is absent,
+the encode fails, or it times out, the endpoint returns no stitched URL and the
+player falls back to ADR 030's two buffer playlist. The patient still sees every
+sign. That fallback is tested, because a missing tool must never break a
+consultation.
+
+The encode writes to a temporary file and moves it into place only on success,
+since a truncated file under a trusted cache key would be served forever.
+Source paths are resolved strictly under `MEDIA_ROOT`, so a clip URL pointing
+anywhere else is refused rather than read off disk.

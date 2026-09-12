@@ -10,6 +10,7 @@ minutes on a machine that already has Python, Node, and Docker.
 | Python | 3.13 | 3.12 also fine |
 | Node | 22 or newer | |
 | Docker | any recent | Only needed for PostgreSQL, or for the full stack |
+| ffmpeg | any recent | Stitches a sentence into one video. Without it clips play in sequence instead |
 
 ## 1. Backend
 
@@ -154,6 +155,26 @@ Twi. That is deliberate, fabricated clinical Twi would look right in a demo and
 be wrong in front of a Twi speaking judge. The app shows a visible notice
 whenever a caption came from the stub, so it can never be mistaken for real
 translation.
+
+## ffmpeg, so a sentence plays as one video
+
+A signed sentence is several clips. ffmpeg concatenates them into a single
+video file so the patient sees one continuous utterance with one timeline,
+rather than several clips each restarting the timer.
+
+```bash
+sudo apt install ffmpeg      # Debian, Ubuntu, Kali
+brew install ffmpeg          # macOS
+```
+
+Without ffmpeg the app still works: the clips play back to back through two
+buffers, which looks continuous but shows each clip's own length in the control
+bar. The backend logs that it is falling back, and no request fails. See
+ADR 030 and ADR 031.
+
+Each stitched sentence is encoded once and cached in
+`backend/media/stitched/`, keyed by the exact ordered clips it contains, so a
+repeated sentence is served from disk.
 
 ## Speaking instead of typing
 

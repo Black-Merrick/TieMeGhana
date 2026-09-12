@@ -191,3 +191,55 @@ describe("SignSequencePlayer", () => {
     );
   });
 });
+
+describe("a stitched sentence", () => {
+  const stitchedSequence = {
+    ...sequence,
+    stitched_video_url: "/media/stitched/abc123.mp4",
+  };
+
+  it("plays the whole sentence as one video", () => {
+    // ADR 031. Two clips played back to back still show two lengths in the
+    // control bar and restart the timer at every word, which reads as several
+    // videos however smooth the picture is.
+    render(<SignSequencePlayer sequence={stitchedSequence} />);
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute(
+      "src",
+      "/media/stitched/abc123.mp4",
+    );
+  });
+
+  it("needs no second buffer, because there is no handover", () => {
+    render(<SignSequencePlayer sequence={stitchedSequence} />);
+
+    expect(screen.queryByTestId("sign-video-preload")).not.toBeInTheDocument();
+  });
+
+  it("shows no per clip progress, since it is one clip now", () => {
+    // "Sign 2 of 2" would contradict what the patient is watching.
+    render(<SignSequencePlayer sequence={stitchedSequence} />);
+
+    expect(screen.queryByText(/Sign \d+ of \d+/)).not.toBeInTheDocument();
+  });
+
+  it("reports the end of the sentence once", () => {
+    const onFinished = vi.fn();
+    render(
+      <SignSequencePlayer sequence={stitchedSequence} onFinished={onFinished} />,
+    );
+
+    fireEvent.ended(screen.getByTestId("sign-video"));
+
+    expect(onFinished).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the clip playlist when nothing was stitched", () => {
+    // ffmpeg unavailable, or the encode failed. The patient still sees every
+    // sign, just as separate clips.
+    render(<SignSequencePlayer sequence={{ ...sequence, stitched_video_url: null }} />);
+
+    expect(screen.getByTestId("sign-video-preload")).toBeInTheDocument();
+    expect(screen.getByText(/Sign 1 of 3/)).toBeInTheDocument();
+  });
+});

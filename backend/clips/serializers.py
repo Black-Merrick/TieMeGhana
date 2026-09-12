@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from clips.models import SignClip
+from clips.stitching import stitched_video_url
 
 
 class SignClipSerializer(serializers.ModelSerializer):
@@ -59,6 +60,21 @@ class SignSequenceSerializer(serializers.Serializer):
     total_duration_ms = serializers.IntegerField()
     fingerspelled_tokens = serializers.ListField(child=serializers.CharField())
     unavailable_tokens = serializers.ListField(child=serializers.CharField())
+    stitched_video_url = serializers.SerializerMethodField()
+
+    def get_stitched_video_url(self, sequence) -> str | None:
+        """
+        One video file containing the whole sentence, FR 1.7 and ADR 031.
+
+        Null when there is nothing to stitch, when ffmpeg is unavailable, or
+        when encoding fails. The player falls back to playing the clips in
+        sequence, so the patient still sees every sign either way.
+
+        Encoding happens here, on first request for a given sentence, and is
+        cached by the exact ordered clips it contains. Every later request for
+        the same sentence is served from disk.
+        """
+        return stitched_video_url(sequence)
 
 
 class SignSequenceRequestSerializer(serializers.Serializer):

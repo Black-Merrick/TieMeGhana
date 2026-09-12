@@ -5,6 +5,13 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# ffmpeg concatenates a resolved sentence into one video file, per ADR 031.
+# Without it the app still works, playing the clips in sequence instead, but
+# the patient sees several videos rather than one continuous utterance.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Installed before the source is copied so a code change does not invalidate

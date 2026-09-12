@@ -1128,3 +1128,81 @@ concatenation with ffmpeg, cached per resolved sentence. That gives up per clip
 caching and adds a runtime dependency, so it is worth doing only if this proves
 insufficient with clips that are actually filmed. Noted in ADR 030 so the
 option is not lost.
+
+---
+
+## Really stitching the sentence into one video
+
+**The complaint, which was right.** Two buffers made the picture continuous,
+but the control bar still showed each clip's own length and the timeline
+restarted at every word. A two word sentence read "0:01 / 0:01" twice. The
+patient sees a sequence of short videos, not a sentence, however smooth the
+transition is.
+
+**What it does now.** The backend concatenates the resolved clips into one real
+MP4 with ffmpeg and returns its URL with the sequence. The player uses that
+file when it exists: one video, one timeline, one duration, and no "Sign 2 of
+2" caption contradicting what is on screen. See ADR 031.
+
+Each stitched sentence is encoded once and cached under a key derived from the
+exact ordered clips in it, so repeats are served from disk. A consultation
+repeats its phrases constantly, which is what makes this affordable inside
+NFR 1's budget.
+
+### Why this reverses part of ADR 008
+
+Two of ADR 008's three objections to stitching were about cost, and caching
+answers both: the first encode of a novel sentence costs a second or two, every
+repeat costs nothing. The third, that a stitched file cannot be cached per clip,
+still stands, which is why individual clips are still served and cached for
+FR 6.2's offline replay. The stitched file is an addition, not a replacement.
+
+### Design details that matter
+
+**Padded, never cropped.** Clips come off whatever phone was to hand, so they
+differ in resolution and aspect ratio and have to be normalized before concat
+will accept them. Cropping to fit could cut a signer's hands out of frame, and
+a sign without its hands is a different sign or none at all.
+
+**Audio dropped.** Sign clips carry no meaningful sound, and mismatched audio
+streams are the commonest reason concatenation fails.
+
+**Written aside, then moved.** A failed or timed out encode would otherwise
+leave a truncated file under a cache key that is trusted forever.
+
+**Paths anchored to MEDIA_ROOT.** A clip URL pointing anywhere else is refused
+rather than read off disk.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 121 passed, 17 new for stitching |
+| Frontend suite | 235 passed |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+
+ffmpeg is not installed on this machine, and is not assumed by the tests. The
+encode itself is never run in them. What is tested is everything around it: the
+cache key, that a cached file is reused rather than re-encoded, that a missing
+tool or a failed encode falls back to the playlist rather than breaking the
+consultation, and that the command built is the one intended.
+
+### Problems hit, and the fixes
+
+**A null byte ended up in the source.** `" ".join(...)` was written with the
+separator as a literal `\0`, and Python refused the whole module with
+"source code string cannot contain null bytes", reported against a different
+file than the one at fault. Found by scanning every Python file for null bytes.
+The separator is now a newline, which cannot appear in a path and so is an
+unambiguous delimiter for hashed material anyway.
+
+### Still needed locally
+
+ffmpeg is not installed here, so the fallback path is what runs until it is:
+
+```bash
+sudo apt install ffmpeg
+```
+
+It is already in the backend Dockerfile, so the containerized stack and any
+deployment have it.
