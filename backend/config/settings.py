@@ -185,6 +185,15 @@ CORS_ALLOWED_ORIGINS = [
 # deterministic stub implementation.
 KHAYA_API_KEY = os.environ.get("KHAYA_API_KEY", "")
 
+# Which language provider to use: auto, stub, or khaya.
+#
+# The project runs on Khaya's free tier, where every translation, transcription,
+# and synthesis call spends metered credit. `auto` would burn that credit on
+# ordinary development the moment a key is present, so day to day work sets
+# this to `stub` and only switches to `khaya` for a deliberate verification
+# run. See ADR 015.
+LANGUAGE_PROVIDER = os.environ.get("LANGUAGE_PROVIDER", "auto").strip().lower()
+
 # Transport security, applied outside development only. Gated on an explicit
 # variable rather than on DEBUG alone, because a hackathon demo may legitimately
 # run over plain http on a local network, where forcing an HTTPS redirect would

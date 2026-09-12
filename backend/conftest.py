@@ -17,6 +17,23 @@ def api_client() -> APIClient:
 
 
 @pytest.fixture(autouse=True)
+def never_call_a_real_language_service(settings):
+    """
+    Force the stub language provider for every test.
+
+    Khaya's free tier is metered, so a test that reached it would spend real
+    credit, and would also make the suite slow and dependent on someone else's
+    uptime. Autouse means this holds even if a developer has a key in their
+    .env, rather than relying on each test module to remember.
+
+    Tests about provider selection itself override these two settings
+    explicitly, which is the only place that should.
+    """
+    settings.LANGUAGE_PROVIDER = "stub"
+    settings.KHAYA_API_KEY = ""
+
+
+@pytest.fixture(autouse=True)
 def isolated_media_root(settings, tmp_path):
     """
     Point MEDIA_ROOT at a temporary directory for every test.

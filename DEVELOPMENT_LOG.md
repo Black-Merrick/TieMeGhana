@@ -271,3 +271,147 @@ Unchanged from sprint 0, and none of it blocked this sprint: the Khaya API key,
 filmed GhSL footage, alphabet footage for FR 1.6, and consultant review of the
 question bank. Sprint 1 made the first three visible as data rather than as a
 note in a file, which is the point of ADR 009.
+
+---
+
+## Sprint 2, Khaya language layer and doctor captioning
+
+**Branch.** `sprint-1-ghsl-clip-library`, continued. Sprint 2 built on sprint
+1 directly rather than branching again, since nothing had been pushed and the
+two together are what completes P0.1.
+
+**Goal.** Complete P0.1: FR 1.1 to FR 1.4 plus the player for FR 1.7, so the
+headline demo runs end to end.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `core/language/` | Provider interface for ASR, translation, and TTS, with Khaya and stub implementations |
+| `LANGUAGE_PROVIDER` setting | `auto`, `stub`, or `khaya`. Protects metered free tier credit, ADR 015 |
+| `POST /api/caption/` | FR 1.1 to 1.7 in one request, so NFR 1's budget is spent on work rather than round trips |
+| `SignSequencePlayer` | Plays a resolved sequence back to back with the next clip preloaded, ADR 008 |
+| `DoctorConsultation` | Language choice, message input, caption and sign video shown together, coverage notices |
+| `manage.py import_clips` | Imports filmed footage from a folder named by gloss, without approving it |
+| `backend/footage/` | Where recordings go, with a README covering naming, approval, and re-import |
+
+### Reproducing it
+
+```bash
+cd backend && source .venv/bin/activate && pytest        # 71 tests
+cd ../frontend && npm run lint && npm test && npm run build   # 20 tests
+```
+
+Exercising the caption pipeline, server on 8001, stub provider:
+
+```bash
+curl -X POST http://127.0.0.1:8001/api/caption/ \
+  -H 'Content-Type: application/json' \
+  -d '{"source_language":"en","text":"Where does it hurt?"}'
+```
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 71 passed |
+| Frontend suite | 20 passed, 3 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Production build | PWA builds, service worker generated |
+| Live Khaya, one verification run | "Where does it hurt?" returned "Ɛhe na ɛyɛ yaw?" |
+
+### Live verification of Khaya, done once, deliberately
+
+Run on 2026-09-12 with a real key, then the provider was switched back to the
+stub because the free tier is metered.
+
+| Endpoint | Result |
+| --- | --- |
+| `POST /v2/translate` | 200, correct Twi, no deprecation headers |
+| `POST /tts/v1/tts` | 200, 51 KB genuine WAV, `RIFF....WAVE` header |
+| `POST /asr/v1/transcribe` | 400 on deliberately invalid audio, confirming route and credential |
+
+**The v1 translate endpoint is past its sunset date.** It answered correctly,
+but with `deprecation: true` and `sunset: 2026-09-06`, which had already
+passed, plus a `link` header naming `/v2/translate` as successor. We switched
+to v2 and a test now guards against reverting. See ADR 013.
+
+This was only visible because the verification read response headers rather
+than just the status code. The call succeeded, so nothing else would have
+surfaced it.
+
+### The significant bug this sprint found
+
+**Sign lookup was resolving clips from the Twi caption instead of the English
+text.** Every test passed. Against real Khaya it failed completely:
+"Where does it hurt?" translates to "Ɛhe na ɛyɛ yaw?", which tokenizes to
+`ɛhe`, `na`, `ɛyɛ`, `yaw`, and the clip library is keyed on English glosses
+like `WHERE` and `HURT`. Not one token could ever match.
+
+The stub hid it perfectly. Its translation returns the input unchanged, so the
+English caption and the English lookup text were the same string, and the two
+code paths were indistinguishable. The bug was invisible under the stub and
+total under the real provider.
+
+Fixed per ADR 014: one utterance now produces a Twi caption for the patient to
+read and a separate English lookup text for the clip library, still one
+translation call either way. A `directional_provider` test fixture translates
+with a visible direction tag, so a test can now prove which of the two the
+lookup used. Three tests cover it, including a regression guard asserting the
+Twi caption is never used as the lookup key.
+
+Worth carrying forward as a habit: where a stub's simplification could hide a
+direction or a mapping, the test needs a provider that transforms visibly, not
+one that passes input through.
+
+### Problems hit, and the fixes
+
+**A real API key was placed in `backend/.env.example`, which is committed.**
+Caught before any commit, so the key never entered git history, verified with
+`git log --all -S`. Moved to `backend/.env`, which is gitignored, and the
+template restored to a blank value. Worth knowing that the `detect-private-key`
+pre commit hook would not have caught this: it detects SSH and PEM keys, not
+API tokens.
+
+**The player crashed when given a shorter sequence.** Resetting the clip index
+in a `useEffect` runs after the render that needed the new value, so the render
+that first saw the shorter sequence still read the old out of range index. The
+fix adjusts state during render, React's documented pattern for a prop change,
+plus a clamp, because a render-phase state update re-renders but does not abort
+the pass that triggered it. The test written for this caught it immediately.
+
+**The ESLint pre commit hook failed on every file.** pre-commit reports paths
+relative to the repository root, but ESLint must run from `frontend/` to pick
+up its flat config. The hook now runs `npm run lint` without passing filenames.
+
+**Two dev servers were started against a stale URLconf.** `runserver
+--noreload` does not pick up new apps, so `/api/caption/` returned 404 twice
+before the server was restarted. Not a code problem, but it wasted time twice
+and is worth remembering.
+
+**The test suite could reach a metered service.** Provider selection read only
+"is a key present", so a developer with a key in `.env` would spend credit on
+every test run. An autouse fixture now forces the stub and clears the key for
+the whole suite, and `pytest` can no longer cost money.
+
+### Known limitations, deliberate
+
+**Microphone capture is not built.** The endpoint transcribes uploaded audio
+and the ASR route is verified reachable, but nothing in the browser records it
+yet, so a doctor types. `MediaRecorder` cannot be meaningfully tested in jsdom,
+so this is scheduled with a real device pass rather than marked done.
+
+**No footage exists, so nothing resolves.** 92 glosses recorded, 0 usable.
+Captions correctly report every word as unavailable. This is the critical path
+now, and it is not an engineering task. Drop recordings in `backend/footage/`
+and run `import_clips`.
+
+**Clip duration is entered by hand**, unchanged from sprint 1.
+
+### Note on the development machine
+
+Placeholder footage was briefly attached to `WHERE` and `HURT` in the local
+SQLite database to demonstrate resolution, then removed, because fake footage
+marked as consultant approved contradicts the safety property the library
+exists to enforce. The library is back to 92 awaiting footage, 0 resolvable.

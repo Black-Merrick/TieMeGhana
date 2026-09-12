@@ -125,12 +125,54 @@ reload, which is why this is not the default workflow.
 ## Khaya AI credentials
 
 Twi speech recognition, translation, and text to speech run through GhanaNLP's
-Khaya AI. Put the key in `backend/.env`:
+Khaya AI. Put the key in `backend/.env`, **never in `.env.example`**, which is
+committed:
 
 ```
 KHAYA_API_KEY=your-key-here
+LANGUAGE_PROVIDER=stub
 ```
 
-Left blank, language operations fall back to a deterministic stub. That is
-deliberate: the test suite and CI must never depend on a live third party
-service, or a network problem during judging looks like a broken app.
+### We are on the free tier, so keep `LANGUAGE_PROVIDER=stub`
+
+Every translation, transcription, and speech call spends metered credit.
+`LANGUAGE_PROVIDER=stub` means the key can stay configured without being used,
+so ordinary development cannot exhaust the quota you need for judging.
+
+Switch it deliberately when you actually want to test against real Twi, then
+switch it straight back:
+
+```
+LANGUAGE_PROVIDER=khaya
+```
+
+The whole test suite forces the stub regardless of your `.env`, so running
+`pytest` never costs credit.
+
+With the stub, translation returns the text **unchanged** rather than inventing
+Twi. That is deliberate, fabricated clinical Twi would look right in a demo and
+be wrong in front of a Twi speaking judge. The app shows a visible notice
+whenever a caption came from the stub, so it can never be mistaken for real
+translation.
+
+## Adding filmed GhSL clips
+
+The clip library starts with 92 glosses recorded and **zero** usable clips,
+because no footage has been filmed yet. Until footage exists, captions
+correctly report every word as unavailable.
+
+```bash
+cd backend
+python manage.py seed_clips --report   # what the library still needs
+```
+
+Drop recordings into `backend/footage/`, named after their English gloss
+(`head.webm`, `hurt.mp4`, `a.webm`), then:
+
+```bash
+python manage.py import_clips footage/
+```
+
+Imported footage is filmed but **not approved**, so it still cannot reach a
+patient. See [backend/footage/README.md](backend/footage/README.md) for the
+naming rules, the approval step, and why re-importing resets approval.

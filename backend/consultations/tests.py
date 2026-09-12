@@ -25,6 +25,95 @@ def stub_provider(settings):
     settings.KHAYA_API_KEY = ""
 
 
+@pytest.fixture
+def directional_provider(monkeypatch):
+    """
+    A provider whose translation is visibly directional.
+
+    The real stub translates by returning the input unchanged, which makes
+    English input and its Twi caption identical. That is honest, but it means a
+    test cannot tell which of the two the clip lookup actually used. This
+    provider tags its output so the direction is observable.
+    """
+    from core.language.base import Language, LanguageProvider
+
+    class DirectionalStub(LanguageProvider):
+        name = "directional-stub"
+
+        def transcribe(self, audio, *, language):
+            return "spoken words"
+
+        def translate(self, text, *, source, target):
+            return f"{'TWI' if target == Language.TWI else 'EN'}:{text}"
+
+        def synthesize(self, text, *, language):
+            return b"audio"
+
+    monkeypatch.setattr(
+        "consultations.services.get_language_provider", lambda: DirectionalStub()
+    )
+
+
+@pytest.mark.django_db
+class TestSignLookupLanguage:
+    """
+    GhSL clips are keyed on English glosses, per the SRS definition of Gloss
+    and FR 1.5. The Twi caption is what the patient reads. Confusing the two
+    means every lookup fails silently, and only against a real translator,
+    which is exactly how this was missed at first.
+    """
+
+    def test_english_input_looks_up_clips_by_the_english_words(
+        self, api_client, directional_provider, make_clip, alphabet
+    ):
+        make_clip("HEAD")
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "head"},
+            format="json",
+        )
+
+        body = response.json()
+        # The caption the patient reads is Twi.
+        assert body["caption"] == "TWI:head"
+        # The clips come from the English word, so the sign still matches.
+        assert body["sign_lookup_text"] == "head"
+        assert body["sequence"]["segments"][0]["match"] == "gloss"
+
+    def test_twi_input_is_translated_to_english_for_clip_lookup(
+        self, api_client, directional_provider, make_clip, alphabet
+    ):
+        make_clip("HEAD")
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "tw", "text": "head"},
+            format="json",
+        )
+
+        body = response.json()
+        # Twi input is already the caption, no translation needed for display.
+        assert body["caption"] == "head"
+        # But it must be translated to English before looking up glosses.
+        assert body["sign_lookup_text"] == "EN:head"
+
+    def test_a_twi_caption_is_never_used_as_the_gloss_lookup_key(
+        self, api_client, directional_provider, make_clip, alphabet
+    ):
+        # The regression guard. If lookup ever reverts to using the caption,
+        # this fails, because the Twi caption carries the TWI: tag.
+        make_clip("HEAD")
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "head"},
+            format="json",
+        )
+
+        assert "TWI:" not in response.json()["sequence"]["source_text"]
+
+
 @pytest.mark.django_db
 class TestCaptionFromTypedText:
     def test_english_text_is_translated_and_resolved_to_clips(

@@ -16,6 +16,13 @@ from core.language import Language, get_language_provider
 # chooses the doctor's *input* language, not the patient's output language.
 CAPTION_LANGUAGE = Language.TWI
 
+# GhSL clips are keyed on English glosses, per the SRS definition of Gloss and
+# FR 1.5. So the text used to look up signs is English, and it is NOT the Twi
+# caption. Resolving from the caption would tokenize Twi words against English
+# glosses and never match, which is invisible against a translator that returns
+# its input unchanged and total against a real one.
+SIGN_LOOKUP_LANGUAGE = Language.ENGLISH
+
 
 @dataclass(frozen=True)
 class Caption:
@@ -25,6 +32,7 @@ class Caption:
     transcript: str
     caption: str
     caption_language: str
+    sign_lookup_text: str
     translation_applied: bool
     language_provider: str
     sequence: SignSequence
@@ -51,14 +59,16 @@ def build_caption(
         else text
     )
 
-    # FR 1.3 translates only when needed. A doctor already speaking Twi should
-    # not have their words round tripped through English, which would lose
-    # meaning for no benefit.
-    needs_translation = source_language != CAPTION_LANGUAGE
-    caption = (
-        provider.translate(transcript, source=source_language, target=CAPTION_LANGUAGE)
-        if needs_translation
-        else transcript
+    # Two different renderings of the same utterance, for two different
+    # audiences. The caption is Twi because that is what the patient reads. The
+    # lookup text is English because that is what the clip library is keyed on.
+    # FR 1.3 translates only when needed, so whichever of the two already
+    # matches the transcript costs no call, and the other costs exactly one.
+    caption = _rendered_in(
+        transcript, provider, source=source_language, target=CAPTION_LANGUAGE
+    )
+    sign_lookup_text = _rendered_in(
+        transcript, provider, source=source_language, target=SIGN_LOOKUP_LANGUAGE
     )
 
     return Caption(
@@ -66,7 +76,15 @@ def build_caption(
         transcript=transcript,
         caption=caption,
         caption_language=str(CAPTION_LANGUAGE),
-        translation_applied=needs_translation,
+        sign_lookup_text=sign_lookup_text,
+        translation_applied=source_language != CAPTION_LANGUAGE,
         language_provider=provider.name,
-        sequence=resolve_sign_sequence(caption),
+        sequence=resolve_sign_sequence(sign_lookup_text),
     )
+
+
+def _rendered_in(text, provider, *, source: Language, target: Language) -> str:
+    """Return the text in the target language, translating only if it differs."""
+    if source == target:
+        return text
+    return provider.translate(text, source=source, target=target)

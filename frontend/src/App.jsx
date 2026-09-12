@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
+import DoctorConsultation from "./components/DoctorConsultation.jsx";
 
 /**
- * Application shell for the Sprint 0 walking skeleton.
+ * Application shell.
  *
- * Its only job right now is to prove the frontend, the API, and the database
- * are connected end to end. Feature screens replace this content as each P0
- * item lands.
+ * Holds the things SRS section 4.1 requires to be permanently visible rather
+ * than hidden behind a menu, and hosts whichever consultation screen is
+ * active. Right now that is the doctor to patient flow. The literacy check
+ * that routes a patient to Guided Interrogation instead arrives with P0.2.
  */
 export default function App() {
   const [connection, setConnection] = useState("checking");
@@ -42,6 +44,8 @@ export default function App() {
         />
         {CONNECTION_LABELS[connection]}
       </p>
+
+      <DoctorConsultation />
     </main>
   );
 }

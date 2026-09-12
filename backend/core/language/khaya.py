@@ -1,15 +1,18 @@
 """
 GhanaNLP Khaya AI provider, per ADR 003.
 
-Endpoint paths and payload shapes are configurable rather than hardcoded,
-because they have NOT yet been verified against a live Khaya account. The team
-has no API key at the time of writing, so the values below are the documented
-shapes and must be confirmed the moment a key arrives. That verification is
-tracked in BACKLOG.md.
+Every path and payload below was verified against a live Khaya account on
+2026-09-12. Translation returned real Twi, synthesis returned a genuine WAV,
+and transcription rejected deliberately invalid audio with a 400 rather than a
+404, confirming the route and credential.
 
-This is precisely why the provider interface exists: if an endpoint or payload
-turns out to differ, the change is confined to this one file and nothing else
-in the system moves.
+Translation uses v2 deliberately. The v1 endpoint still answers, but it
+responds with `deprecation: true` and a `sunset` date of 2026-09-06 that has
+already passed, so it could be switched off without notice. See ADR 013.
+
+Paths stay module level constants rather than inline literals so a future
+version bump is one edit, which is the whole reason this provider sits behind
+an interface.
 """
 
 import requests
@@ -18,6 +21,11 @@ from django.conf import settings
 from core.language.base import Language, LanguageError, LanguageProvider
 
 DEFAULT_BASE_URL = "https://translation-api.ghananlp.org"
+
+# v2, not v1. v1 is past its announced sunset date, see the module docstring.
+TRANSLATE_PATH = "/v2/translate"
+TRANSCRIBE_PATH = "/asr/v1/transcribe"
+SYNTHESIZE_PATH = "/tts/v1/tts"
 
 # Khaya is fronted by Azure API Management, which expects the credential in
 # this header rather than as a bearer token.
@@ -45,7 +53,7 @@ class KhayaLanguageProvider(LanguageProvider):
 
     def transcribe(self, audio: bytes, *, language: Language) -> str:
         response = self._request(
-            "/asr/v1/transcribe",
+            TRANSCRIBE_PATH,
             params={"language": str(language)},
             data=audio,
             content_type="application/octet-stream",
@@ -54,14 +62,14 @@ class KhayaLanguageProvider(LanguageProvider):
 
     def translate(self, text: str, *, source: Language, target: Language) -> str:
         response = self._request(
-            "/v1/translate",
+            TRANSLATE_PATH,
             json={"in": text, "lang": f"{source}-{target}"},
         )
         return self._read_text(response)
 
     def synthesize(self, text: str, *, language: Language) -> bytes:
         response = self._request(
-            "/tts/v1/tts",
+            SYNTHESIZE_PATH,
             json={"text": text, "language": str(language)},
         )
         return response.content

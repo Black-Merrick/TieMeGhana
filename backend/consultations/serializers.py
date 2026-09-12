@@ -51,6 +51,10 @@ class CaptionResponseSerializer(serializers.Serializer):
     transcript = serializers.CharField()
     caption = serializers.CharField()
     caption_language = serializers.CharField()
+    # The English text the clips were looked up from. Exposed because when a
+    # sign is missing, the doctor needs to see which English word was searched
+    # for, which is not always the word they typed.
+    sign_lookup_text = serializers.CharField()
     translation_applied = serializers.BooleanField()
     language_provider = serializers.CharField()
     sequence = SignSequenceSerializer()

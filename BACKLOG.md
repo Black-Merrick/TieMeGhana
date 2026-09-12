@@ -53,13 +53,13 @@ Not a feature, the baseline that makes every later sprint verifiable.
 
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
-| 1.1 | Doctor selects spoken input language, English or Twi, before speaking | 2 | `todo` |
-| 1.2 | Speech transcribed via ASR | 2 | `todo` |
-| 1.3 | English text translated to Twi if needed | 2 | `todo` |
-| 1.4 | Twi caption displayed on screen | 2 | `todo` |
+| 1.1 | Doctor selects spoken input language, English or Twi, before speaking | 2 | `done` |
+| 1.2 | Speech transcribed via ASR | 2 | `wip`, endpoint wired, mic capture pending |
+| 1.3 | English text translated to Twi if needed | 2 | `done`, verified against live Khaya |
+| 1.4 | Twi caption displayed on screen | 2 | `done` |
 | 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `done` |
 | 1.6 | Unmatched words trigger fingerspelling fallback, letter clips in sequence | 1 | `done` |
-| 1.7 | Matched clips stitched into one sign video, played alongside the caption | 1, 2 | `wip`, resolution done, player pending |
+| 1.7 | Matched clips stitched into one sign video, played alongside the caption | 1, 2 | `done`, playlist player per ADR 008 |
 
 Design constraint carried into the code: clips cannot be created through the
 API. The library is admin managed only, because an unreviewed medical sign has
@@ -72,8 +72,17 @@ Delivered in sprint 1, backend only: the `clips` app, `SignClip` model with a
 `manage.py seed_clips`. 29 tests. See ADR 008, 009, and 010 for the decisions
 this produced, and the sprint 1 entry in `DEVELOPMENT_LOG.md`.
 
-Not yet delivered for FR 1.7: the player that plays a resolved sequence back
-seamlessly, which is sprint 2 along with the Khaya language layer.
+Delivered in sprint 2: the language provider layer with Khaya and stub
+implementations, `POST /api/caption/`, the `SignSequencePlayer` that plays a
+resolved sequence back seamlessly with the next clip preloaded, and the
+doctor's captioning screen. Verified against live Khaya on 2026-09-12:
+"Where does it hurt?" returned "Ɛhe na ɛyɛ yaw?". See ADR 011 and 013 to 015.
+
+**Still open for FR 1.2.** The caption endpoint accepts and transcribes audio,
+and the ASR route is verified as reachable, but the browser microphone capture
+that would feed it is not built. A doctor types today. Mic capture needs
+`MediaRecorder`, which cannot be meaningfully tested in jsdom, so it is
+scheduled with a real device pass rather than pretended to be done.
 
 ## P0.2, Literacy Check and Guided Interrogation, sprints 3 and 4
 
@@ -201,7 +210,7 @@ solves, so they are tracked explicitly.
 
 | Dependency | Needed by | Status |
 | --- | --- | --- |
-| Khaya AI API key from GhanaNLP | Sprint 2, for real ASR, translation, and TTS. Stub provider unblocks development until then | open |
-| 30 to 50 filmed or sourced GhSL clips for a hospital intake scenario | Sprint 2 for a real demo. Placeholder clips unblock sprints 1 and 2 | open |
+| Khaya AI API key from GhanaNLP | ~~Sprint 2~~ | **resolved 2026-09-12.** All three endpoints verified live. Free tier is metered, so `LANGUAGE_PROVIDER=stub` in dev per ADR 015 |
+| 30 to 50 filmed or sourced GhSL clips for a hospital intake scenario | **the critical path now.** 92 glosses are recorded and awaiting footage, 0 usable. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
 | GhSL fluent consultant review of the clinical question bank and emergency alerts | Before sprint 4 ships and before any public demo | open |
-| Alphabet clips for fingerspelling, one per letter | Sprint 1, FR 1.6 | open |
+| Alphabet clips for fingerspelling, one per letter | FR 1.6 cannot fall back without a complete alphabet, so a partial one leaves words unavailable rather than spelled | open |

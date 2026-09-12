@@ -270,3 +270,99 @@ of the two things this is.
 
 **Consequence.** A deviation from the scaffold the engineering standards
 describe, recorded here so it reads as a decision rather than drift.
+
+---
+
+## ADR 013, Khaya translation uses the v2 endpoint
+
+**Context.** Verifying the Khaya integration against a live account on
+2026-09-12, the v1 translate endpoint worked and returned correct Twi. It also
+returned these response headers:
+
+```
+deprecation: true
+sunset: 2026-09-06T23:59:59Z
+link: </v2/translate>; rel="successor-version"
+```
+
+The sunset date had already passed.
+
+**Decision.** Use `/v2/translate`. It was tested with an identical payload,
+returned identical output, and carries no deprecation headers.
+
+**Why.** An endpoint past its announced sunset can be withdrawn without
+notice. Building the headline demo on it means the demo might fail on the day
+of judging for reasons entirely outside our control, and with no warning.
+
+**Consequence.** A test asserts the request URL ends in `/v2/translate` and
+does not contain `/v1/translate`, so a future refactor cannot quietly revert
+to the sunset endpoint. Endpoint paths are module level constants in the
+provider, so a later version bump is a one line change.
+
+Worth noting how this was found: reading response headers on a verification
+call, not from documentation. The call succeeded, so nothing would have
+surfaced this if we had only checked the status code.
+
+---
+
+## ADR 014, Sign lookup uses English text, never the Twi caption
+
+**Context.** The first implementation of the caption pipeline translated the
+doctor's English into Twi, then resolved GhSL clips from that Twi caption. All
+tests passed. Against real Khaya translation, every lookup failed:
+"Where does it hurt?" became "Ɛhe na ɛyɛ yaw?", which tokenizes to `ɛhe`,
+`na`, `ɛyɛ`, `yaw`, and those are matched against a library keyed on English
+glosses like `WHERE` and `HURT`. Nothing could ever match.
+
+**Decision.** One utterance produces two renderings. The **caption** is Twi,
+because that is what the patient reads. The **sign lookup text** is English,
+because that is what the clip library is keyed on, per the SRS definition of
+Gloss and FR 1.5. Clips resolve from the English, never from the caption.
+
+For English input that is one translation call, for the caption. For Twi input
+it is one call in the other direction, to get English for lookup. Either way
+exactly one call, so no extra latency against NFR 1.
+
+**Why.** FR 1.5 says the lookup key is the English gloss. Resolving from the
+Twi caption contradicts that, and produces a system that reports every word as
+unavailable while looking entirely correct in tests.
+
+**Consequence.** The response carries `sign_lookup_text`, and the interface
+shows it whenever a sign is missing, because with Twi input the text actually
+searched is a translation rather than what the doctor typed. A test using a
+provider with visibly directional translation asserts the caption is never used
+as the lookup key.
+
+The wider lesson is recorded deliberately: a stub that returns its input
+unchanged is honest but it makes two different code paths look identical. This
+bug was invisible under the stub and total under the real provider. Where a
+stub's simplification could hide a direction or a mapping, the test needs a
+provider that transforms visibly, which is why `directional_provider` exists
+alongside the ordinary stub.
+
+---
+
+## ADR 015, The language provider is explicitly selectable, defaulting to stub in dev
+
+**Context.** The project uses Khaya's free tier, where every translation,
+transcription, and synthesis call spends metered credit. Selecting the provider
+purely on "is a key present" meant that simply having the key configured made
+all ordinary development spend that credit.
+
+**Decision.** A `LANGUAGE_PROVIDER` setting takes `auto`, `stub`, or `khaya`.
+Local development sets `stub`, so the key can stay configured without being
+used. `khaya` is set deliberately, for a verification run, then unset. `auto`
+keeps the original behaviour and remains the default for deployment.
+
+`khaya` with no key raises rather than falling back to the stub, because a
+verification run that silently used the stub would prove nothing while
+appearing to pass.
+
+**Why.** Credit exhausted during development is credit unavailable during
+judging. The constraint is real, so it belongs in configuration rather than in
+somebody remembering not to run the wrong thing.
+
+**Consequence.** An autouse test fixture forces `stub` and clears the key for
+the entire suite, so no test can reach a metered service even on a machine
+where a key is configured. The three provider selection tests override it
+explicitly, and are the only place that should.
