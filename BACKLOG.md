@@ -54,7 +54,7 @@ Not a feature, the baseline that makes every later sprint verifiable.
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
 | 1.1 | Doctor selects spoken input language, English or Twi, before speaking | 2 | `done` |
-| 1.2 | Speech transcribed via ASR | 2 | `done`, mic capture built. Real device and Khaya audio format pass pending |
+| 1.2 | Speech transcribed via ASR | 2 | `done`, verified end to end against live Khaya |
 | 1.3 | English text translated to Twi if needed | 2 | `done`, verified against live Khaya |
 | 1.4 | Twi caption displayed on screen | 2 | `done` |
 | 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `done` |
@@ -88,15 +88,11 @@ and 017.
 Two things about it are **not** verified, and both need the same real device
 session that tests the filmed clips:
 
-- **Whether Khaya's ASR accepts our WAV.** The first real recording failed:
-  no browser can record WAV or MP3, and Khaya's own client examples transcribe
-  from a plain audio file, so recordings are now converted to 16 kHz mono WAV
-  in the browser before upload. See ADR 018. Confirming it needs one real
-  transcription call, which costs credit. The provider's error is now logged
-  server side, so a further failure says why.
-- **That audio actually records on a real device.** jsdom has no microphone, so
-  the tests stand one in. They prove the state machine, the format choice, and
-  that the microphone is released, not that sound reaches the server.
+- ~~Whether Khaya's ASR accepts our WAV.~~ **Verified working 2026-09-12.**
+  The 16 kHz mono WAV conversion was the fix, see ADR 018. Speech to
+  transcript to Twi caption to clip lookup now runs on real services.
+- ~~That audio actually records on a real device.~~ **Verified working
+  2026-09-12**, on Chrome. Safari and iOS remain part of the NFR 6 device pass.
 
 And one deployment fact worth knowing before demo day: **the microphone needs
 https** on any device that is not the machine running the server, because

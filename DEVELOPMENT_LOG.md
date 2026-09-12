@@ -576,3 +576,19 @@ misdescribes the bytes is exactly the kind of thing a media service trusts.
 **Whether Khaya accepts this WAV.** It needs one real transcription call, which
 costs credit. If it still fails, the log now says why rather than requiring
 another round of guessing.
+
+---
+
+## FR 1.2 verified end to end, 2026-09-12
+
+Khaya accepts the 16 kHz mono WAV and transcribes it. The format conversion in
+ADR 018 was the fix, not a workaround.
+
+**P0.1 is now complete and verified on real services**, not just under the
+stub: speech, to transcript, to Twi caption, to GhSL clip lookup, with the
+clip library correctly reporting coverage gaps while footage is still missing.
+
+Remaining for NFR 6 is a Safari and iOS device pass, which is a manual check
+rather than an engineering task. The WAV conversion makes it much more likely
+to work, since it removes the WebM versus MP4 difference that would otherwise
+have made iOS a separate code path.

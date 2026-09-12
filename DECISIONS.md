@@ -468,10 +468,10 @@ credit to get an error back. The upload's filename extension is derived from
 the blob's type rather than hardcoded, since a stale `.webm` name would
 misdescribe WAV bytes to anything that trusts the filename.
 
-**Still unverified.** Whether Khaya accepts this WAV is not yet confirmed. It
-needs one real transcription call, which costs credit. The provider's own
-error message is now logged server side, so if it still fails, the next
-attempt says why instead of having to be rediscovered by spending more credit.
+**Verified 2026-09-12.** Khaya accepts the 16 kHz mono WAV and transcribes
+it. The whole speech to sign pipeline now runs end to end on real services:
+speech, to transcript, to Twi caption, to GhSL clip lookup. The conversion was
+the fix, not a workaround.
 
 ---
 
