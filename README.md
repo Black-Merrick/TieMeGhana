@@ -61,6 +61,18 @@ clinical consequences.
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
+## Branches
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Stable baseline |
+| `develop` | Integration branch, features merge here first |
+| `feature/p0-core-consultation` | Ongoing work, **commit and push here** |
+
+Day to day work goes to the feature branch. `git push` with no arguments
+already targets it. Merging into `develop` is a pull request, so CI validates
+the change before it reaches an integration branch. See ADR 019.
+
 ## Working on this project
 
 - [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md), the workflow every

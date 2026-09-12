@@ -472,3 +472,38 @@ misdescribe WAV bytes to anything that trusts the filename.
 needs one real transcription call, which costs credit. The provider's own
 error message is now logged server side, so if it still fails, the next
 attempt says why instead of having to be rediscovered by spending more credit.
+
+---
+
+## ADR 019, Git flow with one long lived feature branch
+
+**Context.** Work had accumulated on a single branch with nothing pushed, so
+CI had never run and there was no reviewable boundary between the stable
+baseline and work in progress.
+
+**Decision.** Three branches on `origin`:
+
+| Branch | Holds |
+| --- | --- |
+| `main` | The stable baseline. Currently the Sprint 0 foundation |
+| `develop` | Integration branch. Features merge here first |
+| `feature/p0-core-consultation` | All ongoing work. This is where we commit and push |
+
+`develop` was created from `main`, so the feature branch merges cleanly into
+it. Day to day, everything is committed and pushed to the feature branch, and
+`git push` with no arguments goes there because upstream tracking is set.
+
+**Why.** It keeps `main` and `develop` reviewable rather than accumulating
+half finished work, and it gives CI a real pull request to validate before
+anything reaches an integration branch. For a hackathon submission, being able
+to point at a clean `main` and a reviewed merge history is worth the small
+overhead.
+
+The feature branch is long lived and named after the SRS priority group rather
+than a single sprint, because P0 is one coherent deliverable across several
+sprints. Per feature branches off `develop` are the more conventional shape and
+remain available for anything genuinely separable, such as the P1 additions.
+
+**Consequence.** Nothing is pushed to `main` or `develop` without being asked.
+Merging the feature branch into `develop` is a pull request and a deliberate
+decision, not an automatic step on finishing a sprint.
