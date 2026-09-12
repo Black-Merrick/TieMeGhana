@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Django
+*.sqlite3
+/backend/media/
+/backend/staticfiles/
+
+# Environment, never commit real credentials
+.env
+.env.local
+!.env.example
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

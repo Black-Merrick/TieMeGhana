@@ -1,0 +1,68 @@
+:root {
+  --colour-ink: #10221c;
+  --colour-surface: #ffffff;
+  --colour-primary: #0b3d2e;
+  --colour-accent: #f5c542;
+  --colour-muted: #5d6f68;
+  --colour-offline: #b04a3a;
+
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--colour-ink);
+  background-color: var(--colour-surface);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.shell__title {
+  margin: 0;
+  font-size: 2rem;
+  color: var(--colour-primary);
+}
+
+.shell__subtitle {
+  margin: 0.25rem 0 2rem;
+  color: var(--colour-muted);
+}
+
+.shell__status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  color: var(--colour-muted);
+}
+
+/* Status is carried by a shape and a label, never by colour alone, so the
+   indicator stays readable for colour blind users. */
+.shell__dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--colour-muted);
+}
+
+.shell__dot--checking {
+  background: var(--colour-accent);
+}
+
+.shell__dot--connected {
+  background: var(--colour-primary);
+}
+
+.shell__dot--offline {
+  background: var(--colour-offline);
+}

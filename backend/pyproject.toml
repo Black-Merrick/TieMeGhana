@@ -1,0 +1,25 @@
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["config", "core", "clips", "questions", "patients", "sessions_log"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+exclude = ["migrations"]
+
+[tool.ruff.lint]
+# E,F = pyflakes/pycodestyle errors. I = import order. B = likely bugs.
+# T20 = flags leftover print() calls, per ENGINEERING_STANDARDS.md section 1.
+select = ["E", "F", "I", "B", "UP", "T20"]
+ignore = ["E501"]  # line length is Black's job, not Ruff's
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_test.py"]
+addopts = "-ra --strict-markers"
+testpaths = ["."]

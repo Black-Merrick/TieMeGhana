@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tie Me Ghana">
+  <rect width="512" height="512" rx="96" fill="#0b3d2e"/>
+  <path d="M156 300c0-52 34-94 76-94s76 42 76 94" fill="none" stroke="#f5c542" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="232" cy="188" r="26" fill="#f5c542"/>
+  <path d="M330 196c26 22 26 98 0 120" fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round"/>
+  <path d="M372 168c44 40 44 136 0 176" fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" opacity="0.55"/>
+  <rect x="150" y="332" width="212" height="26" rx="13" fill="#ffffff"/>
+  <rect x="150" y="378" width="150" height="26" rx="13" fill="#ffffff" opacity="0.6"/>
+</svg>

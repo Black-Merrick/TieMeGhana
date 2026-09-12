@@ -1,0 +1,54 @@
+# The entire stack containerized: database, backend, and frontend.
+#
+# Use this to confirm the app works the way it will in a real deployment, and
+# as the basis for staging. Do not use it for daily development, rebuilding
+# containers on every code change is far slower than native hot reload.
+#
+#   docker compose -f docker-compose.full.yml up --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tiemeghana
+      POSTGRES_USER: tiemeghana
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tiemeghana}
+    volumes:
+      - postgres_data_full:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tiemeghana"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://tiemeghana:${POSTGRES_PASSWORD:-tiemeghana}@db:5432/tiemeghana
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-compose-insecure-key-change-me}
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      KHAYA_API_KEY: ${KHAYA_API_KEY:-}
+    volumes:
+      # GhSL clips persist outside the container, so rebuilding the image does
+      # not discard the reviewed clip library.
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    # Migrations run on start rather than being baked into the image, so the
+    # schema is applied exactly once per deployment against the real database.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data_full:
+  media_data:

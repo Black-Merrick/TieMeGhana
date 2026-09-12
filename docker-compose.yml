@@ -1,0 +1,24 @@
+# Day to day local development: PostgreSQL only.
+# Django and the Vite dev server run natively for fast reload cycles.
+# For the fully containerized stack, use docker-compose.full.yml instead.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tiemeghana-db
+    environment:
+      POSTGRES_DB: tiemeghana
+      POSTGRES_USER: tiemeghana
+      POSTGRES_PASSWORD: tiemeghana
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tiemeghana"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

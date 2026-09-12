@@ -1,0 +1,47 @@
+# Formatting and linting run on every commit, so consistency is enforced by a
+# tool rather than by remembering the style guide during a timed sprint.
+# See ENGINEERING_STANDARDS.md section 2.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        # GhSL clips are large binaries, they belong in media storage, not git.
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        files: ^backend/
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^backend/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        files: ^backend/
+        args: ["--fix"]
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        # Filenames are not passed through. pre-commit reports paths relative
+        # to the repository root, but ESLint has to run from frontend/ to pick
+        # up its flat config, and the two do not agree. The frontend is small
+        # enough that linting all of it costs nothing.
+        entry: bash -c 'cd frontend && npm run --silent lint'
+        language: system
+        files: ^frontend/.*\.(js|jsx)$
+        pass_filenames: false
