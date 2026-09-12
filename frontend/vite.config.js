@@ -16,14 +16,20 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET ?? "http://localhost:8000";
 
   return {
-    // Proxying /api in development mirrors what nginx does in the
-    // containerized stack, so the frontend uses one relative API path
-    // everywhere and a CORS or absolute URL problem cannot appear only in
-    // deployment.
+    // Proxying in development mirrors what nginx does in the containerized
+    // stack, so the frontend uses one relative path everywhere and a CORS or
+    // absolute URL problem cannot appear only in deployment.
+    //
+    // /admin and /static are proxied for a sharper reason: without them the
+    // SPA fallback answers /admin with the React app and a 200, so someone
+    // looking for the Django admin gets the patient screen and no error to
+    // explain it. nginx already proxies /admin, so this is dev catching up.
     server: {
       proxy: {
         "/api": { target: apiProxyTarget, changeOrigin: true },
         "/media": { target: apiProxyTarget, changeOrigin: true },
+        "/admin": { target: apiProxyTarget, changeOrigin: true },
+        "/static": { target: apiProxyTarget, changeOrigin: true },
       },
     },
 

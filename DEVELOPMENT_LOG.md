@@ -1413,3 +1413,45 @@ disk is the one that was reviewed.
 
 A `video_files` helper left over from an earlier shape of the command, unused
 by anything.
+
+---
+
+## Reaching the Django admin, and two bugs on the way
+
+**The question.** How do you visit the admin page? It turned out there were
+three obstacles, two of them mine.
+
+**No account existed.** `createsuperuser` is interactive, so it has to be run
+by a person. Now documented in `SETUP_GUIDE.md` alongside what the admin is
+actually for.
+
+**`localhost:5174/admin/` returned the React app with a 200.** The dev server
+proxied only `/api` and `/media`, so `/admin` fell through to the SPA
+fallback. Someone looking for the admin got the patient screen and no error to
+explain it, which is the most confusing outcome available. `/admin` and
+`/static` are now proxied in development, matching what nginx already did, for
+the same reason as ADR 006: development should fail the way deployment does,
+or not at all.
+
+**Then CSRF rejected the login with a 403.** Caused by the fix above.
+Proxying `/admin` means the browser's `Origin` is the Vite port while Django
+sees its own host, and Django treats the mismatch as a cross site request. The
+error message talks about cookies and template tags and says nothing about
+proxying, so it is not a message that leads anywhere useful.
+
+`CSRF_TRUSTED_ORIGINS` is now set, env overridable, defaulting to the dev
+origins. It includes port **5174** as well as 5173, because Vite moves to the
+next free port when 5173 is taken, which happens routinely on a machine
+running more than one project. A test asserts 5174 is covered, since the admin
+would otherwise break for a reason nobody would connect to a port number.
+
+nginx also gained `/static`, without which the admin loads entirely unstyled
+in the containerized stack, broken enough that someone would assume it was.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 168 passed, 3 new |
+| `5174/admin/login/` | Django's login page, styled |
+| CSRF through the proxy | POST accepted, credentials rejected on their merits |

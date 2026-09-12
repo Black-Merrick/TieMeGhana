@@ -156,6 +156,28 @@ be wrong in front of a Twi speaking judge. The app shows a visible notice
 whenever a caption came from the stub, so it can never be mistaken for real
 translation.
 
+## Reviewing and approving clips
+
+The Django admin is where footage is approved, aliases are recorded, and the
+question wording is curated. Create an account once:
+
+```bash
+cd backend && source .venv/bin/activate
+python manage.py createsuperuser
+```
+
+Then open **http://localhost:5173/admin/**, or whichever port the dev server
+reported. The admin is proxied through the dev server, so it is on the same
+port as the app rather than the backend's.
+
+Under **GhSL clips** you can approve imported footage, see which glosses still
+need filming, add reviewed aliases, and import the footage folder with a
+button.
+
+Imported footage is always `pending` until someone approves it. That is the
+gate, not a bug: filmed is not the same as usable. A clip only becomes
+resolvable when it is both filmed and approved.
+
 ## ffmpeg, so a sentence plays as one video
 
 A signed sentence is several clips. ffmpeg concatenates them into a single

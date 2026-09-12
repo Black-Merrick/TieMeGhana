@@ -177,13 +177,38 @@ REST_FRAMEWORK = {
 
 # The PWA is served from a separate origin in development, so the Vite dev
 # server needs explicit permission to call the API.
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get(
-        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",")
-    if origin.strip()
-]
+#
+# 5174 is included because Vite moves to the next free port when 5173 is taken,
+# which happens routinely on a machine running more than one project.
+_DEV_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "http://localhost:5174,http://127.0.0.1:5174"
+)
+
+
+def env_origins(name: str, default: str) -> list[str]:
+    """Read a comma separated list of origins from the environment."""
+    return [
+        origin.strip()
+        for origin in os.environ.get(name, default).split(",")
+        if origin.strip()
+    ]
+
+
+CORS_ALLOWED_ORIGINS = env_origins("CORS_ALLOWED_ORIGINS", _DEV_ORIGINS)
+
+# Origins allowed to POST a form, which the Django admin does.
+#
+# Needed because the dev server proxies /admin: the browser's Origin header is
+# the Vite port while Django sees its own host, and Django rejects the
+# mismatch as a cross site request. Without this, approving a clip in the admin
+# fails with a 403 and a CSRF message that says nothing about proxying.
+#
+# In deployment nginx forwards the real Host, so the two agree, but the setting
+# is still required for any origin that differs from the host Django sees.
+CSRF_TRUSTED_ORIGINS = env_origins(
+    "CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS)
+)
 
 # GhanaNLP Khaya AI credentials. Absent in CI and on fresh clones, which is
 # why every language operation goes through a provider interface that has a
