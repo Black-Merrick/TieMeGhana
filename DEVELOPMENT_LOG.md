@@ -1206,3 +1206,50 @@ sudo apt install ffmpeg
 
 It is already in the backend Dockerfile, so the containerized stack and any
 deployment have it.
+
+---
+
+## Keeping the consultation across a page reload
+
+**What was actually lost.** The transcript already survived a reload, so the
+written record was safe. What went was the live part: the question on screen,
+the stitched video the patient may not have finished watching, and whether they
+were part way through pointing at a body location.
+
+A reload is ordinary on a hospital device, and losing the question at that
+moment means asking the patient to sit through it again. If they had already
+worked out their answer, it means asking them something they thought they had
+settled.
+
+**What it does now.** The exchange on screen is stored on the device and
+restored on load, cleared when the question is answered and when the visit
+ends. See ADR 032.
+
+Restoring whether a body location was expected matters more than it sounds: a
+reload otherwise drops the patient back to a yes or no they were never asked,
+against a question that wanted a place.
+
+Because the question now survives a reload, it also has to be destroyed when
+the visit ends, or the next patient would find the previous patient's question
+waiting for them. Asserted by a test, for the same reason as ADR 026's
+transcript test.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Frontend suite | 252 passed, 18 files |
+| Lint | eslint clean at zero warnings |
+| Production build | PWA builds |
+
+### Problems hit, and the fixes
+
+**A restored record could crash the screen on load.** The first version checked
+only that a caption was present. A caption missing its resolved sequence, from
+an older version or a partial write, made `CaptionResult` throw while
+destructuring, taking down the consultation screen on load, which is strictly
+worse than losing the question.
+
+Found by a test that deliberately stored an incomplete caption. Records are now
+validated by shape, and anything that does not match fails closed so the screen
+starts clean.

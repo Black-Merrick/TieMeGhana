@@ -958,3 +958,42 @@ The encode writes to a temporary file and moves it into place only on success,
 since a truncated file under a trusted cache key would be served forever.
 Source paths are resolved strictly under `MEDIA_ROOT`, so a clip URL pointing
 anywhere else is refused rather than read off disk.
+
+---
+
+## ADR 032, The exchange on screen survives a page reload
+
+**Context.** The transcript already persisted, so a reload kept the written
+record of what had been said. It did not keep the live part of the
+consultation: the question the patient was looking at, the stitched sign video
+they may not have finished watching, and whether they were part way through
+pointing at a body location.
+
+A reload is not an unusual event on a hospital device. A patient taps the wrong
+thing, the service worker updates, or the screen is handed over mid question.
+
+**Decision.** The exchange currently on screen is stored on the device and
+restored on load, with the same lifetime as the visit. It is cleared when the
+question is answered, and when the visit ends.
+
+**Why.** Losing the question at that moment means asking the patient to sit
+through it again, and if they had already worked out their answer, it means
+asking them something they thought they had settled. Both are small in isolation
+and corrosive in a consultation that is already slow and effortful for both
+people.
+
+Restoring whether a body location was expected matters more than it sounds: a
+reload otherwise drops the patient back to a yes or no they were never asked,
+against a question that wanted a place.
+
+**Consequence.** Since the question now survives a reload, it must also be
+destroyed when the visit ends, or the next patient would find the previous
+patient's question waiting for them to answer. That is asserted by a test, for
+the same reason as ADR 026's transcript test.
+
+A restored record is validated by shape rather than by presence. A caption
+written by an older version, or a partial write, can lack the resolved sequence
+that the player and the coverage notice both read, and restoring one of those
+crashes the consultation screen on load. That is strictly worse than losing the
+question, so anything not matching fails closed and the screen starts clean.
+That case was found by a test which stored a deliberately incomplete caption.

@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 
 import { captionUtterance } from "../api/consultation.js";
+import {
+  clearCurrentExchange,
+  loadCurrentExchange,
+  saveCurrentExchange,
+} from "../consultation/currentExchange.js";
 
 /**
  * Captioning one doctor utterance, shared by both interaction paths.
@@ -11,7 +16,9 @@ import { captionUtterance } from "../api/consultation.js";
  * diverged, one path would eventually gain a fix the other did not.
  */
 export default function useCaption() {
-  const [result, setResult] = useState(null);
+  // Restored on mount, so a reload does not wipe the question the patient is
+  // looking at. See ADR 032.
+  const [result, setResult] = useState(() => loadCurrentExchange()?.caption ?? null);
   const [status, setStatus] = useState("idle");
 
   const send = useCallback(async (payload) => {
@@ -21,6 +28,7 @@ export default function useCaption() {
     try {
       const caption = await captionUtterance(payload);
       setResult(caption);
+      saveCurrentExchange({ caption });
       setStatus("idle");
       return caption;
     } catch {
@@ -34,6 +42,7 @@ export default function useCaption() {
   const clear = useCallback(() => {
     setResult(null);
     setStatus("idle");
+    clearCurrentExchange();
   }, []);
 
   return { result, status, send, clear };

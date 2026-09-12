@@ -4,6 +4,7 @@ import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
+import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import { clearTranscript } from "./transcript/transcript.js";
 import {
   LiteracyPath,
@@ -59,6 +60,10 @@ export default function App() {
     // a stranger to read is the precise harm the project exists to prevent.
     // See ADR 026.
     clearTranscript();
+
+    // Otherwise the next patient would find the previous patient's question
+    // still on screen, waiting for them to answer it.
+    clearCurrentExchange();
 
     setVisit(null);
   };

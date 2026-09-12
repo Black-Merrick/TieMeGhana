@@ -10,6 +10,10 @@ import TranscriptView from "./TranscriptView.jsx";
 import YesNoChoice from "./YesNoChoice.jsx";
 import useSpokenResponse from "../hooks/useSpokenResponse.js";
 import useTranscript from "../hooks/useTranscript.js";
+import {
+  loadCurrentExchange,
+  saveCurrentExchange,
+} from "../consultation/currentExchange.js";
 import { Direction } from "../transcript/transcript.js";
 
 /**
@@ -38,7 +42,18 @@ export default function GuidedInterrogation({ outputLanguage }) {
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
   const [bodyLocations, setBodyLocations] = useState(null);
-  const [awaitingLocation, setAwaitingLocation] = useState(false);
+
+  // Restored with the question, so a reload part way through "where does it
+  // hurt" does not drop the patient back to a yes or no they were not asked.
+  const [awaitingLocation, setAwaitingLocation] = useState(
+    () => loadCurrentExchange()?.awaitingLocation ?? false,
+  );
+
+  /** Remember whether a body location is expected, across a reload. */
+  const expectLocation = (expected) => {
+    setAwaitingLocation(expected);
+    saveCurrentExchange({ awaitingLocation: expected });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +102,7 @@ export default function GuidedInterrogation({ outputLanguage }) {
       answeredBy,
     });
 
-    setAwaitingLocation(false);
+    expectLocation(false);
     clear();
   };
 
@@ -100,11 +115,11 @@ export default function GuidedInterrogation({ outputLanguage }) {
 
     // Only switch to the location grid if the question actually reached the
     // patient. Otherwise they would be asked to point at nothing.
-    setAwaitingLocation(caption !== null);
+    expectLocation(caption !== null);
   };
 
   const askFreely = async (payload) => {
-    setAwaitingLocation(false);
+    expectLocation(false);
     const caption = await send(payload);
 
     // FR 4.1, both directions. Recorded only once the question actually

@@ -283,3 +283,35 @@ describe("the transcript and the shared device", () => {
     });
   });
 });
+
+
+describe("the exchange and the shared device", () => {
+  it("does not leave the previous patient's question waiting for the next", async () => {
+    // ADR 032 keeps the question across a reload, which makes it all the more
+    // important that ending the visit removes it.
+    const { saveCurrentExchange, loadCurrentExchange } = await import(
+      "../consultation/currentExchange.js"
+    );
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    saveCurrentExchange({
+      caption: {
+        transcript: "Are you pregnant?",
+        caption: "Wo yɛ nyinsɛn?",
+        sequence: {
+          segments: [],
+          fingerspelled_tokens: [],
+          unavailable_tokens: [],
+          total_duration_ms: 0,
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("new-patient"));
+    await user.click(screen.getByTestId("new-patient"));
+
+    expect(loadCurrentExchange()).toBeNull();
+  });
+});

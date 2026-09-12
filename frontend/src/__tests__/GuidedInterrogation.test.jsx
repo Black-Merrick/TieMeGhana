@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -471,5 +471,76 @@ describe("speaking the patient's answer aloud", () => {
     await waitFor(() => {
       expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
     });
+  });
+});
+
+
+describe("surviving a page reload", () => {
+  it("puts the question back on screen", async () => {
+    // ADR 032. A reload is ordinary on a hospital device, and the patient may
+    // not have finished watching the sign video.
+    const user = await askFreely("Did you vomit?");
+    await waitFor(() => screen.getByTestId("choice-yes"));
+
+    // Unmount and mount again, which is what a reload does to the component.
+    cleanup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    expect(screen.getByTestId("caption")).toHaveTextContent("Wo foee?");
+    expect(user).toBeDefined();
+  });
+
+  it("still offers the answer, rather than asking the question again", async () => {
+    await askFreely();
+    await waitFor(() => screen.getByTestId("choice-yes"));
+
+    cleanup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+  });
+
+  it("keeps the transcript of everything already said", async () => {
+    const user = await askFreely();
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
+    await waitFor(() => screen.getByTestId("transcript"));
+
+    cleanup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    expect(screen.getByTestId("transcript-list")).toHaveTextContent("Did you vomit?");
+    expect(screen.getByTestId("transcript-list")).toHaveTextContent("Yes");
+  });
+
+  it("remembers that a body location was expected", async () => {
+    // Otherwise the patient is dropped back to a yes or no they were never
+    // asked, against a question that wanted a place.
+    const user = userEvent.setup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await waitFor(() => screen.getByTestId("answer-option-HEAD"));
+
+    cleanup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("answer-option-HEAD")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("starts clean once the question has been answered", async () => {
+    // An answered question should not reappear on the next reload, or the
+    // doctor would think it was still waiting.
+    const user = await askFreely();
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
+
+    cleanup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    expect(screen.queryByTestId("caption")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
   });
 });
