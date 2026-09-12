@@ -173,7 +173,7 @@ class TestResolveSignSequence:
         # batched and this test locks that in.
         make_clip("HEAD")
 
-        with django_assert_num_queries(2):
+        with django_assert_num_queries(3):
             resolve_sign_sequence("head chest stomach arm leg back hurts badly today")
 
 

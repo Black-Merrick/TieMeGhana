@@ -60,6 +60,14 @@ class SignSequenceSerializer(serializers.Serializer):
     total_duration_ms = serializers.IntegerField()
     fingerspelled_tokens = serializers.ListField(child=serializers.CharField())
     unavailable_tokens = serializers.ListField(child=serializers.CharField())
+    # Safety, per ADR 033. The interface needs all of these to explain the
+    # difference between a word left out on purpose and one that stopped the
+    # sentence from being shown at all.
+    omitted_tokens = serializers.ListField(child=serializers.CharField())
+    blocking_tokens = serializers.ListField(child=serializers.CharField())
+    back_translation = serializers.ListField(child=serializers.CharField())
+    is_safe_to_show = serializers.BooleanField()
+    needs_confirmation = serializers.BooleanField()
     stitched_video_url = serializers.SerializerMethodField()
 
     def get_stitched_video_url(self, sequence) -> str | None:
@@ -73,7 +81,12 @@ class SignSequenceSerializer(serializers.Serializer):
         Encoding happens here, on first request for a given sentence, and is
         cached by the exact ordered clips it contains. Every later request for
         the same sentence is served from disk.
+
+        Nothing is stitched for a sentence that is not safe to show, since
+        encoding a video no patient may see would only waste the time.
         """
+        if not sequence.is_safe_to_show:
+            return None
         return stitched_video_url(sequence)
 
 

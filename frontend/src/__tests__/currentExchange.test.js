@@ -18,6 +18,11 @@ const caption = {
     segments: [],
     fingerspelled_tokens: [],
     unavailable_tokens: [],
+    omitted_tokens: [],
+    blocking_tokens: [],
+    back_translation: [],
+    is_safe_to_show: true,
+    needs_confirmation: false,
     total_duration_ms: 0,
   },
 };
@@ -120,6 +125,26 @@ describe("failing safely", () => {
     localStorage.setItem(
       "tiemeghana.exchange",
       JSON.stringify({ caption: { transcript: "Fever?", caption: "Fever?" } }),
+    );
+
+    expect(loadCurrentExchange()).toBeNull();
+  });
+
+  it("refuses a record written before the safety gate existed", () => {
+    // ADR 033. Without a verdict there is no way to know whether the sentence
+    // was safe to show, and guessing either way is a guess about that.
+    localStorage.setItem(
+      "tiemeghana.exchange",
+      JSON.stringify({
+        caption: {
+          caption: "Fever?",
+          sequence: {
+            segments: [],
+            fingerspelled_tokens: [],
+            unavailable_tokens: [],
+          },
+        },
+      }),
     );
 
     expect(loadCurrentExchange()).toBeNull();

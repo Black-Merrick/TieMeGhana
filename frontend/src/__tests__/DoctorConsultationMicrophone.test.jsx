@@ -50,6 +50,11 @@ beforeEach(() => {
       total_duration_ms: 0,
       fingerspelled_tokens: [],
       unavailable_tokens: [],
+      omitted_tokens: [],
+      blocking_tokens: [],
+      back_translation: [],
+      is_safe_to_show: true,
+      needs_confirmation: false,
     },
   });
 });

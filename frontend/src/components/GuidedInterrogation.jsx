@@ -41,6 +41,9 @@ export default function GuidedInterrogation({ outputLanguage }) {
   const { result, status, send, clear } = useCaption();
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
+  // The utterance the patient has actually seen. Identity rather than a
+  // boolean, so a new question is never inherited as already shown.
+  const [shownFor, setShownFor] = useState(null);
   const [bodyLocations, setBodyLocations] = useState(null);
 
   // Restored with the question, so a reload part way through "where does it
@@ -111,8 +114,6 @@ export default function GuidedInterrogation({ outputLanguage }) {
       sourceLanguage: "en",
       text: WHERE_DOES_IT_HURT,
     });
-    if (caption) recordQuestion(caption);
-
     // Only switch to the location grid if the question actually reached the
     // patient. Otherwise they would be asked to point at nothing.
     expectLocation(caption !== null);
@@ -120,16 +121,19 @@ export default function GuidedInterrogation({ outputLanguage }) {
 
   const askFreely = async (payload) => {
     expectLocation(false);
-    const caption = await send(payload);
-
-    // FR 4.1, both directions. Recorded only once the question actually
-    // reached the patient, so a failed request does not leave the record
-    // claiming something was asked.
-    if (caption) recordQuestion(caption);
+    await send(payload);
   };
 
-  /** Put a question the patient was shown into the record. */
-  const recordQuestion = (caption) => {
+  /**
+   * A question the patient has now seen, FR 4.1.
+   *
+   * Recorded when it is shown rather than when it is captioned. A sentence
+   * refused by the safety gate, or one still waiting for the doctor to check
+   * it, was never asked, and a record claiming otherwise would be worse than
+   * no record. See ADR 033.
+   */
+  const questionShown = (caption) => {
+    setShownFor(caption);
     transcript.record({
       direction: Direction.TO_PATIENT,
       text: caption.transcript,
@@ -174,9 +178,11 @@ export default function GuidedInterrogation({ outputLanguage }) {
 
       {result ? (
         <>
-          <CaptionResult result={result} />
+          <CaptionResult result={result} onShown={questionShown} />
 
-          {awaitingLocation ? (
+          {/* Answers appear only once the patient has actually seen the
+              question. A refused sentence is never answerable. */}
+          {shownFor !== result ? null : awaitingLocation ? (
             <BodyLocationAnswer
               locations={bodyLocations}
               onChoose={(location) =>

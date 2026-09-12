@@ -1,6 +1,20 @@
 from django.contrib import admin, messages
 
-from clips.models import ClipKind, ReviewStatus, SignClip
+from clips.models import ClipAlias, ClipKind, ReviewStatus, SignClip
+
+
+class ClipAliasInline(admin.TabularInline):
+    """
+    Alternative words for a sign, edited alongside it.
+
+    Inline because an alias only means anything against a specific sign, and
+    because a reviewer looking at a clip is the person best placed to say which
+    other words it covers.
+    """
+
+    model = ClipAlias
+    extra = 0
+    fields = ["term", "reviewed_by", "notes"]
 
 
 @admin.register(SignClip)
@@ -20,6 +34,7 @@ class SignClipAdmin(admin.ModelAdmin):
     ordering = ["kind", "gloss"]
     readonly_fields = ["created_at", "updated_at"]
     actions = ["approve_for_clinical_use", "return_for_rework"]
+    inlines = [ClipAliasInline]
 
     @admin.display(boolean=True, description="Filmed")
     def footage(self, clip: SignClip) -> bool:

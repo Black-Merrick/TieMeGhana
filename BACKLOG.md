@@ -58,7 +58,7 @@ Not a feature, the baseline that makes every later sprint verifiable.
 | 1.3 | English text translated to Twi if needed | 2 | `done`, verified against live Khaya |
 | 1.4 | Twi caption displayed on screen | 2 | `done` |
 | 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `done` |
-| 1.6 | Unmatched words trigger fingerspelling fallback, letter clips in sequence | 1 | `done` |
+| 1.6 | Unmatched words trigger fingerspelling fallback, letter clips in sequence | 1 | `done`, except blocking words, which refuse the sentence instead, ADR 033 |
 | 1.7 | Matched clips stitched into one sign video, played alongside the caption | 1, 2 | `done`, playlist player per ADR 008 |
 
 Design constraint carried into the code: clips cannot be created through the
@@ -228,5 +228,7 @@ solves, so they are tracked explicitly.
 | --- | --- | --- |
 | Khaya AI API key from GhanaNLP | ~~Sprint 2~~ | **resolved 2026-09-12.** All three endpoints verified live. Free tier is metered, so `LANGUAGE_PROVIDER=stub` in dev per ADR 015 |
 | 30 to 50 filmed or sourced GhSL clips for a hospital intake scenario | **the critical path now.** 92 glosses are recorded and awaiting footage, 0 usable. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
-| GhSL fluent consultant review of the clinical question bank and emergency alerts | Before sprint 4 ships and before any public demo | open |
+| GhSL fluent consultant review of the emergency alerts | Before any public demo | open |
+| **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant | open |
+| **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
 | Alphabet clips for fingerspelling, one per letter | FR 1.6 cannot fall back without a complete alphabet, so a partial one leaves words unavailable rather than spelled | open |

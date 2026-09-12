@@ -1,0 +1,352 @@
+"""
+Tests for refusing a sentence that would change meaning, ADR 033.
+
+The failure these prevent is the worst one the system can produce: a patient
+shown a sentence that means something other than what the doctor typed, with
+nothing on screen to say so. The doctor does not read GhSL and the patient
+never saw the typed words, so neither of them can catch it.
+
+Most of these are about refusing, not rendering.
+"""
+
+import pytest
+
+from clips.safety import BLOCKING, SAFE_TO_DROP, TokenRisk, classify
+from clips.services import resolve_sign_sequence
+
+
+class TestClassification:
+    def test_negation_blocks(self):
+        # The case that started this. "no pain" losing "no" means "pain".
+        for word in ["no", "not", "never", "without", "cannot", "stop"]:
+            assert classify(word) == TokenRisk.BLOCKING, word
+
+    def test_dosage_words_block(self):
+        # "Take two tablets" losing "two" is a dosing error, not a typo.
+        for word in ["one", "two", "three", "half", "double"]:
+            assert classify(word) == TokenRisk.BLOCKING, word
+
+    def test_digits_block_however_they_are_written(self):
+        # A dose, a count of days, a temperature. Any number is a quantity.
+        for token in ["2", "10", "37"]:
+            assert classify(token) == TokenRisk.BLOCKING, token
+
+    def test_frequency_and_timing_block(self):
+        # "Take after food" and "take before food" are different
+        # instructions, and losing either word leaves neither.
+        for word in ["twice", "daily", "before", "after", "every"]:
+            assert classify(word) == TokenRisk.BLOCKING, word
+
+    def test_severity_blocks(self):
+        # Severity is what a doctor uses to decide urgency, so losing it turns
+        # a description into a bare symptom.
+        for word in ["severe", "mild", "worse", "better", "very"]:
+            assert classify(word) == TokenRisk.BLOCKING, word
+
+    def test_articles_and_copulas_are_droppable(self):
+        # GhSL has no articles and no copula. "Do you have pain" is signed
+        # roughly PAIN YOU, so leaving these out is more natural, not broken.
+        for word in ["the", "a", "is", "are", "do", "does"]:
+            assert classify(word) == TokenRisk.DROPPABLE, word
+
+    def test_prepositions_are_not_droppable(self):
+        # "Pain in chest" and "pain on chest" are different clinical
+        # statements, so a preposition is not noise.
+        for word in ["in", "on", "at", "with"]:
+            assert classify(word) != TokenRisk.DROPPABLE, word
+
+    def test_deictics_are_not_droppable(self):
+        # "Does it hurt here" depends entirely on "here".
+        for word in ["here", "this", "that"]:
+            assert classify(word) != TokenRisk.DROPPABLE, word
+
+    def test_clinical_words_are_content(self):
+        for word in ["pain", "head", "fever", "vomit", "medicine"]:
+            assert classify(word) == TokenRisk.CONTENT, word
+
+    def test_the_two_lists_never_overlap(self):
+        # A word cannot be both safe to lose and unsafe to lose.
+        assert BLOCKING.isdisjoint(SAFE_TO_DROP)
+
+
+@pytest.mark.django_db
+class TestRefusingUnsafeSentences:
+    def test_a_missing_negation_stops_the_sentence(self, make_clip, alphabet):
+        # The live bug this closes. Before, "no pain" and "pain" produced the
+        # same video, and the patient answered the opposite question.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("no pain")
+
+        assert sequence.blocking_tokens == ["no"]
+        assert sequence.is_safe_to_show is False
+
+    def test_a_missing_negation_is_never_fingerspelled(self, make_clip, alphabet):
+        # Spelling "no" to a patient who may not be print literate is not a
+        # rendering of "no", and assuming they followed it is the same risk in
+        # a different shape.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("no pain")
+
+        assert "no" not in sequence.fingerspelled_tokens
+
+    def test_a_missing_dose_stops_the_sentence(self, make_clip, alphabet):
+        make_clip("TABLET")
+
+        sequence = resolve_sign_sequence("take two tablet")
+
+        assert "two" in sequence.blocking_tokens
+        assert sequence.is_safe_to_show is False
+
+    def test_a_signed_negation_is_fine(self, make_clip, alphabet):
+        # The refusal is about absence, not about the word. Once "no" is
+        # filmed, the sentence is shown normally.
+        make_clip("NO")
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("no pain")
+
+        assert sequence.blocking_tokens == []
+        assert sequence.is_safe_to_show is True
+        assert sequence.back_translation == ["NO", "PAIN"]
+
+    def test_a_missing_content_word_stops_the_sentence(self, make_clip):
+        # Without an alphabet it cannot even be spelled. A patient shown a
+        # fragment may guess at the rest, which ADR 022 already refuses for a
+        # partial answer grid.
+        make_clip("HEAD")
+
+        sequence = resolve_sign_sequence("head vomit")
+
+        assert sequence.unavailable_tokens == ["vomit"]
+        assert sequence.is_safe_to_show is False
+
+    def test_an_empty_sentence_is_not_shown(self):
+        assert resolve_sign_sequence("the a is").is_safe_to_show is False
+
+
+@pytest.mark.django_db
+class TestDroppingSafely:
+    def test_articles_are_left_out_rather_than_spelled(self, make_clip, alphabet):
+        # Spelling "the" letter by letter would waste the patient's attention
+        # on a word GhSL does not use.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("the pain")
+
+        assert sequence.omitted_tokens == ["the"]
+        assert sequence.back_translation == ["PAIN"]
+
+    def test_a_sentence_of_signs_and_dropped_words_is_safe(self, make_clip, alphabet):
+        make_clip("PAIN")
+        make_clip("HEAD")
+
+        sequence = resolve_sign_sequence("do you have the pain in head")
+
+        assert sequence.is_safe_to_show is True
+
+    def test_dropped_words_are_still_reported(self, make_clip, alphabet):
+        # The doctor is told what was left out even though it was safe, so
+        # nothing about the rendering is hidden from them.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("is the pain")
+
+        assert set(sequence.omitted_tokens) == {"is", "the"}
+
+
+@pytest.mark.django_db
+class TestConfirmation:
+    def test_a_fully_signed_sentence_needs_no_confirmation(self, make_clip, alphabet):
+        # Friction where there is no risk would train the doctor to tap
+        # through the confirmation without reading it.
+        make_clip("HEAD")
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("head pain")
+
+        assert sequence.is_safe_to_show is True
+        assert sequence.needs_confirmation is False
+
+    def test_a_sentence_with_dropped_words_is_confirmed(self, make_clip, alphabet):
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("the pain")
+
+        assert sequence.needs_confirmation is True
+
+    def test_a_sentence_with_spelled_words_is_confirmed(self, make_clip, alphabet):
+        # A spelled clinical term may not be understood, so the doctor should
+        # see that it was spelled rather than signed.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("pain nausea")
+
+        assert sequence.fingerspelled_tokens == ["nausea"]
+        assert sequence.needs_confirmation is True
+
+    def test_an_unsafe_sentence_is_not_offered_for_confirmation(
+        self, make_clip, alphabet
+    ):
+        # There is nothing to confirm. It cannot be shown at all, so offering
+        # a button would invite someone to override the refusal.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("no pain")
+
+        assert sequence.needs_confirmation is False
+
+
+@pytest.mark.django_db
+class TestBackTranslation:
+    def test_reports_exactly_what_the_patient_will_see(self, make_clip, alphabet):
+        # Showing the doctor their own typed text would prove nothing. The
+        # point is to surface the difference between what was typed and what
+        # will actually be signed.
+        make_clip("HEAD")
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("is the head pain")
+
+        assert sequence.back_translation == ["HEAD", "PAIN"]
+
+    def test_words_outside_the_droppable_list_are_spelled_not_dropped(
+        self, make_clip, alphabet
+    ):
+        # "you" and "have" are not on the droppable list, so they are spelled
+        # rather than silently removed. That is the conservative default:
+        # spelling is noise the doctor can see and rephrase around, whereas
+        # dropping a word they did not expect to lose is invisible.
+        #
+        # Both are arguably safe to drop, since GhSL expresses "you" by
+        # pointing and has no "have". Whether to add them is a clinical
+        # judgment for the team's Deaf member and the GhSL consultant, not one
+        # to make here. See ADR 033.
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("you have pain")
+
+        assert "you" in sequence.fingerspelled_tokens
+        assert "have" in sequence.fingerspelled_tokens
+        assert sequence.is_safe_to_show is True
+
+    def test_includes_spelled_letters_in_order(self, make_clip, alphabet):
+        make_clip("PAIN")
+
+        sequence = resolve_sign_sequence("pain ab")
+
+        assert sequence.back_translation == ["PAIN", "A", "B"]
+
+
+@pytest.mark.django_db
+class TestReviewedAliases:
+    """
+    ADR 034. A doctor writes "how are you doing" and the library has FEELING.
+    A consultant records that they are interchangeable, rather than the system
+    guessing at similarity.
+    """
+
+    def test_a_reviewed_alias_reaches_the_sign(self, make_clip, alphabet):
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING")
+        ClipAlias.objects.create(
+            clip=feeling, term="doing", reviewed_by="Ama Mensah, GhSL"
+        )
+
+        sequence = resolve_sign_sequence("doing")
+
+        assert sequence.back_translation == ["FEELING"]
+        assert sequence.is_safe_to_show is True
+
+    def test_an_unreviewed_alias_is_ignored(self, make_clip, alphabet):
+        # An alias nobody signed off is nobody's clinical judgment. It would be
+        # a guess wearing the appearance of a reviewed equivalence, which is
+        # worse than no match at all.
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING")
+        ClipAlias.objects.create(clip=feeling, term="doing")
+
+        sequence = resolve_sign_sequence("doing")
+
+        assert sequence.back_translation != ["FEELING"]
+
+    def test_an_alias_cannot_route_around_clip_review(self, make_clip, alphabet):
+        # Otherwise adding an alias to unapproved footage would show a patient
+        # a sign no consultant had cleared.
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING", approved=False)
+        ClipAlias.objects.create(
+            clip=feeling, term="doing", reviewed_by="Ama Mensah, GhSL"
+        )
+
+        sequence = resolve_sign_sequence("doing")
+
+        assert sequence.back_translation != ["FEELING"]
+
+    def test_an_alias_cannot_route_around_missing_footage(self, make_clip, alphabet):
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING", filmed=False)
+        ClipAlias.objects.create(
+            clip=feeling, term="doing", reviewed_by="Ama Mensah, GhSL"
+        )
+
+        sequence = resolve_sign_sequence("doing")
+
+        assert sequence.back_translation != ["FEELING"]
+
+    def test_the_term_is_normalized_like_a_gloss(self, make_clip, alphabet):
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING")
+        alias = ClipAlias.objects.create(
+            clip=feeling, term="  Doing  ", reviewed_by="Ama Mensah, GhSL"
+        )
+
+        alias.refresh_from_db()
+        assert alias.term == "DOING"
+        assert resolve_sign_sequence("DOING").back_translation == ["FEELING"]
+
+    def test_one_word_cannot_mean_two_different_signs(self, make_clip):
+        # An ambiguous alias would resolve differently depending on query
+        # order, so the same sentence could sign differently on two devices.
+        from django.db import IntegrityError
+
+        from clips.models import ClipAlias
+
+        ClipAlias.objects.create(
+            clip=make_clip("FEELING"), term="doing", reviewed_by="Ama, GhSL"
+        )
+
+        with pytest.raises(IntegrityError):
+            ClipAlias.objects.create(
+                clip=make_clip("WORKING"), term="doing", reviewed_by="Ama, GhSL"
+            )
+
+    def test_a_real_gloss_always_wins_over_an_alias(self, make_clip, alphabet):
+        # If the doctor's exact word is filmed, that sign is used. An alias is
+        # a fallback, never a substitution for something that already matches.
+        from clips.models import ClipAlias
+
+        make_clip("DOING")
+        ClipAlias.objects.create(
+            clip=make_clip("FEELING"), term="doing", reviewed_by="Ama, GhSL"
+        )
+
+        assert resolve_sign_sequence("doing").back_translation == ["DOING"]
+
+    def test_deleting_a_clip_deletes_its_aliases(self, make_clip):
+        # An alias pointing at nothing would be an equivalence to a sign that
+        # no longer exists.
+        from clips.models import ClipAlias
+
+        feeling = make_clip("FEELING")
+        ClipAlias.objects.create(clip=feeling, term="doing", reviewed_by="Ama, GhSL")
+
+        feeling.delete()
+
+        assert not ClipAlias.objects.exists()

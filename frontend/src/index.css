@@ -841,3 +841,78 @@ body {
   font-size: 0.85rem;
   color: var(--colour-muted);
 }
+
+/* The safety gate, ADR 033. Nothing reaches the patient until it is safe to
+   show, and the doctor reads back what they will see when it differs from what
+   was typed. */
+.gate {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Refusal is the louder of the two, because it is the one that stops a
+   consultation rather than slowing it. */
+.gate--refused {
+  border-left: 5px solid var(--colour-offline);
+  background: #fdf3f1;
+}
+
+.gate--confirm {
+  border-left: 5px solid var(--colour-accent);
+  background: #fdf9ec;
+}
+
+.gate__title {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.gate--refused .gate__title {
+  color: var(--colour-offline);
+}
+
+.gate__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+.gate__label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--colour-muted);
+  flex: 0 0 8rem;
+}
+
+/* The glosses the patient will see, spaced apart so the sentence reads as a
+   list of signs rather than as English prose. */
+.gate__row strong {
+  letter-spacing: 0.04em;
+}
+
+.gate__note,
+.gate__advice {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--colour-muted);
+}
+
+.gate__show {
+  font: inherit;
+  font-weight: 600;
+  align-self: flex-start;
+  min-height: 3rem;
+  padding: 0 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--colour-primary);
+  color: #fff;
+  cursor: pointer;
+}

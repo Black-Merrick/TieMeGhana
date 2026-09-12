@@ -48,6 +48,11 @@ function caption(overrides = {}) {
       total_duration_ms: 800,
       fingerspelled_tokens: [],
       unavailable_tokens: [],
+      omitted_tokens: [],
+      blocking_tokens: [],
+      back_translation: ["HEAD"],
+      is_safe_to_show: true,
+      needs_confirmation: false,
     },
     ...overrides,
   };
@@ -542,5 +547,95 @@ describe("surviving a page reload", () => {
 
     expect(screen.queryByTestId("caption")).not.toBeInTheDocument();
     expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+});
+
+describe("the safety gate, ADR 033", () => {
+  function refused(blocking) {
+    const c = caption();
+    c.sequence.blocking_tokens = blocking;
+    c.sequence.is_safe_to_show = false;
+    return c;
+  }
+
+  it("never asks the patient to answer a refused question", async () => {
+    // The patient never saw it, so there is nothing for them to answer, and a
+    // Yes recorded against a question that was not asked would be worse than
+    // no record at all.
+    captionUtterance.mockResolvedValue(refused(["no"]));
+    await askFreely("no pain");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("utterance-refused")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("never records a refused question as asked", async () => {
+    captionUtterance.mockResolvedValue(refused(["no"]));
+    await askFreely("no pain");
+
+    await waitFor(() => screen.getByTestId("utterance-refused"));
+    expect(screen.queryByTestId("transcript")).not.toBeInTheDocument();
+  });
+
+  it("holds the answer back until the doctor has checked the sentence", async () => {
+    const c = caption();
+    c.sequence.omitted_tokens = ["the"];
+    c.sequence.needs_confirmation = true;
+    captionUtterance.mockResolvedValue(c);
+    const user = await askFreely("the pain");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("utterance-confirm")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("confirm-show"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    });
+  });
+
+  it("records the question only once it has been shown", async () => {
+    const c = caption();
+    c.sequence.omitted_tokens = ["the"];
+    c.sequence.needs_confirmation = true;
+    captionUtterance.mockResolvedValue(c);
+    const user = await askFreely("the pain");
+
+    await waitFor(() => screen.getByTestId("confirm-show"));
+    expect(screen.queryByTestId("transcript")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("confirm-show"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("transcript-list")).toHaveTextContent(
+        "Did you vomit?",
+      );
+    });
+  });
+
+  it("records a shown question exactly once", async () => {
+    // The callback's identity changes every render, so without a guard the
+    // effect would fire repeatedly and write the question again each time.
+    await askFreely();
+
+    await waitFor(() => screen.getByTestId("transcript-list"));
+    const entries = screen.getAllByRole("listitem");
+
+    expect(entries).toHaveLength(1);
+  });
+
+  it("shows a fully signed question with no confirmation step", async () => {
+    // Friction where there is no risk would train the doctor to tap through
+    // the confirmation without reading it.
+    await askFreely();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("caption")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("utterance-confirm")).not.toBeInTheDocument();
   });
 });

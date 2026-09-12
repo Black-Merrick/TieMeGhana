@@ -36,6 +36,11 @@ function captionResponse(overrides = {}) {
       total_duration_ms: 900,
       fingerspelled_tokens: [],
       unavailable_tokens: [],
+      omitted_tokens: [],
+      blocking_tokens: [],
+      back_translation: ["HEAD"],
+      is_safe_to_show: true,
+      needs_confirmation: false,
     },
     ...overrides,
   };
@@ -168,11 +173,12 @@ describe("DoctorConsultation", () => {
     expect(screen.queryByTestId("provider-warning")).not.toBeInTheDocument();
   });
 
-  it("tells the doctor which words were spelled out rather than signed", async () => {
-    // A spelled clinical term may not be understood by the patient, so the
-    // doctor needs to know to rephrase.
+  it("holds a spelled word behind the gate until the doctor checks it", async () => {
+    // ADR 033. A spelled clinical term may not be understood, so the doctor
+    // reads back what the patient will see before they see it.
     const response = captionResponse();
     response.sequence.fingerspelled_tokens = ["hurts"];
+    response.sequence.needs_confirmation = true;
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
     render(<DoctorConsultation outputLanguage="en" />);
@@ -181,13 +187,34 @@ describe("DoctorConsultation", () => {
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("coverage-notice")).toHaveTextContent("hurts");
+      expect(screen.getByTestId("confirm-spelled")).toHaveTextContent("hurts");
     });
+    // Nothing is on screen for the patient yet.
+    expect(screen.queryByTestId("caption")).not.toBeInTheDocument();
   });
 
-  it("tells the doctor which words could not be signed at all", async () => {
+  it("shows the caption once the doctor confirms", async () => {
+    const response = captionResponse();
+    response.sequence.fingerspelled_tokens = ["hurts"];
+    response.sequence.needs_confirmation = true;
+    captionUtterance.mockResolvedValue(response);
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+    await waitFor(() => screen.getByTestId("confirm-show"));
+    await user.click(screen.getByTestId("confirm-show"));
+
+    expect(screen.getByTestId("caption")).toBeInTheDocument();
+  });
+
+  it("refuses a sentence with a word that can be neither signed nor spelled", async () => {
+    // The patient would see only part of the sentence and might guess at the
+    // rest, which ADR 022 already refuses for a partial answer grid.
     const response = captionResponse();
     response.sequence.unavailable_tokens = ["nausea"];
+    response.sequence.is_safe_to_show = false;
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
     render(<DoctorConsultation outputLanguage="en" />);
@@ -196,16 +223,39 @@ describe("DoctorConsultation", () => {
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("coverage-notice")).toHaveTextContent("nausea");
+      expect(screen.getByTestId("refused-missing")).toHaveTextContent("nausea");
     });
+    expect(screen.queryByTestId("caption")).not.toBeInTheDocument();
   });
 
-  it("shows the English text the signs were looked up from", async () => {
-    // Signs are keyed on English glosses, so with Twi input the searched text
-    // is a translation rather than what the doctor typed. When a sign is
-    // missing they need to see which English word was actually searched for.
+  it("refuses a sentence whose negation has no sign, and says why", async () => {
+    // The failure that started this. "no pain" losing "no" means "pain", and
+    // the patient answers the opposite question.
+    const response = captionResponse();
+    response.sequence.blocking_tokens = ["no"];
+    response.sequence.is_safe_to_show = false;
+    captionUtterance.mockResolvedValue(response);
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "no pain");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("refused-blocking")).toHaveTextContent("no");
+    });
+    expect(screen.getByTestId("utterance-refused")).toHaveTextContent(
+      /change what the sentence means/i,
+    );
+    expect(screen.queryByTestId("confirm-show")).not.toBeInTheDocument();
+  });
+
+  it("shows the English the signs were matched from", async () => {
+    // ADR 014. Signs are keyed on English, so with Twi input the matched text
+    // is a translation rather than what the doctor typed, and they need to see
+    // which words were actually searched for.
     const response = captionResponse({ sign_lookup_text: "EN:wo tiri" });
-    response.sequence.unavailable_tokens = ["tiri"];
+    response.sequence.needs_confirmation = true;
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
     render(<DoctorConsultation outputLanguage="en" />);

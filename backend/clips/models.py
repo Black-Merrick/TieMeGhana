@@ -125,3 +125,67 @@ class SignClip(models.Model):
     def is_resolvable(self) -> bool:
         """Whether this single clip may be shown, mirroring the queryset rule."""
         return bool(self.video) and self.review_status == ReviewStatus.APPROVED
+
+
+class ClipAlias(models.Model):
+    """
+    Another word that means the same sign, ADR 034.
+
+    A doctor writes "how are you doing" when the library has FEELING. Rather
+    than guessing at the similarity, a GhSL fluent consultant records that
+    "doing" and "feeling" are interchangeable in this clinical context, and the
+    resolver then matches either.
+
+    An alias is a clinical equivalence claim, so it carries its own reviewer
+    rather than inheriting the clip's. Approving footage says the sign is
+    correct; it does not say which other English words that sign may stand for.
+    An alias with no reviewer is ignored entirely.
+    """
+
+    clip = models.ForeignKey(
+        SignClip,
+        on_delete=models.CASCADE,
+        related_name="aliases",
+        help_text="The sign this word also means.",
+    )
+    term = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text=(
+            "The alternative word, stored uppercase. Unique across the whole "
+            "library, because one word cannot mean two different signs."
+        ),
+    )
+    reviewed_by = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text=(
+            "The GhSL fluent consultant who confirmed this word and the sign "
+            "mean the same thing clinically. Leave empty and the alias is "
+            "ignored."
+        ),
+    )
+    notes = models.TextField(
+        blank=True, help_text="Why these are interchangeable, or any caveat."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["term"]
+        verbose_name = "clip alias"
+        verbose_name_plural = "clip aliases"
+
+    def __str__(self) -> str:
+        return f"{self.term} -> {self.clip.gloss}"
+
+    def save(self, *args, **kwargs):
+        """Normalize the term, for the same reason the gloss is normalized."""
+        self.term = self.term.strip().upper()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_usable(self) -> bool:
+        """An unreviewed alias is not an equivalence anyone has vouched for."""
+        return bool(self.reviewed_by.strip())

@@ -64,7 +64,11 @@ function isRestorable(stored) {
       typeof caption.caption === "string" &&
       Array.isArray(caption.sequence?.segments) &&
       Array.isArray(caption.sequence?.fingerspelled_tokens) &&
-      Array.isArray(caption.sequence?.unavailable_tokens),
+      Array.isArray(caption.sequence?.unavailable_tokens) &&
+      // Added with ADR 033. A record written before the safety gate existed
+      // has no verdict on it, and treating a missing verdict as either answer
+      // would be a guess about whether a sentence is safe to show.
+      typeof caption.sequence?.is_safe_to_show === "boolean",
   );
 }
 

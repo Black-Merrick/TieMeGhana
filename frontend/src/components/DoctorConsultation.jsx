@@ -20,16 +20,19 @@ export default function DoctorConsultation({ outputLanguage }) {
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
 
-  /** FR 4.1, the doctor's side of the exchange. */
-  const askPatient = async (payload) => {
-    const caption = await send(payload);
-    if (caption) {
-      transcript.record({
-        direction: Direction.TO_PATIENT,
-        text: caption.transcript,
-        caption: caption.caption,
-      });
-    }
+  /**
+   * FR 4.1, the doctor's side of the exchange.
+   *
+   * Recorded when the patient is actually shown it rather than when it is
+   * captioned, because a sentence the safety gate refused was never said to
+   * them. See ADR 033.
+   */
+  const messageShown = (caption) => {
+    transcript.record({
+      direction: Direction.TO_PATIENT,
+      text: caption.transcript,
+      caption: caption.caption,
+    });
   };
 
   /** FR 4.1 and FR 3.1, the patient's typed reply, spoken and recorded. */
@@ -42,7 +45,7 @@ export default function DoctorConsultation({ outputLanguage }) {
 
   return (
     <section className="consultation">
-      <DoctorUtteranceForm onSend={askPatient} busy={status === "working"} />
+      <DoctorUtteranceForm onSend={send} busy={status === "working"} />
 
       {status === "working" ? (
         <p className="consultation__working" data-testid="working-indicator">
@@ -58,7 +61,7 @@ export default function DoctorConsultation({ outputLanguage }) {
         </p>
       ) : null}
 
-      {result ? <CaptionResult result={result} /> : null}
+      {result ? <CaptionResult result={result} onShown={messageShown} /> : null}
 
       {/* FR 3.1 and 3.4. The patient types, and their answer is spoken aloud
           in whichever language the hearing listener set for this visit. */}

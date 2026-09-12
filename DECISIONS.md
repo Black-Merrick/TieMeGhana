@@ -997,3 +997,103 @@ that the player and the coverage notice both read, and restoring one of those
 crashes the consultation screen on load. That is strictly worse than losing the
 question, so anything not matching fails closed and the screen starts clean.
 That case was found by a test which stored a deliberately incomplete caption.
+
+---
+
+## ADR 033, A sentence that would change meaning is refused, not shown
+
+**Context.** A word with no sign was simply absent from playback. That is not a
+degraded rendering, it is a different sentence.
+
+`"do you have no pain"` played as `PAIN`. `"take two tablets"` played as
+`TABLETS`, with no dose. `"stop the medicine"` played as `MEDICINE`, the
+opposite instruction. Verified live: `"ask about"` and `"ask no about"`
+produced byte-identical video.
+
+Neither person in the room can catch this. The doctor does not read GhSL, so
+they cannot see what the patient was shown. The patient never saw the typed
+words, so they cannot know they were asked something else. The patient answers
+honestly, the doctor records the answer, and nothing looks wrong.
+
+This is the failure mode the project exists to reduce, and we were generating
+it ourselves.
+
+**Decision.** Words are classified by what their absence does, and the sentence
+is handled accordingly.
+
+| Class | Examples | If it cannot be signed |
+| --- | --- | --- |
+| Droppable | `the a is are do does of and` | Left out. GhSL does not use them |
+| Blocking | negation, dose, frequency, timing, severity, any number | **The sentence is not shown at all** |
+| Content | `pain head fever medicine` | Fingerspelled; if unspellable, refused |
+
+On top of that, a confirmation gate. When the rendering differs from what was
+typed, the doctor reads back **the glosses the patient will actually see** and
+confirms before the patient sees anything. When every word is a reviewed sign
+and nothing was dropped, it goes straight through.
+
+**Why dropping function words is safe rather than a compromise.** GhSL, like
+every sign language, has no articles and no copula. "Do you have pain" is
+signed roughly `PAIN YOU`. Omitting `do`, `the`, `is` produces more natural
+GhSL, not broken GhSL. Spelling them letter by letter would be actively worse,
+spending a patient's attention on words that carry nothing.
+
+**Why blocking words are never fingerspelled.** Spelling `no` to a patient who
+may not be print literate is not a rendering of "no", and assuming they
+followed it is the same risk wearing a different shape. The sentence stops.
+
+**Why confirmation is conditional.** Confirming a sentence with nothing wrong
+with it would teach the doctor to tap through without reading, which makes the
+gate worthless. Friction lands exactly where the risk is.
+
+**Consequence.** With a small clip library many sentences are refused. That is
+the correct behaviour and it is temporary: coverage improves as footage is
+filmed. A refused sentence is never recorded in the transcript as asked, and
+never offered an answer control, because the patient did not see it.
+
+**The word lists are clinical judgments, not engineering ones.** They are
+seeded with the obvious negations, quantifiers, frequencies and severities, and
+they should be reviewed and extended by the team's Deaf member and a GhSL
+consultant. Adding a word to the blocking list is always safe. Adding one to
+the droppable list is a claim that its absence cannot change what a patient
+understands. Two currently-spelled words, "you" and "have", are arguable
+candidates and are left for that review rather than decided here.
+
+---
+
+## ADR 034, Alternative words are a reviewed table, not a similarity guess
+
+**Context.** A doctor writes "how are you doing" and the library has FEELING.
+The system should be able to bridge that, and there are two ways: have somebody
+record that the words are interchangeable, or have software judge that they are
+similar.
+
+**Decision.** A reviewed alias table. A GhSL fluent consultant records that
+"doing" reaches the FEELING sign, and the resolver matches either. No
+embeddings, no language model, nothing in the patient-facing path that
+estimates meaning.
+
+An alias carries its own reviewer rather than inheriting the clip's. Approving
+footage says the sign is correct; it does not say which other English words
+that sign may stand for. An alias with no reviewer is ignored entirely, and an
+alias cannot reach a clip that is itself unreviewed or unfilmed, so it can
+never route around the review gate.
+
+**Why not embeddings or an LLM.** In a clinical setting the failure mode of a
+confident wrong paraphrase is indistinguishable from success. "Do you have
+pain" and "do you have severe pain" are close in any vector space and are
+different clinical questions. Nobody present can detect the substitution, for
+the same reason ADR 033 exists.
+
+An alias table is deterministic, auditable, offline, free, and explainable: a
+consultant approved every entry, and it can be shown to a reviewer as a list.
+
+**Consequence.** Coverage grows by human effort rather than automatically,
+which is slower and is the point. A term is unique across the library, because
+one word cannot mean two signs without the same sentence signing differently on
+two devices. An exact gloss always wins over an alias, so an alias is a
+fallback and never a substitution for something that already matches.
+
+If a suggestion layer is added later, it belongs **behind** the confirmation
+gate in ADR 033: it may propose an alternative to the doctor, who approves it
+in one tap. It may never substitute one silently.

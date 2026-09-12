@@ -1253,3 +1253,102 @@ worse than losing the question.
 Found by a test that deliberately stored an incomplete caption. Records are now
 validated by shape, and anything that does not match fails closed so the screen
 starts clean.
+
+---
+
+## The safety gate: refusing sentences that would change meaning
+
+**The bug, verified live before fixing anything.** A word with no sign was
+absent from playback, and absence changes meaning.
+
+```
+doctor says : "ask about"      patient sees : [ASK, ABOUT]
+doctor says : "ask no about"   patient sees : [ASK, ABOUT]
+```
+
+Byte-identical video for two different sentences. `"do you have no pain"`
+played as `PAIN`. `"take two tablets"` played as `TABLETS`, no dose. `"stop
+the medicine"` played as `MEDICINE`, the opposite instruction.
+
+Neither person could catch it. The doctor does not read GhSL, so cannot see
+what was shown. The patient never saw the typed words, so cannot know they
+were asked something else. This is the failure the project exists to reduce,
+and we were producing it.
+
+**Now:**
+
+```
+doctor says : "ask no about"   blocking : [no]   safe to show : False
+doctor says : "ask about"      blocking : []     safe to show : True
+```
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `clips/safety.py` | Classifies words by what their absence does: droppable, blocking, content |
+| Blocking refusal | Negation, dose, frequency, timing, severity, any number. Missing means the sentence is not shown |
+| Droppable omission | Articles and copulas left out rather than spelled. GhSL does not use them |
+| Confirmation gate | The doctor reads back the glosses the patient will see, when they differ from what was typed |
+| `ClipAlias` | Reviewed alternative words, ADR 034. No AI in the patient path |
+| Shown-not-attempted recording | The transcript records what the patient saw, not what was tried |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 155 passed, 33 new for safety and aliases |
+| Frontend suite | 261 passed |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Production build | PWA builds |
+| Live | `"ask no about"` refused, `"ask about"` shown |
+
+### Why the pieces are shaped this way
+
+**Dropping articles is safe, not a compromise.** GhSL has no articles and no
+copula: "do you have pain" is signed roughly `PAIN YOU`. Omitting them is more
+natural GhSL. Spelling them letter by letter would be worse, spending a
+patient's attention on words carrying nothing.
+
+**Blocking words are never fingerspelled.** Spelling `no` to a patient who may
+not be print literate is not a rendering of "no", and assuming they followed it
+is the same risk in a different shape.
+
+**Confirmation is conditional.** A sentence rendered entirely in reviewed signs
+goes straight through. Confirming something with nothing wrong with it would
+teach the doctor to tap through without reading, making the gate worthless.
+
+**Aliases are reviewed, not inferred.** "Do you have pain" and "do you have
+severe pain" are close in any vector space and are different clinical
+questions, and nobody present could detect the substitution. So an alias is a
+consultant's recorded judgment, with its own reviewer, and it cannot reach
+unreviewed footage.
+
+### Problems hit, and the fixes
+
+**An infinite render loop.** `CaptionResult` reports upward when the patient
+has seen an utterance. The callback's identity changes on every render of the
+caller, so the effect fired, set state, re-rendered, and fired again. The test
+run hung rather than failing. Guarded with a ref holding which utterance has
+been reported, which also guarantees one transcript entry per utterance rather
+than one per render.
+
+**Droppable words were being fingerspelled.** The fingerspelling branch ran
+before the droppable check, so "the" spelled as T-H-E. Reordered: risk is
+classified before spelling is attempted.
+
+**A test expectation was wrong, not the code.** I asserted that "you" and
+"have" would be dropped. They are not on the conservative droppable list, so
+they are spelled. Both are arguably safe to drop, but that is a clinical
+judgment for the team, so the test now documents the current behaviour and
+ADR 033 records the open question.
+
+**The dev database was missing the alias table.** The migration was created but
+never applied locally, so the live endpoint returned 500 while every test
+passed, because pytest builds a fresh database from migrations each run.
+
+### What this costs, stated plainly
+
+With 95 glosses and two filmed, most sentences are now refused. That is correct
+and temporary: coverage improves as footage is filmed, and a refusal is
+visible, whereas the alternative was a silent wrong answer.
