@@ -3,6 +3,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
+from clips.body_locations import BODY_LOCATIONS
 from clips.models import SignClip
 from clips.serializers import (
     SignClipSerializer,
@@ -27,6 +28,40 @@ class SignClipViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Only clips that are both approved and filmed are ever exposed.
         return SignClip.objects.resolvable()
+
+    @action(detail=False, url_path="body-locations")
+    def body_locations(self, request):
+        """
+        The body locations a patient can point to, FR 2.5.
+
+        Every location is returned, filmed or not, each reporting whether it
+        can be shown. The caller withholds the whole grid unless all of them
+        can: a patient offered three body parts when their pain is in a fourth
+        taps the nearest available one, and that wrong answer looks exactly
+        like a right one. See ADR 022.
+        """
+        filmed = {
+            clip.gloss: clip
+            for clip in SignClip.objects.resolvable().filter(
+                gloss__in=[gloss for gloss, _ in BODY_LOCATIONS]
+            )
+        }
+
+        return Response(
+            [
+                {
+                    "id": gloss,
+                    "english_text": label,
+                    "is_playable": gloss in filmed,
+                    "clip": (
+                        SignClipSerializer(filmed[gloss]).data
+                        if gloss in filmed
+                        else None
+                    ),
+                }
+                for gloss, label in BODY_LOCATIONS
+            ]
+        )
 
     @action(detail=False, url_path=r"by-gloss/(?P<gloss>[^/]+)")
     def by_gloss(self, request, gloss=None):

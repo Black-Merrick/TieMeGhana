@@ -796,3 +796,68 @@ footage, and that is the only usable path today. See ADR 022.
 | Backend suite | 119 passed |
 | Frontend suite | 140 passed |
 | Live `/api/questions/` | 200, nine questions, all correctly reported as not yet playable |
+
+---
+
+## Sprint 4 redesign, Guided Interrogation without a question bank
+
+**Why it changed.** The bank was built as FR 2.4 describes it, nine
+categorised questions. Seeing it in the browser made the problem obvious: a
+consultation is a conversation, and a fixed list cannot follow one. The doctor
+could not ask "how many days?" after a yes, or anything nobody thought of in
+advance, while the literate path already let them type or speak freely.
+
+**What it is now.** Guided Interrogation uses the same doctor input as the
+literate path. The difference sits entirely on the patient's side, which is
+where it belongs: they answer yes or no, by tapping or by nodding for the
+doctor to confirm. "Where does it hurt" keeps a dedicated action, because a
+place cannot be answered yes or no, and the body locations appear for the
+patient to point to. See ADR 023.
+
+### What was removed and what replaced it
+
+| Removed | Replaced by |
+| --- | --- |
+| `questions` app: models, serializers, views, admin, seed, 29 tests | Nothing. The doctor types or speaks |
+| `ClinicalQuestion`, `AnswerOption` | `clips/body_locations.py`, a named clip set with no model |
+| `GET /api/questions/` | `GET /api/clips/body-locations/`, one query |
+
+Shared rather than duplicated, since both paths now do the same thing on the
+doctor's side:
+
+| New shared piece | Used by |
+| --- | --- |
+| `useCaption` | Both paths: one request, status, and failure path |
+| `DoctorUtteranceForm` | Both paths: language, typing, microphone, all its notices |
+| `CaptionResult` | Both paths: caption, player, coverage, provider warning |
+
+`DoctorConsultation` is now 35 lines. It was 200.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 90 passed, 29 fewer with the bank gone |
+| Frontend suite | 138 passed |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Live `/api/clips/body-locations/` | 200, 16 locations head downwards, none filmed yet |
+| Live `/api/questions/` | 404, correctly gone |
+
+### The trade this makes, recorded rather than glossed over
+
+SRS section 4.3 justified the fixed bank as preventing an unreviewed sign video
+being generated on the fly. Free input reintroduces that risk: a doctor can
+type a word the library has no sign for.
+
+What makes it acceptable is that the gap was already visible. Every caption
+reports which words were spelled out and which could not be signed, on screen,
+before the doctor relies on it. An unreviewed sign is still never invented,
+because resolution only returns consultant approved clips. Coverage is now
+reported rather than guaranteed in advance: a weaker promise, but an honest one.
+
+### Note on the development database
+
+Removing the app leaves its two tables behind in any existing `db.sqlite3`,
+since there is no migration to drop them once the app is gone. Harmless, and
+they disappear on a fresh database. Nothing references them.

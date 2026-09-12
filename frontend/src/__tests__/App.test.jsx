@@ -4,14 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
-import { fetchQuestions } from "../api/questions.js";
+import { fetchBodyLocations } from "../api/clips.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchClipByGloss: vi.fn() };
+  return {
+    ...actual,
+    fetchClipByGloss: vi.fn(),
+    fetchBodyLocations: vi.fn(),
+  };
 });
-vi.mock("../api/questions.js", () => ({ fetchQuestions: vi.fn() }));
 
 beforeEach(() => {
   localStorage.clear();
@@ -21,16 +24,7 @@ beforeEach(() => {
     video_url: "/media/clips/prompt.webm",
     duration_ms: 3000,
   });
-  fetchQuestions.mockResolvedValue([
-    {
-      id: 1,
-      english_text: "Where does it hurt?",
-      question_type: "selection",
-      category: "intake",
-      prompt_clip: { gloss: "WHERE", video_url: "/media/clips/where.webm" },
-      options: [],
-    },
-  ]);
+  fetchBodyLocations.mockResolvedValue([]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -91,9 +85,12 @@ describe("routing by literacy path", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /send to patient/i }),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ask-where-it-hurts")).not.toBeInTheDocument();
   });
 
   it("never shows typed captions to a patient who does not read", async () => {
@@ -105,10 +102,17 @@ describe("routing by literacy path", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("ask-question-1")).toBeInTheDocument();
+      expect(screen.getByTestId("ask-where-it-hurts")).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText(/message for the patient/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // The doctor asks in their own words on both paths, so the distinguishing
+    // thing is the patient's side: Guided Interrogation offers them yes or no
+    // and never a caption to read back or a field to type into.
+    expect(
+      screen.getByRole("button", { name: /ask the patient/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /send to patient/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("routes straight after the patient answers, without a reload", async () => {
@@ -119,7 +123,9 @@ describe("routing by literacy path", () => {
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /send to patient/i }),
+      ).toBeInTheDocument();
     });
   });
 });
@@ -158,6 +164,8 @@ describe("the visit bar", () => {
     await waitFor(() => {
       expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText(/message for the patient/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /send to patient/i }),
+    ).not.toBeInTheDocument();
   });
 });

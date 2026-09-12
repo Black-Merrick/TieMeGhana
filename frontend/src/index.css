@@ -539,3 +539,31 @@ body {
   background: #fdf3f1;
   border-radius: 0.25rem;
 }
+
+/* The one dedicated question, FR 2.5. Set apart from the free text input
+   because it behaves differently: the patient points rather than answering
+   yes or no. */
+.guided__where {
+  font: inherit;
+  font-weight: 600;
+  margin-top: 1rem;
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border: 2px dashed var(--colour-primary);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--colour-primary);
+  cursor: pointer;
+}
+
+.guided__where:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.answer {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}

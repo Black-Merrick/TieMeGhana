@@ -620,3 +620,54 @@ This was found by the bank returning a 500 in the browser while every test
 passed, because the test fixture always created filmed option clips. The real
 lesson is narrower than the fix: a fixture whose defaults are the *healthy*
 case will not exercise the state the system actually spends its early life in.
+
+---
+
+## ADR 023, The doctor asks freely in Guided Interrogation, there is no question bank
+
+**Context.** FR 2.4 describes the doctor selecting a question from a preset
+clinical bank. That was built: nine questions, categorised, each stitched from
+the clip library.
+
+In use it was the wrong shape. A consultation is a conversation, and a fixed
+list cannot follow one. The doctor could not ask "how many days?" after a yes,
+or "is it worse when you eat?", or anything the bank did not anticipate.
+Meanwhile the literate path already lets them type or speak whatever they
+need.
+
+**Decision.** Guided Interrogation uses the same doctor input as the literate
+path: type or speak, in English or Twi. The question is captioned and stitched
+into GhSL exactly as before. The difference is entirely on the patient's side,
+which is where it belongs: they answer **yes or no**, by tapping the shared
+icons or by nodding for the doctor to confirm.
+
+"Where does it hurt" is the one question that cannot be answered yes or no, so
+it keeps a dedicated action. After its video plays, the body locations appear
+for the patient to point to, and that answer tells the doctor where to focus
+for the rest of the consultation.
+
+The `questions` app, its models, admin, and seed command were removed.
+
+**Why.** The bank solved a problem the app did not have while creating a real
+one: it constrained the doctor to questions someone thought of in advance. The
+patient's side is what needed constraining, not the doctor's, and yes or no
+plus a body location covers it. Two paths now share one input, so a fix to
+speech or translation reaches both rather than one drifting behind.
+
+**The cost, stated plainly.** SRS section 4.3 justified the fixed bank as
+"preventing an unreviewed or inaccurate sign video from ever being generated on
+the fly". Free input reintroduces that: a doctor can type a word the library
+has no sign for, and it will fingerspell.
+
+What makes that acceptable is that the gap is already visible rather than
+hidden. Every caption reports which words were spelled out and which could not
+be signed at all, on screen, to the doctor, before they rely on it. An
+unreviewed sign is still never invented, because resolution only ever returns
+consultant approved clips. What changes is that coverage is now reported rather
+than guaranteed in advance, which is a weaker promise but an honest one.
+
+**Consequence.** A deliberate divergence from FR 2.4, recorded here rather
+than left to look like drift. Worth saying out loud in the pitch: the literacy
+branch is the differentiator, and it survives this change untouched. What went
+away is a constraint on the doctor, not the accessibility guarantee for the
+patient.

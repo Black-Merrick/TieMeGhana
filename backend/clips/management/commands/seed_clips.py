@@ -24,6 +24,7 @@ LETTERS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + list("0123456789")
 # hyphenated gloss such as HOW-MANY could never be matched from a caption. A
 # multi word sign needs phrase level matching, which is deliberately not in
 # this sprint.
+# Kept in step with clips/body_locations.py, which defines the tappable grid.
 BODY_PARTS = [
     "HEAD",
     "EYE",
@@ -35,6 +36,7 @@ BODY_PARTS = [
     "CHEST",
     "HEART",
     "STOMACH",
+    "WAIST",
     "BACK",
     "ARM",
     "HAND",
@@ -96,10 +98,11 @@ WORDS = BODY_PARTS + SYMPTOMS + CLINICAL + EVERYDAY
 # are never looked up by tokenizing a caption.
 ALERTS = ["ASTHMA", "PREGNANCY", "CANNOT_BREATHE"]
 
-# Questions the app asks in its own voice, delivered as sign video only. FR 2.1
-# requires the literacy check to carry no text at all, so this clip is the only
-# way the question can be asked.
-PROMPTS = ["CAN_YOU_READ_AND_WRITE"]
+# Questions and instructions the app gives in its own voice, delivered as sign
+# video only. FR 2.1 requires the literacy check to carry no text at all, so
+# that clip is the only way the question can be asked. NOD_OR_SHAKE is the
+# FR 2.6 instruction appended to a yes or no question.
+PROMPTS = ["CAN_YOU_READ_AND_WRITE", "NOD_OR_SHAKE"]
 
 
 class Command(BaseCommand):

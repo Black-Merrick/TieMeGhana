@@ -3,240 +3,213 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import GuidedInterrogation from "../components/GuidedInterrogation.jsx";
-import { fetchQuestions } from "../api/questions.js";
+import { captionUtterance } from "../api/consultation.js";
+import { fetchBodyLocations } from "../api/clips.js";
 
-vi.mock("../api/questions.js", () => ({ fetchQuestions: vi.fn() }));
+vi.mock("../api/consultation.js", () => ({ captionUtterance: vi.fn() }));
+vi.mock("../api/clips.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchBodyLocations: vi.fn() };
+});
 
-const selectionQuestion = {
-  id: 1,
-  english_text: "Where does it hurt?",
-  question_type: "selection",
-  category: "intake",
-  is_playable: true,
-  prompt_sequence: {
-    source_text: "Where does it hurt?",
-    segments: [
-      {
-        token: "where",
-        match: "gloss",
-        clips: [
-          { gloss: "WHERE", video_url: "/media/clips/where.webm", duration_ms: 900 },
-        ],
-      },
-    ],
-    total_duration_ms: 900,
-    fingerspelled_tokens: [],
-    unavailable_tokens: [],
-  },
-  options: [
-    {
-      id: 11,
-      english_text: "Head",
-      order: 0,
-      clip: { gloss: "HEAD", video_url: "/media/clips/head.webm", duration_ms: 800 },
+/**
+ * Guided Interrogation, FR 2.4 to 2.7, as redesigned in ADR 023.
+ *
+ * The doctor asks in their own words, exactly as for a patient who reads. The
+ * difference is entirely on the patient's side: yes or no rather than typing.
+ */
+
+function caption(overrides = {}) {
+  return {
+    source_language: "en",
+    transcript: "Did you vomit?",
+    caption: "Wo foee?",
+    caption_language: "tw",
+    sign_lookup_text: "Did you vomit?",
+    transcript_source: "typed",
+    translation_applied: true,
+    language_provider: "khaya",
+    sequence: {
+      source_text: "Did you vomit?",
+      segments: [
+        {
+          token: "vomit",
+          match: "gloss",
+          clips: [
+            { gloss: "VOMIT", video_url: "/media/clips/vomit.webm", duration_ms: 800 },
+          ],
+        },
+      ],
+      total_duration_ms: 800,
+      fingerspelled_tokens: [],
+      unavailable_tokens: [],
     },
-    {
-      id: 12,
-      english_text: "Chest",
-      order: 1,
-      clip: { gloss: "CHEST", video_url: "/media/clips/chest.webm", duration_ms: 800 },
-    },
-  ],
-};
+    ...overrides,
+  };
+}
 
-const yesNoQuestion = {
-  id: 2,
-  english_text: "Do you feel nauseous?",
-  question_type: "yes_no",
-  category: "symptoms",
-  is_playable: true,
-  prompt_sequence: {
-    source_text: "Do you feel nausea?",
-    segments: [
-      {
-        token: "nausea",
-        match: "gloss",
-        clips: [
-          { gloss: "NAUSEA", video_url: "/media/clips/nausea.webm", duration_ms: 900 },
-        ],
-      },
-      {
-        token: "nod_or_shake",
-        match: "gloss",
-        clips: [
-          { gloss: "NOD_OR_SHAKE", video_url: "/media/clips/nod.webm", duration_ms: 1200 },
-        ],
-      },
-    ],
-    total_duration_ms: 2100,
-    fingerspelled_tokens: [],
-    unavailable_tokens: [],
-  },
-  options: [],
-};
+function bodyLocation(gloss, label, isPlayable = true) {
+  return {
+    id: gloss,
+    english_text: label,
+    is_playable: isPlayable,
+    clip: isPlayable
+      ? {
+          gloss,
+          video_url: `/media/clips/${gloss.toLowerCase()}.webm`,
+          duration_ms: 800,
+        }
+      : null,
+  };
+}
+
+const filmedLocations = [
+  bodyLocation("HEAD", "Head"),
+  bodyLocation("STOMACH", "Stomach"),
+];
 
 beforeEach(() => {
-  fetchQuestions.mockResolvedValue([selectionQuestion, yesNoQuestion]);
+  captionUtterance.mockResolvedValue(caption());
+  fetchBodyLocations.mockResolvedValue(filmedLocations);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** Render the bank and wait for a given question to appear in it. */
-async function openBank(questionId = 1) {
+async function askFreely(text = "Did you vomit?") {
+  const user = userEvent.setup();
   render(<GuidedInterrogation />);
-  await waitFor(() => screen.getByTestId(`ask-question-${questionId}`));
+  await user.type(screen.getByLabelText(/message for the patient/i), text);
+  await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+  return user;
 }
 
-describe("the question bank", () => {
-  it("offers the doctor the questions from the bank", async () => {
-    await openBank();
-
-    expect(screen.getByTestId("ask-question-1")).toHaveTextContent(
-      "Where does it hurt?",
-    );
-    expect(screen.getByTestId("ask-question-2")).toBeInTheDocument();
-  });
-
-  it("offers no free text field anywhere", async () => {
-    // Section 4.3. A non literate patient is never shown a text input, and the
-    // bank itself is a fixed list rather than something the doctor types into,
-    // so an unreviewed question cannot reach a patient.
-    await openBank();
-
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-  });
-
-  it("says so when no question is askable yet", async () => {
-    // Expected before filming: a question needs its GhSL prompt approved.
-    fetchQuestions.mockResolvedValue([]);
+describe("asking in the doctor's own words", () => {
+  it("offers no fixed question bank", async () => {
+    // ADR 023 replaced the bank. The doctor asks whatever the consultation
+    // needs, so a preset list would only get in the way.
     render(<GuidedInterrogation />);
 
+    expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
+    expect(screen.queryByText(/clinical question bank/i)).not.toBeInTheDocument();
+  });
+
+  it("sends the typed question through the same pipeline as a caption", async () => {
+    await askFreely("Did you vomit?");
+
     await waitFor(() => {
-      expect(screen.getByTestId("guided-empty")).toBeInTheDocument();
+      expect(captionUtterance).toHaveBeenCalledWith({
+        sourceLanguage: "en",
+        text: "Did you vomit?",
+      });
     });
   });
 
-  it("reports a failure to load rather than showing an empty bank", async () => {
-    // An empty bank and a broken connection need different responses from the
-    // doctor, so they must not look the same.
-    fetchQuestions.mockRejectedValue(new Error("offline"));
-    render(<GuidedInterrogation />);
+  it("plays the question to the patient as a stitched sign video", async () => {
+    // FR 2.4. The patient sees GhSL, stitched from the clip library, not the
+    // English the doctor typed.
+    await askFreely();
 
     await waitFor(() => {
-      expect(screen.getByTestId("guided-error")).toBeInTheDocument();
-    });
-  });
-});
-
-describe("asking a selection question", () => {
-  it("plays the question to the patient as sign video", async () => {
-    // FR 2.4. The patient sees GhSL, not the English the doctor read.
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-
-    expect(screen.getAllByTestId("sign-video")[0]).toHaveAttribute(
-      "src",
-      "/media/clips/where.webm",
-    );
-  });
-
-  it("shows a grid of sign video answers to tap", async () => {
-    // FR 2.5. Each option is a sign video, because the patient may not read.
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-
-    expect(screen.getByTestId("answer-option-11")).toBeInTheDocument();
-    expect(screen.getByTestId("answer-option-12")).toBeInTheDocument();
-  });
-
-  it("records the option the patient tapped", async () => {
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-    await user.click(screen.getByTestId("answer-option-11"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent("Head");
-    });
-  });
-
-  it("records a tapped answer as the patient's own", async () => {
-    // The distinction FR 2.7 draws. A tapped answer came from the patient, so
-    // the record must not later imply the doctor entered it.
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-    await user.click(screen.getByTestId("answer-option-11"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent(
-        "tapped by the patient",
+      expect(screen.getByTestId("sign-video")).toHaveAttribute(
+        "src",
+        "/media/clips/vomit.webm",
       );
     });
   });
 
-  it("returns to the bank after an answer, ready for the next question", async () => {
-    const user = userEvent.setup();
-    await openBank();
+  it("offers the doctor a microphone as well as typing", async () => {
+    // FR 1.2. The doctor's side is identical on both paths, so speaking works
+    // here too rather than only for a patient who reads.
+    render(<GuidedInterrogation />);
 
-    await user.click(screen.getByTestId("ask-question-1"));
-    await user.click(screen.getByTestId("answer-option-12"));
+    expect(
+      screen.queryByTestId("microphone-button") ??
+        screen.getByTestId("microphone-unsupported"),
+    ).toBeInTheDocument();
+  });
+
+  it("reports a language failure rather than leaving the doctor waiting", async () => {
+    captionUtterance.mockRejectedValue(new Error("offline"));
+    await askFreely();
 
     await waitFor(() => {
-      expect(screen.getByTestId("ask-question-1")).toBeInTheDocument();
+      expect(screen.getByTestId("caption-error")).toBeInTheDocument();
     });
-    expect(screen.queryByTestId("asking-question")).not.toBeInTheDocument();
   });
 });
 
-describe("asking a yes or no question", () => {
-  it("tells the doctor to observe the patient rather than detect a gesture", async () => {
-    // FR 2.6 is explicit that no camera based gesture detection is used. The
-    // doctor watches the patient in person.
-    const user = userEvent.setup();
-    await openBank();
+describe("the patient answering yes or no", () => {
+  it("asks for yes or no after the question has played", async () => {
+    await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
+    await waitFor(() => {
+      expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("choice-no")).toBeInTheDocument();
+  });
 
-    expect(screen.getByTestId("nod-instruction")).toBeInTheDocument();
+  it("needs no typing from the patient", async () => {
+    // Section 4.3. The patient is never asked to type. The only text input on
+    // screen is the doctor's own, which they use to ask the question.
+    await askFreely();
+
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    expect(screen.getByTestId("choice-yes")).toHaveTextContent("");
+    expect(screen.getByTestId("choice-no")).toHaveTextContent("");
+  });
+
+  it("tells the doctor a nod counts, and that their tap is what is recorded", async () => {
+    // FR 2.6 and FR 2.7. No camera based gesture detection: the doctor
+    // observes the patient and taps what they saw.
+    await askFreely();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("nod-instruction")).toBeInTheDocument();
+    });
   });
 
   it("uses no camera", async () => {
-    // Asserted directly, because adding gesture detection later would be a
-    // change to a stated design decision, not an improvement.
-    const user = userEvent.setup();
-    await openBank();
+    // Asserted directly, because adding gesture detection later would change a
+    // stated design decision rather than improve on it.
+    await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
-
-    expect(document.querySelector("video[autoplay][data-camera]")).toBeNull();
+    await waitFor(() => screen.getByTestId("choice-yes"));
     expect(navigator.mediaDevices).toBeUndefined();
   });
 
-  it("shows no answer grid, since the patient nods instead", async () => {
-    const user = userEvent.setup();
-    await openBank();
+  it("records the question alongside the answer", async () => {
+    const user = await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
 
-    expect(screen.queryByTestId("answer-option-11")).not.toBeInTheDocument();
-    expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("exchange-log")).toHaveTextContent(
+        "Did you vomit?",
+      );
+    });
+    expect(screen.getByTestId("exchange-log")).toHaveTextContent("Yes");
   });
 
-  it("records the doctor's confirmation, not a reading of the patient", async () => {
-    // FR 2.7. What gets logged is what the doctor confirmed they observed.
-    const user = userEvent.setup();
-    await openBank();
+  it("records a no the same way", async () => {
+    const user = await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
+    await waitFor(() => screen.getByTestId("choice-no"));
+    await user.click(screen.getByTestId("choice-no"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exchange-log")).toHaveTextContent("No");
+    });
+  });
+
+  it("attributes the answer to the doctor's confirmation", async () => {
+    // FR 2.7. What is logged is what the doctor confirmed, so the record can
+    // never imply the patient tapped something they never touched.
+    const user = await askFreely();
+
+    await waitFor(() => screen.getByTestId("choice-yes"));
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
@@ -244,175 +217,146 @@ describe("asking a yes or no question", () => {
         "confirmed by the doctor",
       );
     });
-    expect(screen.getByTestId("exchange-log")).toHaveTextContent("Yes");
   });
 
-  it("records a no the same way", async () => {
-    const user = userEvent.setup();
-    await openBank();
+  it("clears the question once answered, ready for the next one", async () => {
+    const user = await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
-    await user.click(screen.getByTestId("choice-no"));
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent("No");
+      expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
     });
   });
 });
 
-describe("coverage while footage is still missing", () => {
-  it("marks a question that has no signs filmed yet", async () => {
-    // Marked rather than hidden, so the doctor sees the gap instead of a bank
-    // that merely looks small.
-    fetchQuestions.mockResolvedValue([{ ...yesNoQuestion, is_playable: false }]);
-    await openBank(yesNoQuestion.id);
+describe("asking where it hurts", () => {
+  it("asks the one question a patient cannot answer yes or no", async () => {
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
 
-    expect(screen.getByTestId(`no-signs-${yesNoQuestion.id}`)).toBeInTheDocument();
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+
+    await waitFor(() => {
+      expect(captionUtterance).toHaveBeenCalledWith({
+        sourceLanguage: "en",
+        text: "Where does it hurt?",
+      });
+    });
   });
 
-  it("warns which words the patient will not have seen signed", async () => {
-    // A question the patient only partly saw is a question they were partly
-    // asked, so the doctor is told to ask it in person instead.
-    fetchQuestions.mockResolvedValue([
-      {
-        ...yesNoQuestion,
-        prompt_sequence: {
-          ...yesNoQuestion.prompt_sequence,
-          unavailable_tokens: ["nausea"],
-        },
-      },
+  it("shows the body locations instead of yes or no", async () => {
+    // FR 2.5. The answer tells the doctor where to focus for the rest of the
+    // consultation, which yes or no cannot.
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("answer-option-HEAD")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("answer-option-STOMACH")).toBeInTheDocument();
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("records the location the patient tapped as their own answer", async () => {
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await waitFor(() => screen.getByTestId("answer-option-STOMACH"));
+    await user.click(screen.getByTestId("answer-option-STOMACH"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exchange-log")).toHaveTextContent("Stomach");
+    });
+    expect(screen.getByTestId("exchange-log")).toHaveTextContent(
+      "tapped by the patient",
+    );
+  });
+
+  it("withholds the grid when some locations are not filmed", async () => {
+    // The clinical safety property. A patient offered three body parts when
+    // their pain is in a fourth taps the nearest available one, and that wrong
+    // answer looks exactly like a right one. ADR 022.
+    fetchBodyLocations.mockResolvedValue([
+      bodyLocation("HEAD", "Head", true),
+      bodyLocation("STOMACH", "Stomach", false),
     ]);
     const user = userEvent.setup();
-    await openBank(yesNoQuestion.id);
+    render(<GuidedInterrogation />);
 
-    await user.click(screen.getByTestId(`ask-question-${yesNoQuestion.id}`));
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
 
-    expect(screen.getByTestId("asking-gap")).toHaveTextContent("nausea");
+    await waitFor(() => {
+      expect(screen.getByTestId("incomplete-locations")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("answer-option-HEAD")).not.toBeInTheDocument();
+  });
+
+  it("goes back to yes or no for the next ordinary question", async () => {
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await waitFor(() => screen.getByTestId("answer-option-HEAD"));
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "Fever?");
+    await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("answer-option-HEAD")).not.toBeInTheDocument();
+  });
+
+  it("does not ask for a location when the question never reached the patient", async () => {
+    // Asking someone to point at a place after showing them nothing would
+    // record an answer to a question they were never asked.
+    captionUtterance.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("caption-error")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("answer-option-HEAD")).not.toBeInTheDocument();
+  });
+
+  it("still works when the body locations cannot be loaded", async () => {
+    // Every other question is unaffected, so this degrades rather than
+    // blocking the whole mode.
+    fetchBodyLocations.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<GuidedInterrogation />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("incomplete-locations")).toBeInTheDocument();
+    });
   });
 });
 
 describe("the consultation log", () => {
-  it("keeps every answer in the order they were given", async () => {
-    const user = userEvent.setup();
-    await openBank();
+  it("shows nothing before the first answer", () => {
+    render(<GuidedInterrogation />);
 
-    await user.click(screen.getByTestId("ask-question-1"));
-    await user.click(screen.getByTestId("answer-option-11"));
-    await waitFor(() => screen.getByTestId("ask-question-2"));
-    await user.click(screen.getByTestId("ask-question-2"));
-    await user.click(screen.getByTestId("choice-yes"));
-
-    await waitFor(() => {
-      expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(2);
-    });
+    expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
   });
 
   it("says plainly that the log is not saved yet", async () => {
-    // It is held in memory until FR 4.1 to 4.3. Implying otherwise would be a
-    // promise about a patient's record that the code does not keep.
-    const user = userEvent.setup();
-    await openBank();
+    const user = await askFreely();
 
-    await user.click(screen.getByTestId("ask-question-2"));
+    await waitFor(() => screen.getByTestId("choice-yes"));
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
       expect(screen.getByTestId("log-not-saved")).toBeInTheDocument();
     });
-  });
-
-  it("shows nothing before the first answer", async () => {
-    await openBank();
-
-    expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
-  });
-
-  it("lets the doctor back out of a question without recording an answer", async () => {
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-    await user.click(screen.getByTestId("cancel-question"));
-
-    await waitFor(() => screen.getByTestId("ask-question-1"));
-    expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
-  });
-});
-
-describe("an incomplete answer grid", () => {
-  const partiallyFilmed = {
-    ...selectionQuestion,
-    is_playable: false,
-    options: [
-      { ...selectionQuestion.options[0], is_playable: true },
-      { ...selectionQuestion.options[1], is_playable: false },
-    ],
-  };
-
-  it("withholds the grid rather than offering some of the answers", async () => {
-    // The clinical safety property. If "where does it hurt" can only show
-    // three body parts, the patient taps the nearest wrong one and the doctor
-    // cannot tell that from a correct answer.
-    fetchQuestions.mockResolvedValue([partiallyFilmed]);
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-
-    expect(screen.queryByTestId("answer-option-11")).not.toBeInTheDocument();
-    expect(screen.getByTestId("incomplete-grid")).toBeInTheDocument();
-  });
-
-  it("withholds the grid when no answer has been filmed at all", async () => {
-    fetchQuestions.mockResolvedValue([
-      {
-        ...selectionQuestion,
-        is_playable: false,
-        options: selectionQuestion.options.map((o) => ({
-          ...o,
-          is_playable: false,
-        })),
-      },
-    ]);
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-
-    expect(screen.getByTestId("incomplete-grid")).toBeInTheDocument();
-  });
-
-  it("still lets a yes or no question be answered before any filming", async () => {
-    // A nod needs no footage, so this path must keep working while the clip
-    // library is still empty. It is the only usable path today.
-    fetchQuestions.mockResolvedValue([{ ...yesNoQuestion, is_playable: false }]);
-    const user = userEvent.setup();
-    await openBank(yesNoQuestion.id);
-
-    await user.click(screen.getByTestId(`ask-question-${yesNoQuestion.id}`));
-    await user.click(screen.getByTestId("choice-yes"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("exchange-log")).toHaveTextContent("Yes");
-    });
-  });
-
-  it("shows the grid when every answer is filmed", async () => {
-    fetchQuestions.mockResolvedValue([
-      {
-        ...selectionQuestion,
-        options: selectionQuestion.options.map((o) => ({
-          ...o,
-          is_playable: true,
-        })),
-      },
-    ]);
-    const user = userEvent.setup();
-    await openBank();
-
-    await user.click(screen.getByTestId("ask-question-1"));
-
-    expect(screen.getByTestId("answer-option-11")).toBeInTheDocument();
-    expect(screen.queryByTestId("incomplete-grid")).not.toBeInTheDocument();
   });
 });

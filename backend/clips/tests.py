@@ -12,6 +12,7 @@ from django.core.management import call_command
 from django.db import IntegrityError
 from django.urls import reverse
 
+from clips.body_locations import BODY_LOCATION_GLOSSES
 from clips.models import ClipKind, SignClip
 from clips.services import resolve_sign_sequence, tokenize
 
@@ -357,3 +358,58 @@ class TestClipByGloss:
         sequence = resolve_sign_sequence("prompt")
 
         assert sequence.segments[0].match == "fingerspell"
+
+
+@pytest.mark.django_db
+class TestBodyLocations:
+    """
+    FR 2.5, the one structured answer set left in the app. Everything else the
+    doctor asks is typed or spoken and answered yes or no, see ADR 023, but a
+    place cannot be answered yes or no.
+    """
+
+    def test_returns_every_body_location_whether_filmed_or_not(self, api_client):
+        # The caller needs the full set to decide whether the grid is complete,
+        # so filtering the unfilmed ones out here would hide the gap.
+        response = api_client.get(reverse("clip-body-locations"))
+
+        assert response.status_code == 200
+        assert len(response.json()) == len(BODY_LOCATION_GLOSSES)
+
+    def test_reads_head_downwards_rather_than_alphabetically(self, api_client):
+        # The grid should read like a body. An alphabetical list would put the
+        # arm before the head, which is harder to scan under pressure.
+        order = [
+            row["id"] for row in api_client.get(reverse("clip-body-locations")).json()
+        ]
+
+        assert order.index("HEAD") < order.index("CHEST") < order.index("FOOT")
+
+    def test_a_filmed_location_carries_a_playable_clip(self, api_client, make_clip):
+        make_clip("STOMACH", duration_ms=800)
+
+        rows = api_client.get(reverse("clip-body-locations")).json()
+        stomach = next(row for row in rows if row["id"] == "STOMACH")
+
+        assert stomach["is_playable"] is True
+        assert stomach["clip"]["video_url"].endswith(".webm")
+
+    def test_an_unfilmed_location_reports_that_it_cannot_be_shown(self, api_client):
+        rows = api_client.get(reverse("clip-body-locations")).json()
+
+        assert all(row["is_playable"] is False for row in rows)
+        assert all(row["clip"] is None for row in rows)
+
+    def test_an_unreviewed_location_is_not_playable(self, api_client, make_clip):
+        # Pointing at a body part is a clinical statement, so an unreviewed
+        # sign must not be offered any more than an unreviewed caption word.
+        make_clip("STOMACH", approved=False)
+
+        rows = api_client.get(reverse("clip-body-locations")).json()
+        stomach = next(row for row in rows if row["id"] == "STOMACH")
+
+        assert stomach["is_playable"] is False
+
+    def test_the_set_costs_one_query(self, api_client, django_assert_max_num_queries):
+        with django_assert_max_num_queries(1):
+            api_client.get(reverse("clip-body-locations"))
