@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from clips.models import ClipAlias, ClipKind, SignClip
+from clips.models import ClipAlias, ClipKind, SignClip, gloss_tokens
 from clips.safety import TokenRisk, classify
 
 # Letters and digits, plus apostrophes inside a word so a contraction survives
@@ -412,7 +412,7 @@ def _resolvable_phrase_clips() -> dict[tuple[str, ...], SignClip]:
     letting the two drift.
     """
     return {
-        tuple(clip.gloss.lower().split("_")): clip
+        gloss_tokens(clip.gloss): clip
         for clip in SignClip.objects.resolvable().filter(kind=ClipKind.PHRASE)
     }
 

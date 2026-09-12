@@ -1281,3 +1281,46 @@ matching and the expanded form is what the lookup sees.
 The guidance for filming changes as a result: **film whole phrases for
 anything asked often**, and keep word clips for the combinations nobody
 anticipated. The word library is the fallback, not the goal.
+
+---
+
+## ADR 039, A gloss has one canonical form, whatever separator was typed
+
+**Context.** A phrase clip was created in the admin with the gloss
+`HOW ARE YOU DOING`, filmed, and approved. It then never matched anything. The
+resolver recovers the words a phrase covers by splitting its gloss on
+underscores, so a space separated gloss produced a single unsplittable token
+that no sentence could ever equal.
+
+Nothing reported a problem. The row saved cleanly, the admin showed it as
+approved and ready, and the doctor typing exactly that sentence was told the
+words could be neither signed nor spelled.
+
+That is a worse failure than rejecting the input would have been. A rejected
+form tells you immediately; this looked finished and did nothing.
+
+**Decision.** A gloss has one canonical form: uppercase, with single
+underscores between words. Spaces, hyphens and repeated separators are
+normalized to it on save, and stray separators at the edges are dropped.
+
+The reverse direction is tolerant rather than strict: recovering the words from
+a gloss splits on any separator, so a row written before this existed still
+resolves.
+
+**Why normalize rather than validate.** All three forms are things a person
+will reasonably produce. A phrase typed in the admin gets spaces, a filename
+off a phone or camera gets spaces, a filename typed by hand gets underscores or
+hyphens. None is a mistake, and rejecting two thirds of them would make the
+tool fight its users over punctuation. Filenames especially: a clip should not
+depend on someone renaming what their camera produced.
+
+**Consequence.** A data migration brings existing rows into the canonical form.
+Where normalizing would collide with a gloss that already exists, the row is
+left alone rather than merged or deleted, because which of two clips holds the
+reviewed footage is not a decision a migration can make.
+
+The wider lesson is the one worth keeping: a field that silently accepts a value
+it can never use is worse than one that refuses it. Two earlier decisions have
+the same shape, ADR 010 on multi word glosses never matching and ADR 037 on
+contractions hiding a negation, and all three were invisible until someone used
+the thing.

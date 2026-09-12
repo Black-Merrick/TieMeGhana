@@ -1569,3 +1569,53 @@ be a few dozen.
 fallback for combinations nobody anticipated, not the goal. An underscored
 filename, `what_is_your_name.mp4`, imports as a phrase, and the kind is a guess
 from the filename that the admin can correct.
+
+---
+
+## A phrase clip that could never match
+
+**Symptom.** A phrase clip created in the admin, filmed, approved, and the
+doctor typing exactly that sentence was told the words could be neither signed
+nor spelled.
+
+**Cause.** The gloss was `HOW ARE YOU DOING`, with spaces. The resolver
+recovers the words a phrase covers by splitting the gloss on underscores, so a
+space separated gloss became one unsplittable token that no sentence could
+equal.
+
+Everything about the row looked right. It saved cleanly, the admin showed it
+approved and ready, and nothing anywhere reported a problem. The person who
+created it had done it correctly: `kind=phrase`, filmed, reviewed. The model
+accepted a value it could never use.
+
+**Fix.** A gloss now has one canonical form, uppercase with single underscores,
+and spaces, hyphens and repeated separators normalize to it on save. Recovering
+the words is tolerant of any separator, so a row written earlier still resolves.
+A data migration brought the existing rows into line. See ADR 039.
+
+Normalizing rather than validating, because all three forms are things a person
+reasonably produces: a phrase typed in the admin gets spaces, a filename off a
+phone gets spaces, one typed by hand gets underscores. A clip should not depend
+on someone renaming what their camera produced.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 196 passed, 7 new |
+| Live | `"how are you doing"` resolves to `HOW_ARE_YOU_DOING`, safe to show |
+| Migration | `HOW ARE YOU DOING` became `HOW_ARE_YOU_DOING` |
+
+### The pattern worth noticing
+
+This is the third bug of the same shape in this project, and they were all
+invisible until someone used the thing:
+
+- ADR 010, a multi word gloss that tokenizing could never produce
+- ADR 037, `"don't"` hiding a negation from the safety classifier
+- ADR 039, a gloss with spaces that the resolver could never split
+
+Each time, a field accepted a value the rest of the system could not use, and
+nothing complained. Validation at the edge would have caught all three, and it
+is worth preferring a refusal over silent acceptance anywhere a value has to be
+matched later.

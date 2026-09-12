@@ -1,4 +1,26 @@
+import re
+
 from django.db import models
+
+#: Anything separating words in a gloss. A phrase may be typed with spaces in
+#: the admin, hyphens in a filename, or underscores, and all three mean the
+#: same clip.
+GLOSS_SEPARATORS = re.compile(r"[\s\-_]+")
+
+
+def normalize_gloss(gloss: str) -> str:
+    """Canonical form of a gloss: uppercase, single underscores between words."""
+    return GLOSS_SEPARATORS.sub("_", gloss.strip()).strip("_").upper()
+
+
+def gloss_tokens(gloss: str) -> tuple[str, ...]:
+    """
+    The lowercase word sequence a gloss covers.
+
+    Tolerant of separators rather than assuming the canonical form, so a row
+    written before normalization existed still resolves.
+    """
+    return tuple(part for part in GLOSS_SEPARATORS.split(gloss.lower()) if part)
 
 
 class ClipKind(models.TextChoices):
@@ -129,8 +151,14 @@ class SignClip(models.Model):
         Doing this on save rather than at query time means lookup is one exact
         match instead of a case insensitive scan, and two clips cannot end up
         differing only by capitalization.
+
+        Spaces and hyphens become underscores, so a phrase typed naturally in
+        the admin, "how are you doing", is stored as the one form the resolver
+        looks for. Without this the row saved cleanly, showed as approved, and
+        could never match anything, which is a worse failure than a rejected
+        form: it looks finished and does nothing.
         """
-        self.gloss = self.gloss.strip().upper()
+        self.gloss = normalize_gloss(self.gloss)
         super().save(*args, **kwargs)
 
     @property

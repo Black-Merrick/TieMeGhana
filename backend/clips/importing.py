@@ -24,7 +24,7 @@ from pathlib import Path
 
 from django.core.files import File
 
-from clips.models import ClipKind, ReviewStatus, SignClip
+from clips.models import ClipKind, ReviewStatus, SignClip, normalize_gloss
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ def _import_one(
     duration_ms: int | None,
 ) -> None:
     """Import one file, or leave it alone if its contents are already stored."""
-    gloss = path.stem.strip().upper()
+    gloss = normalize_gloss(path.stem)
     checksum = file_checksum(path)
 
     clip = SignClip.objects.filter(gloss=gloss).first()

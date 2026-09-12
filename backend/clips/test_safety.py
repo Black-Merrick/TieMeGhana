@@ -545,3 +545,78 @@ class TestPhraseClips:
         sequence = resolve_sign_sequence("pain")
 
         assert sequence.back_translation != ["PAIN"]
+
+
+@pytest.mark.django_db
+class TestGlossNormalization:
+    """
+    ADR 039. A phrase typed in the admin with spaces, "how are you doing",
+    saved cleanly, showed as approved, and could never match anything, because
+    the resolver looks for one underscored form. That is a worse failure than a
+    rejected form: the row looks finished and silently does nothing.
+    """
+
+    def test_a_phrase_typed_with_spaces_is_stored_canonically(self, make_clip):
+        from clips.models import ClipKind
+
+        clip = make_clip("how are you doing", kind=ClipKind.PHRASE)
+
+        clip.refresh_from_db()
+        assert clip.gloss == "HOW_ARE_YOU_DOING"
+
+    def test_a_phrase_typed_with_spaces_matches(self, make_clip, alphabet):
+        # The failure this closes, end to end.
+        from clips.models import ClipKind
+
+        make_clip("how are you doing", kind=ClipKind.PHRASE)
+
+        sequence = resolve_sign_sequence("how are you doing")
+
+        assert sequence.back_translation == ["HOW_ARE_YOU_DOING"]
+        assert sequence.is_safe_to_show is True
+
+    def test_hyphens_and_underscores_mean_the_same_clip(self, make_clip):
+        from clips.models import ClipKind
+
+        hyphenated = make_clip("cannot-breathe", kind=ClipKind.PHRASE)
+
+        hyphenated.refresh_from_db()
+        assert hyphenated.gloss == "CANNOT_BREATHE"
+
+    def test_repeated_separators_collapse(self, make_clip):
+        from clips.models import ClipKind
+
+        clip = make_clip("how  are__you", kind=ClipKind.PHRASE)
+
+        clip.refresh_from_db()
+        assert clip.gloss == "HOW_ARE_YOU"
+
+    def test_stray_separators_at_the_edges_are_dropped(self, make_clip):
+        from clips.models import ClipKind
+
+        clip = make_clip(" _your name_ ", kind=ClipKind.PHRASE)
+
+        clip.refresh_from_db()
+        assert clip.gloss == "YOUR_NAME"
+
+    def test_an_ordinary_word_is_unaffected(self, make_clip):
+        clip = make_clip("head")
+
+        clip.refresh_from_db()
+        assert clip.gloss == "HEAD"
+
+    def test_a_filename_with_spaces_imports_canonically(self, tmp_path):
+        # Phones and cameras produce filenames with spaces, and the clip
+        # should not depend on the doctor renaming them by hand.
+        from clips.importing import import_footage
+        from clips.models import ClipKind, SignClip
+
+        folder = tmp_path / "footage"
+        folder.mkdir()
+        (folder / "how are you doing.mp4").write_bytes(b"video")
+
+        import_footage(folder)
+
+        clip = SignClip.objects.get(gloss="HOW_ARE_YOU_DOING")
+        # Multi word, so it is guessed as a phrase rather than a word sign.
+        assert clip.kind == ClipKind.PHRASE
