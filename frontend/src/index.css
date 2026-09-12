@@ -223,3 +223,44 @@ body {
   font-size: 0.9rem;
   color: var(--colour-muted);
 }
+
+/* Speaking to the patient, FR 1.2. The microphone sits beside Send rather than
+   replacing it, because typing stays a first class path on browsers without
+   microphone support and whenever permission is refused. */
+.consultation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.consultation__mic {
+  font: inherit;
+  font-weight: 600;
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border: 2px solid var(--colour-primary);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--colour-primary);
+  cursor: pointer;
+}
+
+.consultation__mic:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Recording is signalled by colour and by the button's own label changing to
+   "Stop and send", never by colour alone. */
+.consultation__mic--recording {
+  background: var(--colour-offline);
+  border-color: var(--colour-offline);
+  color: #fff;
+}
+
+.consultation__note {
+  font-size: 0.9rem;
+  color: var(--colour-muted);
+  margin: 0.75rem 0 0;
+}

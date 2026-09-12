@@ -155,6 +155,22 @@ be wrong in front of a Twi speaking judge. The app shows a visible notice
 whenever a caption came from the stub, so it can never be mistaken for real
 translation.
 
+## Speaking instead of typing
+
+The doctor can speak in English or Twi as well as type. The microphone button
+sits beside Send, and the language choice applies to both.
+
+**The microphone only appears on a secure connection.** `getUserMedia`
+requires a secure context, which `localhost` and `127.0.0.1` satisfy, so it
+works during development on the machine running the server. Opening the app
+from a phone over plain http does not, and the browser offers no microphone and
+no error at all. The app detects this and says the connection needs https.
+
+So for any demo where the doctor's device is **not** the machine running the
+server, serve the app over https or the microphone will not be there. Typing
+works either way, which is why it stays a first class path rather than a
+fallback. See ADR 017.
+
 ## Adding filmed GhSL clips
 
 The clip library starts with 92 glosses recorded and **zero** usable clips,

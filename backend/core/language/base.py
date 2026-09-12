@@ -47,8 +47,16 @@ class LanguageProvider(ABC):
     name: str
 
     @abstractmethod
-    def transcribe(self, audio: bytes, *, language: Language) -> str:
-        """Transcribe spoken audio into text in the same language, FR 1.2."""
+    def transcribe(
+        self, audio: bytes, *, language: Language, content_type: str | None = None
+    ) -> str:
+        """
+        Transcribe spoken audio into text in the same language, FR 1.2.
+
+        `content_type` is what the browser said it recorded. Chrome and Firefox
+        produce WebM with Opus, Safari on iOS produces MP4, so passing it on is
+        strictly more information than asserting a single format.
+        """
 
     @abstractmethod
     def translate(self, text: str, *, source: Language, target: Language) -> str:

@@ -43,6 +43,7 @@ def build_caption(
     source_language: Language,
     text: str | None = None,
     audio: bytes | None = None,
+    audio_content_type: str | None = None,
 ) -> Caption:
     """
     Turn what the doctor said into a Twi caption and the clips that render it.
@@ -54,7 +55,9 @@ def build_caption(
     provider = get_language_provider()
 
     transcript = (
-        provider.transcribe(audio, language=source_language)
+        provider.transcribe(
+            audio, language=source_language, content_type=audio_content_type
+        )
         if audio is not None
         else text
     )

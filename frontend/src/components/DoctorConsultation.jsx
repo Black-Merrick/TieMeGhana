@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { captionUtterance } from "../api/consultation.js";
+import useAudioRecorder from "../hooks/useAudioRecorder.js";
 import SignSequencePlayer from "./SignSequencePlayer.jsx";
 
 /**
@@ -24,18 +25,20 @@ export default function DoctorConsultation() {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState("idle");
+  const recorder = useAudioRecorder();
 
-  const handleSend = async (event) => {
-    event.preventDefault();
-
-    const text = message.trim();
-    if (!text) return;
-
+  /**
+   * Caption one utterance, however it was captured.
+   *
+   * Shared by typing and speaking so the two cannot drift apart, and so the
+   * selected language is applied identically to both.
+   */
+  const sendUtterance = async (payload) => {
     setStatus("working");
     setResult(null);
 
     try {
-      setResult(await captionUtterance({ sourceLanguage, text }));
+      setResult(await captionUtterance({ sourceLanguage, ...payload }));
       setStatus("idle");
     } catch {
       // The doctor's next action is to retry or type, so the failure has to be
@@ -43,6 +46,29 @@ export default function DoctorConsultation() {
       setStatus("failed");
     }
   };
+
+  const handleSend = async (event) => {
+    event.preventDefault();
+
+    const text = message.trim();
+    if (!text) return;
+
+    await sendUtterance({ text });
+  };
+
+  const handleMicrophone = async () => {
+    if (recorder.status === "recording") {
+      const audio = await recorder.stop();
+      // No audio means the doctor tapped stop immediately. Sending an empty
+      // recording would spend a transcription call to get nothing back.
+      if (audio) await sendUtterance({ audio });
+      return;
+    }
+
+    await recorder.start();
+  };
+
+  const isRecording = recorder.status === "recording";
 
   return (
     <section className="consultation">
@@ -75,14 +101,71 @@ export default function DoctorConsultation() {
           placeholder="Where does it hurt?"
         />
 
-        <button
-          type="submit"
-          className="consultation__send"
-          disabled={status === "working"}
-        >
-          Send to patient
-        </button>
+        <div className="consultation__actions">
+          <button
+            type="submit"
+            className="consultation__send"
+            disabled={status === "working" || isRecording}
+          >
+            Send to patient
+          </button>
+
+          {recorder.isSupported ? (
+            <button
+              type="button"
+              className={
+                isRecording
+                  ? "consultation__mic consultation__mic--recording"
+                  : "consultation__mic"
+              }
+              onClick={handleMicrophone}
+              disabled={status === "working"}
+              data-testid="microphone-button"
+            >
+              {isRecording ? "Stop and send" : "Speak to patient"}
+            </button>
+          ) : null}
+        </div>
       </form>
+
+      {/* FR 1.2 falls back to typing rather than disappearing, because NFR 6
+          targets browsers that differ in microphone support. The two reasons
+          are told apart because only one of them is fixable by us. */}
+      {recorder.support === "insecure" ? (
+        <p className="consultation__note" data-testid="microphone-insecure">
+          The microphone needs a secure connection. Open the app over{" "}
+          <strong>https</strong>, or on the same machine as the server, to speak.
+          Typing works either way.
+        </p>
+      ) : null}
+
+      {recorder.support === "unsupported" ? (
+        <p className="consultation__note" data-testid="microphone-unsupported">
+          This browser cannot record audio. Type the message instead.
+        </p>
+      ) : null}
+
+      {recorder.status === "denied" ? (
+        <p className="consultation__note" data-testid="microphone-denied" role="alert">
+          Microphone access was refused. Allow it in your browser settings, or
+          type the message instead.
+        </p>
+      ) : null}
+
+      {recorder.status === "failed" ? (
+        <p className="consultation__note" data-testid="microphone-failed" role="alert">
+          Recording could not start on this device. Type the message instead.
+        </p>
+      ) : null}
+
+      {/* SRS 4.2, Feedback. The doctor must be able to see that the microphone
+          is live, since nothing else on screen would tell them. */}
+      {isRecording ? (
+        <p className="consultation__working" data-testid="recording-indicator">
+          <span className="consultation__pulse" aria-hidden="true" />
+          Recording. Speak now, then tap Stop and send.
+        </p>
+      ) : null}
 
       {status === "working" ? (
         <p className="consultation__working" data-testid="working-indicator">

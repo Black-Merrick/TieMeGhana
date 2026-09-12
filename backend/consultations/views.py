@@ -46,6 +46,13 @@ def caption(request):
             source_language=Language(validated["source_language"]),
             text=validated.get("text"),
             audio=audio_file.read() if audio_file is not None else None,
+            # The browser records WebM on Chrome and Firefox but MP4 on iOS
+            # Safari, so the format is reported rather than assumed.
+            audio_content_type=(
+                getattr(audio_file, "content_type", None)
+                if audio_file is not None
+                else None
+            ),
         )
     except LanguageError as error:
         raise LanguageServiceUnavailable() from error

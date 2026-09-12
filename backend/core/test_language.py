@@ -229,3 +229,43 @@ class _FakeResponse:
 
     def json(self):
         return self._body
+
+
+class TestKhayaAudioFormat:
+    """
+    Browsers do not agree on a recording format. Chrome and Firefox produce
+    WebM with Opus, Safari on iOS produces MP4, and NFR 6 lists both. Khaya is
+    told which one it is receiving rather than being left to guess.
+    """
+
+    def test_transcribe_forwards_the_recorded_format(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["headers"] = kwargs.get("headers", {})
+            return _FakeResponse(200, "wo tiri")
+
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        KhayaLanguageProvider(api_key="a-key").transcribe(
+            b"audio", language=Language.TWI, content_type="audio/webm;codecs=opus"
+        )
+
+        assert captured["headers"]["Content-Type"] == "audio/webm;codecs=opus"
+
+    def test_transcribe_falls_back_to_raw_bytes_when_format_is_unknown(
+        self, monkeypatch
+    ):
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["headers"] = kwargs.get("headers", {})
+            return _FakeResponse(200, "wo tiri")
+
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        KhayaLanguageProvider(api_key="a-key").transcribe(
+            b"audio", language=Language.TWI
+        )
+
+        assert captured["headers"]["Content-Type"] == "application/octet-stream"

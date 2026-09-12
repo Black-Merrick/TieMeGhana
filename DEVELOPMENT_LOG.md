@@ -415,3 +415,76 @@ Placeholder footage was briefly attached to `WHERE` and `HURT` in the local
 SQLite database to demonstrate resolution, then removed, because fake footage
 marked as consultant approved contradicts the safety property the library
 exists to enforce. The library is back to 92 awaiting footage, 0 resolvable.
+
+---
+
+## Sprint 2b, Microphone capture for FR 1.2
+
+**Goal.** Let the doctor speak rather than type, in either English or Twi,
+closing the one part of P0.1 that was left open.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `useAudioRecorder` | Wraps MediaRecorder so no component touches browser media APIs, keeping permission and cleanup rules in one place |
+| `pickMimeType()` | Chooses the best format this browser can record, rather than assuming WebM |
+| `recordingSupport()` | Tells `insecure` apart from `unsupported`, because the two have different fixes |
+| Microphone button | Sits beside Send rather than replacing it, since typing stays a first class path |
+| Recording indicator | SRS 4.2. Nothing else would tell the doctor the microphone is live |
+| Content type plumbing | The recorded format travels to Khaya instead of being flattened to raw bytes |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 74 passed |
+| Frontend suite | 48 passed, 5 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Production build | PWA builds, service worker generated |
+
+### Two things worth knowing, found while building this
+
+**Safari on iOS cannot record WebM.** It records `audio/mp4` only. NFR 6 lists
+iOS Safari as a target, so a hardcoded WebM would have made the microphone
+silently unusable on every iPhone, discovered whenever someone first tried it
+on a phone. The format list is now preference ordered and feature detected.
+
+**The microphone needs a secure context, and a hospital demo probably will not
+have one.** `getUserMedia` is unavailable outside a secure context. `localhost`
+counts, so it works all through development. A phone opening the app over plain
+http on a hospital network does not, and the browser offers no microphone and
+no error. ADR 007 deliberately leaves HTTPS redirection off so a demo cannot
+make itself unreachable, which puts a LAN demo squarely in this case.
+
+The app now detects it and says the connection needs https, rather than
+claiming the browser cannot record, which would be false and would send someone
+debugging the wrong thing. See ADR 017. **Any demo where the doctor's device is
+not the server machine needs https for the microphone to appear.**
+
+### Microphone release, treated as a correctness problem
+
+Three separate paths release the media stream: a normal stop, a recorder that
+throws after permission was already granted, and the component unmounting mid
+recording. Each has its own test.
+
+Stopping the recorder does not stop the underlying stream, so without this the
+browser keeps showing the microphone as live. In an app whose privacy claim is
+the reason a Deaf patient would use it instead of bringing a relative to
+interpret, a recording indicator that stays on after the doctor stopped
+speaking is a real problem rather than a cosmetic one.
+
+### Known limitations, deliberate
+
+**Whether Khaya's ASR accepts WebM or MP4 is unverified.** The route and
+credential are confirmed, the audio format is not. It needs one real
+transcription call with real recorded speech, which spends metered credit, so
+it is deferred to the same session that tests the filmed clips. If Khaya turns
+out to want WAV, transcoding is confined to the provider.
+
+**No real device pass yet.** jsdom has no microphone, so the tests stand one
+in. They prove the state machine, the format choice, and the cleanup. They do
+not prove sound reaches the server.
+
+**An empty recording is discarded client side**, so tapping stop immediately
+does not spend a transcription call to get nothing back.

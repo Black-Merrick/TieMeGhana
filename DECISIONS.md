@@ -366,3 +366,57 @@ somebody remembering not to run the wrong thing.
 the entire suite, so no test can reach a metered service even on a machine
 where a key is configured. The three provider selection tests override it
 explicitly, and are the only place that should.
+
+---
+
+## ADR 016, Record in whatever format the browser supports, and say which
+
+**Context.** FR 1.2 needs the doctor's speech captured in the browser.
+Browsers do not agree on a recording format: Chrome and Firefox produce WebM
+with Opus, Safari on iOS produces MP4 and cannot produce WebM at all. NFR 6
+lists Chrome, Safari, and Firefox on both Android and iOS.
+
+**Decision.** Ask the browser which of a preference ordered list of formats it
+supports and record the first one, falling back to letting it choose. The
+chosen format travels to the backend as the upload's content type, and the
+backend forwards it to Khaya rather than asserting a single format.
+
+**Why.** Hardcoding WebM would make the microphone silently unusable on every
+iPhone, which is half the target platforms. And transcription accuracy, or
+whether it works at all, can depend on the provider knowing what container it
+received, so throwing that information away costs nothing to keep.
+
+**Consequence.** Whether Khaya's ASR accepts WebM with Opus, or MP4, is **not
+yet verified.** Confirming it needs one real transcription call with real
+recorded speech, which spends metered credit, so it is deliberately deferred to
+the same session that tests the filmed clips. The format is a constant in one
+place, so if Khaya turns out to want WAV, transcoding is confined to the
+provider.
+
+---
+
+## ADR 017, The microphone needs a secure context, and the app says so plainly
+
+**Context.** `getUserMedia` is only available in a secure context. `localhost`
+counts as one, so the microphone works during development. A phone opening the
+app over plain http on a hospital network does not, and the browser simply
+does not offer the microphone, with no error anywhere.
+
+ADR 007 deliberately leaves HTTPS redirection off so a demo cannot make itself
+unreachable. That means a hospital demo served over http on a local network
+lands in exactly this case.
+
+**Decision.** Detect `window.isSecureContext` separately from feature
+detection and report three states: `ok`, `insecure`, `unsupported`. On
+`insecure` the app says the microphone needs a secure connection and that
+typing still works.
+
+**Why.** "This browser cannot record audio" would be false, and would send
+someone debugging a browser problem that does not exist while the real cause
+is the URL. The two failures have different fixes and only one of them is ours.
+
+**Consequence.** Any demo where the doctor's device is not the machine running
+the server needs https, or the microphone will not appear. Recorded here
+because it is a deployment fact that no amount of frontend code can work
+around, and it is the kind of thing discovered at the worst moment. Typing
+remains a fully supported path precisely so this degrades rather than blocks.

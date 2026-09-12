@@ -29,7 +29,9 @@ class StubLanguageProvider(LanguageProvider):
 
     name = "stub"
 
-    def transcribe(self, audio: bytes, *, language: Language) -> str:
+    def transcribe(
+        self, audio: bytes, *, language: Language, content_type: str | None = None
+    ) -> str:
         return STUB_TRANSCRIPT
 
     def translate(self, text: str, *, source: Language, target: Language) -> str:

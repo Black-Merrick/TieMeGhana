@@ -54,7 +54,7 @@ Not a feature, the baseline that makes every later sprint verifiable.
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
 | 1.1 | Doctor selects spoken input language, English or Twi, before speaking | 2 | `done` |
-| 1.2 | Speech transcribed via ASR | 2 | `wip`, endpoint wired, mic capture pending |
+| 1.2 | Speech transcribed via ASR | 2 | `done`, mic capture built. Real device and Khaya audio format pass pending |
 | 1.3 | English text translated to Twi if needed | 2 | `done`, verified against live Khaya |
 | 1.4 | Twi caption displayed on screen | 2 | `done` |
 | 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `done` |
@@ -78,11 +78,27 @@ resolved sequence back seamlessly with the next clip preloaded, and the
 doctor's captioning screen. Verified against live Khaya on 2026-09-12:
 "Where does it hurt?" returned "Ɛhe na ɛyɛ yaw?". See ADR 011 and 013 to 015.
 
-**Still open for FR 1.2.** The caption endpoint accepts and transcribes audio,
-and the ASR route is verified as reachable, but the browser microphone capture
-that would feed it is not built. A doctor types today. Mic capture needs
-`MediaRecorder`, which cannot be meaningfully tested in jsdom, so it is
-scheduled with a real device pass rather than pretended to be done.
+**FR 1.2 microphone capture** is built: the doctor can speak in English or
+Twi, the same language choice applies to speaking and typing, and the recording
+is captioned through the identical pipeline. The format is chosen from what the
+browser supports, because Safari on iOS records MP4 and cannot record WebM, and
+the chosen format is forwarded to Khaya rather than assumed. See ADR 016
+and 017.
+
+Two things about it are **not** verified, and both need the same real device
+session that tests the filmed clips:
+
+- **Whether Khaya's ASR accepts WebM or MP4.** Confirming it needs one real
+  transcription call with real speech, which spends metered credit. The route
+  and credential are verified, the audio format is not.
+- **That audio actually records on a real device.** jsdom has no microphone, so
+  the tests stand one in. They prove the state machine, the format choice, and
+  that the microphone is released, not that sound reaches the server.
+
+And one deployment fact worth knowing before demo day: **the microphone needs
+https** on any device that is not the machine running the server, because
+`getUserMedia` requires a secure context. The app detects this and says so
+rather than claiming the browser cannot record. Typing works either way.
 
 ## P0.2, Literacy Check and Guided Interrogation, sprints 3 and 4
 

@@ -51,12 +51,16 @@ class KhayaLanguageProvider(LanguageProvider):
         self._api_key = api_key
         self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
 
-    def transcribe(self, audio: bytes, *, language: Language) -> str:
+    def transcribe(
+        self, audio: bytes, *, language: Language, content_type: str | None = None
+    ) -> str:
         response = self._request(
             TRANSCRIBE_PATH,
             params={"language": str(language)},
             data=audio,
-            content_type="application/octet-stream",
+            # Tell Khaya what the browser actually recorded. Falls back to raw
+            # bytes when the upload carried no type.
+            content_type=content_type or "application/octet-stream",
         )
         return self._read_text(response)
 

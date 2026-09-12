@@ -40,7 +40,7 @@ def directional_provider(monkeypatch):
     class DirectionalStub(LanguageProvider):
         name = "directional-stub"
 
-        def transcribe(self, audio, *, language):
+        def transcribe(self, audio, *, language, content_type=None):
             return "spoken words"
 
         def translate(self, text, *, source, target):
@@ -254,3 +254,30 @@ class TestCaptionProviderFailure:
 
         assert response.status_code == 503
         assert "language" in response.json()["detail"].lower()
+
+
+@pytest.mark.django_db
+class TestSpokenAudioFormat:
+    def test_the_recorded_format_reaches_the_provider(self, api_client, monkeypatch):
+        # Chrome records WebM, iOS Safari records MP4. Whether transcription
+        # works at all can depend on the provider knowing which it received.
+        captured = {}
+
+        from core.language.stub import StubLanguageProvider
+
+        def capture(self, audio, *, language, content_type=None):
+            captured["content_type"] = content_type
+            return "spoken words"
+
+        monkeypatch.setattr(StubLanguageProvider, "transcribe", capture)
+
+        audio = SimpleUploadedFile(
+            "utterance.webm", b"audio", content_type="audio/webm"
+        )
+        api_client.post(
+            reverse("caption"),
+            {"source_language": "tw", "audio": audio},
+            format="multipart",
+        )
+
+        assert captured["content_type"] == "audio/webm"
