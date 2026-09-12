@@ -20,13 +20,20 @@ const LANGUAGES = [
 export default function PatientReply({ onReply, busy = false }) {
   const [sourceLanguage, setSourceLanguage] = useState("tw");
   const [reply, setReply] = useState("");
+  const [emptyWarning, setEmptyWarning] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     const text = reply.trim();
-    if (!text) return;
+    if (!text) {
+      // A Deaf patient cannot hear whether anything was spoken, so a silent
+      // no op would leave them believing they had answered the doctor.
+      setEmptyWarning(true);
+      return;
+    }
 
+    setEmptyWarning(false);
     await onReply({ text, sourceLanguage });
     setReply("");
   };
@@ -56,11 +63,31 @@ export default function PatientReply({ onReply, busy = false }) {
       </label>
       <textarea
         id="patient-reply"
-        className="consultation__input"
+        className={
+          emptyWarning
+            ? "consultation__input consultation__input--invalid"
+            : "consultation__input"
+        }
         rows={3}
         value={reply}
-        onChange={(event) => setReply(event.target.value)}
+        onChange={(event) => {
+          setReply(event.target.value);
+          if (emptyWarning) setEmptyWarning(false);
+        }}
+        aria-invalid={emptyWarning}
+        aria-describedby={emptyWarning ? "patient-reply-warning" : undefined}
       />
+
+      {emptyWarning ? (
+        <p
+          id="patient-reply-warning"
+          className="consultation__warning"
+          role="alert"
+          data-testid="empty-reply-warning"
+        >
+          Type your answer before sending it to the doctor.
+        </p>
+      ) : null}
 
       <button type="submit" className="consultation__send" disabled={busy}>
         Speak to the doctor

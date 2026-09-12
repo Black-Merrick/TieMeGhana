@@ -13,25 +13,43 @@ import { Direction, transcriptAsText } from "../transcript/transcript.js";
  */
 export default function TranscriptView({ entries, onDiscard }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [patientName, setPatientName] = useState("");
+  const [nameWarning, setNameWarning] = useState(false);
 
   if (entries.length === 0) return null;
 
   const saveCopy = () => {
+    const name = patientName.trim();
+    if (!name) {
+      // The name is the point of asking, so an unnamed record would defeat it.
+      // Refusing with a visible reason beats saving a file the patient then has
+      // to work out is theirs.
+      setNameWarning(true);
+      return;
+    }
+
     // The transcript is deleted when the visit ends, because the device is
     // shared, so taking a copy has to be possible. An explicit patient action,
     // which is the exact wording NFR 4 uses for the only case where the
     // transcript may leave the device.
-    const blob = new Blob([transcriptAsText(entries)], {
+    const blob = new Blob([transcriptAsText(entries, { patientName: name })], {
       type: "text/plain;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
 
     const link = document.createElement("a");
     link.href = url;
-    link.download = "tie-me-ghana-consultation.txt";
+    link.download = `tie-me-ghana-${fileSafe(name)}.txt`;
     link.click();
 
     URL.revokeObjectURL(url);
+
+    // The name is not kept. See ADR 028: a name stored beside a clinical
+    // transcript on a shared device would make a stray record identifying.
+    setPatientName("");
+    setNaming(false);
+    setNameWarning(false);
   };
 
   return (
@@ -73,15 +91,80 @@ export default function TranscriptView({ entries, onDiscard }) {
         ))}
       </ol>
 
+      {naming ? (
+        <div className="transcript__naming">
+          <label className="consultation__field" htmlFor="patient-name">
+            Patient name, for the saved copy
+          </label>
+          <input
+            id="patient-name"
+            type="text"
+            className={
+              nameWarning
+                ? "consultation__input consultation__input--invalid"
+                : "consultation__input"
+            }
+            value={patientName}
+            onChange={(event) => {
+              setPatientName(event.target.value);
+              if (nameWarning) setNameWarning(false);
+            }}
+            aria-invalid={nameWarning}
+            aria-describedby={nameWarning ? "patient-name-warning" : undefined}
+            data-testid="patient-name"
+          />
+
+          {nameWarning ? (
+            <p
+              id="patient-name-warning"
+              className="consultation__warning"
+              role="alert"
+              data-testid="patient-name-warning"
+            >
+              Enter the patient&apos;s name so it appears on the saved record.
+            </p>
+          ) : null}
+
+          <p className="transcript__naming-note">
+            Used only on the file you download. It is not stored on this device.
+          </p>
+        </div>
+      ) : null}
+
       <div className="transcript__actions">
-        <button
-          type="button"
-          className="transcript__save"
-          onClick={saveCopy}
-          data-testid="save-transcript"
-        >
-          Save a copy
-        </button>
+        {naming ? (
+          <>
+            <button
+              type="button"
+              className="transcript__save"
+              onClick={saveCopy}
+              data-testid="save-transcript"
+            >
+              Download the record
+            </button>
+            <button
+              type="button"
+              className="transcript__cancel"
+              onClick={() => {
+                setNaming(false);
+                setNameWarning(false);
+                setPatientName("");
+              }}
+              data-testid="cancel-save"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="transcript__save"
+            onClick={() => setNaming(true)}
+            data-testid="start-save-transcript"
+          >
+            Save a copy
+          </button>
+        )}
 
         {confirmingDelete ? (
           <>
@@ -123,6 +206,17 @@ export default function TranscriptView({ entries, onDiscard }) {
         )}
       </div>
     </section>
+  );
+}
+
+/** A filename the patient can find later, without path separators in it. */
+function fileSafe(name) {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "consultation"
   );
 }
 

@@ -1025,3 +1025,53 @@ P0 is complete. The remaining work is not code:
 
 P1, Emergency Visual Triage and Prescription Playback, is genuinely optional
 and was always scoped that way.
+
+---
+
+## Sprint 6 follow up, naming the saved record and refusing empty input
+
+Two gaps found by using the app rather than reading it.
+
+### The saved record had no name on it
+
+A downloaded file with no name is not recognisably the patient's, which is the
+point of a record they take away.
+
+The name is asked for at the moment of saving, used in that file, and
+discarded. Deliberately not stored with the visit alongside the literacy answer
+and the output language, because ADR 026 already accepts that a transcript can
+be left behind if a visit is not ended properly. A name stored beside it would
+turn a stray record from an anonymous fragment into one identifying exactly
+whose consultation about HIV status or pregnancy a stranger had read. See
+ADR 028.
+
+The interface says the name is not stored, because a privacy property nobody
+can see is worth little. The saved file now also carries the time each exchange
+happened and who confirmed each answer, so FR 2.7's distinction survives into
+the patient's own copy.
+
+### An empty send did nothing and said nothing
+
+Both message forms ignored an empty submission and returned. A silent no op is
+the worst available behaviour, and worse on each side for a different reason.
+
+The doctor would assume the message reached the patient and wait for an answer
+that is never coming, in a consultation where the difficulty is already that
+neither party can confirm the other understood.
+
+For the patient it is worse. A Deaf patient cannot hear whether anything was
+spoken aloud, so a button that appears to do nothing is indistinguishable from
+one that worked silently. They would believe they had answered the doctor.
+
+Now both forms show a message beside the field, mark the field invalid for
+assistive technology, and clear on the first keystroke rather than on the next
+submit. The doctor's wording mentions the microphone only where the browser
+supports it. See ADR 029.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Frontend suite | 226 passed, 17 files |
+| Lint | eslint clean at zero warnings |
+| Production build | PWA builds |

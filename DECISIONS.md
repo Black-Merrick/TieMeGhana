@@ -799,3 +799,61 @@ This supersedes the storage mechanism named in ADR 002. The substance of
 ADR 002, that the transcript is canonical on the device and never on a server,
 is unchanged and is what the absence tests in
 `core/test_no_transcript_endpoint.py` defend.
+
+---
+
+## ADR 028, The patient's name is asked for at save time and never stored
+
+**Context.** The saved consultation record needs the patient's name on it,
+otherwise a downloaded file is not recognisably theirs.
+
+The obvious implementation is to ask for the name at the start of the visit and
+keep it with the visit, alongside the literacy answer and the output language.
+
+**Decision.** The name is asked for at the moment the patient saves a copy,
+used in that file, and then discarded. It is never written to storage and never
+sent anywhere.
+
+**Why.** ADR 026 already accepts that a transcript can be left behind on a
+shared device if the visit is not ended properly, and mitigates it with
+deletion and a staleness window. A name stored beside that transcript would
+make the residual risk far worse: a stray record would go from being an
+anonymous fragment to identifying exactly whose consultation about HIV status
+or pregnancy a stranger had just read.
+
+Asking at save time costs the patient a few seconds, once, at the only moment
+the name is actually needed. That is a good trade for removing the identifying
+half of the worst case entirely.
+
+**Consequence.** Saving twice means typing the name twice, which is a deliberate
+inconvenience rather than an oversight. The interface tells the patient the name
+is not stored, because a privacy property nobody can see is worth little. Saving
+is refused with a visible reason when the name is blank, since an unnamed file
+defeats the point of asking.
+
+---
+
+## ADR 029, Empty input is refused visibly, never silently
+
+**Context.** Both message forms ignored an empty submission and returned. The
+tap did nothing and said nothing.
+
+**Decision.** An empty send shows a message next to the field, marks the field
+invalid for assistive technology, and clears as soon as the person starts
+typing.
+
+**Why.** A silent no op is the worst available behaviour here, and worse on each
+side for a different reason.
+
+The doctor would reasonably assume the message reached the patient and wait for
+an answer that is never coming, in a consultation where the whole difficulty is
+already that neither party can confirm the other understood.
+
+For the patient it is worse still. A Deaf patient cannot hear whether anything
+was spoken aloud, so a button that appears to do nothing is indistinguishable
+from one that worked silently. They would believe they had answered the doctor.
+
+**Consequence.** The doctor's warning mentions the microphone only when the
+browser supports it, since offering an option that is not there would be its own
+small lie. The warning clears on the first keystroke rather than on the next
+submit, so it never lingers to contradict what is on screen.

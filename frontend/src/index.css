@@ -791,3 +791,32 @@ body {
 .transcript__confirm {
   font-weight: 600;
 }
+
+/* Empty input feedback. Doing nothing silently would leave the doctor waiting
+   for an answer to a message that was never sent. */
+.consultation__input--invalid {
+  border-color: var(--colour-offline);
+  border-width: 2px;
+}
+
+.consultation__warning {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--colour-offline);
+}
+
+/* Naming the saved record. The name is used on the downloaded file and then
+   discarded, per ADR 028. */
+.transcript__naming {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.transcript__naming-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}

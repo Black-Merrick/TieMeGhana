@@ -118,24 +118,88 @@ describe("deleting the record", () => {
 });
 
 describe("taking a copy", () => {
-  it("offers the patient a copy to keep", async () => {
-    // The record is deleted with the visit because the device is shared, so
-    // taking a copy has to be possible. NFR 4 calls this an explicit patient
-    // action, which is exactly what tapping this button is.
+  async function startSaving() {
     const user = userEvent.setup();
     render(<TranscriptView entries={entries} onDiscard={vi.fn()} />);
+    await user.click(screen.getByTestId("start-save-transcript"));
+    return user;
+  }
 
+  it("asks for the patient's name before saving", async () => {
+    // The record is meant to be recognisably theirs, which an unnamed file is
+    // not, so the name is asked for rather than assumed.
+    const user = await startSaving();
+
+    expect(screen.getByTestId("patient-name")).toBeInTheDocument();
+    expect(user).toBeDefined();
+  });
+
+  it("says the name is not kept on the device", async () => {
+    // ADR 028. A name stored beside a clinical transcript on a shared device
+    // would make a stray record identifying, so it is used and discarded, and
+    // the patient is told that.
+    await startSaving();
+
+    expect(screen.getByTestId("transcript")).toHaveTextContent(
+      /not stored on this device/i,
+    );
+  });
+
+  it("refuses to save without a name, and says why", async () => {
+    const user = await startSaving();
+
+    await user.click(screen.getByTestId("save-transcript"));
+
+    expect(screen.getByTestId("patient-name-warning")).toBeInTheDocument();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("clears the warning once a name is typed", async () => {
+    const user = await startSaving();
+    await user.click(screen.getByTestId("save-transcript"));
+
+    await user.type(screen.getByTestId("patient-name"), "A");
+
+    expect(screen.queryByTestId("patient-name-warning")).not.toBeInTheDocument();
+  });
+
+  it("saves a named copy for the patient to keep", async () => {
+    // NFR 4 calls this an explicit patient action, which is exactly what
+    // naming the record and tapping download is.
+    const user = await startSaving();
+
+    await user.type(screen.getByTestId("patient-name"), "Ama Mensah");
     await user.click(screen.getByTestId("save-transcript"));
 
     expect(URL.createObjectURL).toHaveBeenCalledOnce();
   });
 
   it("releases the download url rather than leaking it", async () => {
-    const user = userEvent.setup();
-    render(<TranscriptView entries={entries} onDiscard={vi.fn()} />);
+    const user = await startSaving();
 
+    await user.type(screen.getByTestId("patient-name"), "Ama Mensah");
     await user.click(screen.getByTestId("save-transcript"));
 
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:transcript");
+  });
+
+  it("forgets the name after saving", async () => {
+    const user = await startSaving();
+
+    await user.type(screen.getByTestId("patient-name"), "Ama Mensah");
+    await user.click(screen.getByTestId("save-transcript"));
+
+    // Back to the starting state, with nothing holding the name.
+    expect(screen.getByTestId("start-save-transcript")).toBeInTheDocument();
+    expect(screen.queryByTestId("patient-name")).not.toBeInTheDocument();
+  });
+
+  it("lets the patient back out without saving", async () => {
+    const user = await startSaving();
+
+    await user.click(screen.getByTestId("cancel-save"));
+
+    expect(screen.queryByTestId("patient-name")).not.toBeInTheDocument();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 });

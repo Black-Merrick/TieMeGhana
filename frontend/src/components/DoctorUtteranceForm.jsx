@@ -24,6 +24,7 @@ export default function DoctorUtteranceForm({
 }) {
   const [sourceLanguage, setSourceLanguage] = useState("en");
   const [message, setMessage] = useState("");
+  const [emptyWarning, setEmptyWarning] = useState(false);
   const recorder = useAudioRecorder();
 
   const isRecording = recorder.status === "recording";
@@ -32,10 +33,24 @@ export default function DoctorUtteranceForm({
     event.preventDefault();
 
     const text = message.trim();
-    if (!text) return;
+    if (!text) {
+      // Doing nothing silently is the worst response here. Mid consultation
+      // the doctor would reasonably assume the message went to the patient and
+      // carry on waiting for an answer that is never coming.
+      setEmptyWarning(true);
+      return;
+    }
 
+    setEmptyWarning(false);
     await onSend({ sourceLanguage, text });
     setMessage("");
+  };
+
+  const handleChange = (event) => {
+    setMessage(event.target.value);
+    // Cleared as soon as they start typing, so the warning never lingers to
+    // contradict what is on screen.
+    if (emptyWarning) setEmptyWarning(false);
   };
 
   const handleMicrophone = async () => {
@@ -74,12 +89,31 @@ export default function DoctorUtteranceForm({
         </label>
         <textarea
           id="doctor-message"
-          className="consultation__input"
+          className={
+            emptyWarning
+              ? "consultation__input consultation__input--invalid"
+              : "consultation__input"
+          }
           rows={3}
           value={message}
-          onChange={(event) => setMessage(event.target.value)}
+          onChange={handleChange}
           placeholder={placeholder}
+          aria-invalid={emptyWarning}
+          aria-describedby={emptyWarning ? "doctor-message-warning" : undefined}
         />
+
+        {emptyWarning ? (
+          <p
+            id="doctor-message-warning"
+            className="consultation__warning"
+            role="alert"
+            data-testid="empty-message-warning"
+          >
+            {recorder.isSupported
+              ? "Type a message, or tap Speak to patient, before sending."
+              : "Type a message before sending."}
+          </p>
+        ) : null}
 
         <div className="consultation__actions">
           <button

@@ -240,6 +240,55 @@ describe("DoctorConsultation", () => {
     expect(captionUtterance).not.toHaveBeenCalled();
   });
 
+  it("says why nothing was sent instead of doing nothing", async () => {
+    // Silently ignoring the tap is the worst response. Mid consultation the
+    // doctor would assume the message reached the patient and wait for an
+    // answer that is never coming.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    expect(screen.getByTestId("empty-message-warning")).toBeInTheDocument();
+  });
+
+  it("mentions the microphone when this browser can record", async () => {
+    // Typing is not the only way to send, so the message should not imply it
+    // is. Under jsdom there is no microphone, so the wording drops it.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    expect(screen.getByTestId("empty-message-warning")).toHaveTextContent(
+      /type a message/i,
+    );
+  });
+
+  it("clears the warning as soon as the doctor starts typing", async () => {
+    // A warning that lingered would contradict what is on screen.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "H");
+
+    expect(screen.queryByTestId("empty-message-warning")).not.toBeInTheDocument();
+  });
+
+  it("sends normally once there is something to send", async () => {
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "Fever?");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => {
+      expect(captionUtterance).toHaveBeenCalledOnce();
+    });
+  });
+
   it("shows a working indicator while the caption is being produced", async () => {
     // SRS 4.1 requires a visible status during processing, so the doctor is
     // never left wondering whether their action registered.

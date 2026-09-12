@@ -95,6 +95,12 @@ export function clearTranscript() {
   }
 }
 
+/** How an answer came to be recorded, for the saved copy. */
+const ATTRIBUTION = {
+  doctor: " (confirmed by the doctor)",
+  patient: " (tapped by the patient)",
+};
+
 /**
  * Render the transcript as plain text for the patient to keep.
  *
@@ -102,12 +108,42 @@ export function clearTranscript() {
  * communicated. Since the transcript is deleted with the visit, taking a copy
  * has to be possible, and it is an explicit patient action, which is exactly
  * the wording NFR 4 uses.
+ *
+ * The patient's name is passed in rather than read from storage, and it is
+ * deliberately never stored. It is asked for at the moment of saving and used
+ * only in the file the patient takes away. A name kept alongside a clinical
+ * transcript on a shared device would make the leak ADR 026 guards against far
+ * more identifying: a stranger reading a stray transcript would learn whose it
+ * was. See ADR 028.
  */
-export function transcriptAsText(entries = readTranscript()) {
+export function transcriptAsText(
+  entries = readTranscript(),
+  { patientName = "", savedAt = new Date() } = {},
+) {
   const lines = entries.map((entry) => {
     const who = entry.direction === Direction.TO_PATIENT ? "Doctor" : "Patient";
-    return `[${entry.at}] ${who}: ${entry.text}`;
+    const attribution = ATTRIBUTION[entry.answeredBy] ?? "";
+    return `[${formatStamp(entry.at)}] ${who}: ${entry.text}${attribution}`;
   });
 
-  return ["Tie Me Ghana, consultation record", "", ...lines, ""].join("\n");
+  return [
+    "Tie Me Ghana",
+    "Consultation record",
+    "",
+    `Patient: ${patientName.trim() || "Not given"}`,
+    `Saved: ${savedAt.toLocaleString()}`,
+    "",
+    ...lines,
+    "",
+    "This record was kept on the patient's own device and is their copy.",
+    "",
+  ].join("\n");
+}
+
+/** Readable time of day, falling back to the raw value if it will not parse. */
+function formatStamp(iso) {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? iso
+    : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

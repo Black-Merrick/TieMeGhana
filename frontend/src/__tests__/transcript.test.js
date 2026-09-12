@@ -209,4 +209,49 @@ describe("taking a copy", () => {
 
     expect(transcriptAsText()).not.toContain("to_doctor");
   });
+
+  it("puts the patient's name on the record", () => {
+    // So the patient can tell at a glance that the file is theirs, which is
+    // the whole point of a record they take away.
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "Yes" });
+
+    expect(transcriptAsText(readTranscript(), { patientName: "Ama Mensah" })).toContain(
+      "Patient: Ama Mensah",
+    );
+  });
+
+  it("trims a name typed with stray spaces", () => {
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "Yes" });
+
+    expect(
+      transcriptAsText(readTranscript(), { patientName: "  Ama Mensah  " }),
+    ).toContain("Patient: Ama Mensah");
+  });
+
+  it("says the name was not given rather than leaving it blank", () => {
+    // A blank line reads as a bug. Stating it is missing reads as a record.
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "Yes" });
+
+    expect(transcriptAsText()).toContain("Patient: Not given");
+  });
+
+  it("records when the copy was saved", () => {
+    appendEntry({ direction: Direction.TO_DOCTOR, text: "Yes" });
+
+    expect(
+      transcriptAsText(readTranscript(), { savedAt: new Date("2026-09-12T14:32:00Z") }),
+    ).toMatch(/Saved: .+/);
+  });
+
+  it("carries who confirmed each answer into the saved copy", () => {
+    // FR 2.7. The distinction has to survive into the file, or the patient's
+    // own copy would blur which answers were theirs.
+    appendEntry({
+      direction: Direction.TO_DOCTOR,
+      text: "Yes",
+      answeredBy: "doctor",
+    });
+
+    expect(transcriptAsText()).toContain("confirmed by the doctor");
+  });
 });

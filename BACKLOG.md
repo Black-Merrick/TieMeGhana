@@ -131,7 +131,7 @@ project exists to serve, so the branching logic gets direct test coverage.
 | --- | --- | --- | --- |
 | 4.1 | Every exchange logged with direction, text, and timestamp | 6 | `done`, both directions |
 | 4.2 | Full transcript stored only on the patient's own device, not uploaded | 6 | `done`, no endpoint exists to send one, asserted by test |
-| 4.3 | Patient can view, scroll, and delete their own transcript | 6 | `done`, plus save a copy per ADR 026 |
+| 4.3 | Patient can view, scroll, and delete their own transcript | 6 | `done`, plus save a named copy per ADR 026 and 028 |
 
 Architecture decision: the transcript is canonical in IndexedDB on the
 patient's device. The backend holds only the live exchange needed to keep the
