@@ -1,0 +1,19 @@
+{% extends "admin/change_list.html" %}
+
+{# A button for importing filmed footage, because the person adding clips in a
+   hospital will not have a terminal and `manage.py import_clips` is not a
+   realistic instruction for them. POST, since importing replaces footage and
+   resets approvals. #}
+
+{% block object-tools-items %}
+  <li>
+    <form method="post" action="{% url 'admin:clips_signclip_import_footage' %}"
+          style="display:inline">
+      {% csrf_token %}
+      <button type="submit" class="addlink" style="border:0;background:none;cursor:pointer">
+        Import footage folder
+      </button>
+    </form>
+  </li>
+  {{ block.super }}
+{% endblock %}

@@ -163,6 +163,11 @@ STORAGES = {
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Where filmed GhSL footage is dropped before being imported. Configurable
+# because in a deployment it is likely a mounted volume rather than a folder
+# beside the code.
+FOOTAGE_DIR = Path(os.environ.get("FOOTAGE_DIR", BASE_DIR / "footage"))
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {

@@ -5,18 +5,23 @@ Point it at a folder of recordings named by gloss, `head.webm`, `hurt.mp4`,
 `a.webm`, and each file is attached to its gloss. Importing deliberately does
 NOT approve anything: approval means a GhSL fluent consultant vouched for the
 sign, and no script is in a position to do that.
+
+`--watch` leaves it running, so during a filming session a clip appears in the
+library as soon as it lands in the folder.
 """
 
+import time
 from pathlib import Path
 
-from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError
 
-from clips.models import ClipKind, ReviewStatus, SignClip
+from clips.importing import VIDEO_SUFFIXES, ImportReport, import_footage
+from clips.models import SignClip
 
-# Formats a browser can play in a <video> element without transcoding. Anything
-# else would import cleanly and then fail silently at playback time.
-VIDEO_SUFFIXES = {".webm", ".mp4", ".m4v", ".mov"}
+#: How often --watch looks at the folder. Polling rather than a filesystem
+#: watcher, so there is no extra dependency and it behaves the same on every
+#: platform and over a network share.
+WATCH_INTERVAL_SECONDS = 3
 
 
 class Command(BaseCommand):
@@ -46,88 +51,82 @@ class Command(BaseCommand):
                 "advances on the video's own end event."
             ),
         )
+        parser.add_argument(
+            "--watch",
+            action="store_true",
+            help=(
+                "Keep running and import new or changed files as they appear. "
+                "For filming sessions. Stop with Ctrl-C."
+            ),
+        )
 
     def handle(self, *args, **options):
         folder = Path(options["folder"])
-        if not folder.is_dir():
-            raise CommandError(f"Not a folder: {folder}")
+        settings = {
+            "approve": options["approve"],
+            "reviewer": options["reviewer"],
+            "duration_ms": options["duration_ms"],
+        }
 
-        approve = options["approve"]
-        reviewer = options["reviewer"].strip()
+        # Validated once, up front. In --watch mode a bad folder or a nameless
+        # approval should fail immediately rather than on every poll.
+        try:
+            report = import_footage(folder, **settings)
+        except ValueError as error:
+            raise CommandError(str(error)) from error
 
-        if approve and not reviewer:
-            # An approval with nobody's name against it is not a review. ADR 009
-            # makes review a recorded fact, so refuse rather than record a
-            # nameless approval.
-            raise CommandError(
-                "--approve requires --reviewer, naming the GhSL fluent "
-                "consultant who checked this footage."
-            )
+        self._report(report)
 
-        videos = sorted(
-            path
-            for path in folder.iterdir()
-            if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES
-        )
+        if not options["watch"]:
+            if not report.imported and not report.unchanged:
+                raise CommandError(
+                    f"No video files in {folder}. "
+                    f"Expected one of: {', '.join(sorted(VIDEO_SUFFIXES))}"
+                )
+            self._report_library()
+            return
 
-        if not videos:
-            raise CommandError(
-                f"No video files in {folder}. "
-                f"Expected one of: {', '.join(sorted(VIDEO_SUFFIXES))}"
-            )
+        self._watch(folder, settings)
 
-        imported = 0
-        for path in videos:
-            self._import_one(
-                path,
-                approve=approve,
-                reviewer=reviewer,
-                duration_ms=options["duration_ms"],
-            )
-            imported += 1
-            self.stdout.write(f"  {path.name} -> {path.stem.strip().upper()}")
-
+    def _watch(self, folder: Path, settings: dict) -> None:
         self.stdout.write(
-            self.style.SUCCESS(f"\nImported {imported} clip(s) from {folder}.")
+            self.style.SUCCESS(
+                f"\nWatching {folder} every {WATCH_INTERVAL_SECONDS}s. "
+                "Drop a clip in and it will be imported. Ctrl-C to stop."
+            )
         )
 
-        skipped = [
-            path.name
-            for path in folder.iterdir()
-            if path.is_file() and path.suffix.lower() not in VIDEO_SUFFIXES
-        ]
-        if skipped:
+        try:
+            while True:
+                time.sleep(WATCH_INTERVAL_SECONDS)
+
+                report = import_footage(folder, **settings)
+                # Only speak when something happened. A watcher that printed
+                # every poll would bury the one line that matters.
+                if report.touched_anything:
+                    self._report(report)
+                    self._report_library()
+        except KeyboardInterrupt:
+            self.stdout.write("\nStopped watching.")
+
+    def _report(self, report: ImportReport) -> None:
+        for gloss in report.created:
+            self.stdout.write(self.style.SUCCESS(f"  new       {gloss}"))
+        for gloss in report.replaced:
             self.stdout.write(
-                f"Ignored {len(skipped)} non video file(s): "
-                f"{', '.join(sorted(skipped))}"
+                self.style.WARNING(f"  replaced  {gloss}, approval reset")
+            )
+        if report.unchanged:
+            self.stdout.write(
+                f"  unchanged {len(report.unchanged)} clip(s), left alone"
+            )
+        if report.ignored:
+            self.stdout.write(
+                f"  ignored   {len(report.ignored)} non video file(s): "
+                f"{', '.join(sorted(report.ignored))}"
             )
 
-        self._report_status(approve)
-
-    def _import_one(self, path: Path, *, approve: bool, reviewer: str, duration_ms):
-        """Attach one file to its gloss, creating the gloss if it is new."""
-        gloss = path.stem.strip().upper()
-
-        # A one character gloss is a fingerspelling letter. Getting this wrong
-        # would let a letter be matched as a whole word sign and break the
-        # FR 1.6 fallback.
-        kind = ClipKind.LETTER if len(gloss) == 1 else ClipKind.WORD
-
-        clip, _ = SignClip.objects.get_or_create(gloss=gloss, defaults={"kind": kind})
-
-        with path.open("rb") as handle:
-            clip.video.save(path.name, File(handle), save=False)
-
-        if duration_ms is not None:
-            clip.duration_ms = duration_ms
-
-        # Replacing footage invalidates any previous approval, because the
-        # consultant approved the recording that was there before, not this one.
-        clip.review_status = ReviewStatus.APPROVED if approve else ReviewStatus.PENDING
-        clip.reviewed_by = reviewer if approve else ""
-        clip.save()
-
-    def _report_status(self, approved: bool) -> None:
+    def _report_library(self) -> None:
         resolvable = SignClip.objects.resolvable().count()
         awaiting_review = SignClip.objects.awaiting_review().count()
         awaiting_footage = SignClip.objects.awaiting_footage().count()
@@ -137,7 +136,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Filmed, awaiting consultant review: {awaiting_review}")
         self.stdout.write(f"Not yet filmed: {awaiting_footage}")
 
-        if not approved and awaiting_review:
+        if awaiting_review:
             self.stdout.write(
                 self.style.WARNING(
                     "\nImported footage is not usable yet. A GhSL fluent "

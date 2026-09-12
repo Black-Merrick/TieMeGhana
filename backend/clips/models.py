@@ -97,6 +97,15 @@ class SignClip(models.Model):
         blank=True,
         help_text="Regional variation, ambiguity, or anything a reviewer flagged.",
     )
+    source_checksum = models.CharField(
+        max_length=64,
+        blank=True,
+        editable=False,
+        help_text=(
+            "Hash of the imported file. Lets a repeated import recognise "
+            "unchanged footage and leave its approval alone."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

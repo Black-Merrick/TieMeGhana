@@ -1352,3 +1352,64 @@ passed, because pytest builds a fresh database from migrations each run.
 With 95 glosses and two filmed, most sentences are now refused. That is correct
 and temporary: coverage improves as footage is filmed, and a refusal is
 visible, whereas the alternative was a silent wrong answer.
+
+---
+
+## Making footage import idempotent, watchable, and reachable from the admin
+
+**The question that prompted it.** Why does dropping a clip in `footage/` not
+show up in the app? Because nothing watched the folder: `footage/` is an inbox
+and `media/clips/` is the store, and until an import ran the file sat in a
+directory the app never looked at.
+
+**What was added.** Three ways to ask for an import, sharing one code path in
+`clips/importing.py` so the command and the button cannot drift:
+
+- `import_clips footage/`, once
+- `import_clips footage/ --watch`, polling every three seconds, for filming
+- **Import footage folder** on the clip list in the Django admin
+
+Polling rather than a watcher library: no dependency, identical on every
+platform and over a network share, which is what a mounted volume in a
+deployment will be.
+
+### The guard that had to come with it
+
+Re-importing resets approval to pending, deliberately, because a consultant
+approved the recording that was there before. So anything that re-runs an
+import would silently un-approve reviewed footage: the watcher polling, a file
+sync touching timestamps, a second click of the button.
+
+That failure would be invisible. The doctor would see no error, just sentences
+starting to be refused mid consultation, with nothing connecting that to a
+folder having been scanned again.
+
+A clip now records the checksum of the file it came from, and matching contents
+are left completely alone. By content hash, not modification time, because a
+timestamp changes when nothing about the file does. A test sets the mtime to
+zero and asserts the approval survives.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 165 passed, 10 new |
+| Lint and formatting | black, isort, ruff all clean |
+| Live, first run | 1 new, 2 replaced, 1 non video ignored |
+| Live, second run | `unchanged 3 clip(s), left alone` |
+
+The admin import is POST only, since importing replaces footage and resets
+approvals and must not be reachable by anything that follows links. It approves
+nothing: a button cannot vouch for a medical sign any more than a script can.
+
+### One time effect worth knowing
+
+Clips imported before the checksum field existed have no recorded checksum, so
+the first import after this change counted them as replaced and reset their
+approval. Correct rather than convenient: we cannot know whether the file on
+disk is the one that was reviewed.
+
+### Also removed
+
+A `video_files` helper left over from an earlier shape of the command, unused
+by anything.

@@ -1097,3 +1097,57 @@ fallback and never a substitution for something that already matches.
 If a suggestion layer is added later, it belongs **behind** the confirmation
 gate in ADR 033: it may propose an alternative to the doctor, who approves it
 in one tap. It may never substitute one silently.
+
+---
+
+## ADR 035, Importing footage is idempotent, and reachable without a terminal
+
+**Context.** `footage/` is an inbox, not the store. Nothing watched it, so a
+clip sat in a directory the app never looked at until somebody ran
+`manage.py import_clips`. Two problems with that.
+
+The obvious one: during a filming session you want a clip to appear when it
+lands. The one that matters more: in a hospital, the person adding footage will
+not have shell access, and "run this management command" is not a realistic
+instruction for them.
+
+**Decision.** Import stays an explicit act, but there are now three ways to
+ask for it, all sharing one code path:
+
+| | How | For |
+| --- | --- | --- |
+| `import_clips footage/` | Once | Normal use |
+| `import_clips footage/ --watch` | Polls every 3s | Filming sessions |
+| A button on the clip list in the admin | POST | A hospital, where nobody has a terminal |
+
+**And the guard that makes repetition safe.** A clip records the checksum of
+the file it was imported from, and a file whose contents already match is left
+completely alone.
+
+**Why the guard is not optional.** Re-importing resets approval to pending,
+deliberately, because a consultant approved the recording that was there
+before rather than the new one. Without the guard, anything that re-runs an
+import would silently un-approve reviewed footage: the watcher polling, a file
+sync touching timestamps, a second click of the button. The doctor would not
+see an error. They would see sentences start being refused mid consultation,
+with no way to connect that to a folder having been scanned again.
+
+The comparison is by content hash, not modification time, because a timestamp
+changes when nothing about the file does. A test sets the mtime to zero and
+asserts the approval survives.
+
+**Why not a filesystem watcher library.** Polling every three seconds needs no
+dependency and behaves identically on every platform and over a network share,
+which is what a mounted volume in a deployment will be. Three seconds is
+imperceptible next to the time it takes to film a clip.
+
+**Consequence.** The admin import is POST only. Importing replaces footage and
+resets approvals, so it must not be reachable by anything that follows links,
+such as a crawler or a browser prefetch. It also approves nothing: a button
+cannot vouch for a medical sign any more than a script can, which is the same
+rule as ADR 009.
+
+Adding the checksum field means clips imported before it existed have no
+recorded checksum, so the first import after this change counts them as
+replaced and resets their approval once. Correct rather than convenient: we
+cannot know whether the file on disk is the one that was reviewed.

@@ -27,11 +27,24 @@ browser can play in a `<video>` element without transcoding.
 
 ## Importing
 
+Nothing watches this folder on its own, so a clip sits here until an import is
+asked for. Three ways to ask:
+
 ```bash
 cd backend
 source .venv/bin/activate
-python manage.py import_clips footage/
+
+python manage.py import_clips footage/            # once
+python manage.py import_clips footage/ --watch    # keep running, for filming
 ```
+
+Or press **Import footage folder** on the clip list in the Django admin, at
+`/admin/clips/signclip/`. That is the one to use in a hospital, where the
+person adding footage will not have a terminal.
+
+All three share the same code path, and all three are safe to repeat: a file
+whose contents are already stored is left completely alone, approval included.
+See ADR 035.
 
 Imported footage is **not usable yet**. It is filmed but unapproved, because
 approval means a GhSL fluent consultant has vouched for the sign, and no script
@@ -56,9 +69,13 @@ not a review.
 
 ## Re-importing a correction
 
-Re-importing replaces the footage and **resets approval to pending**, on
+Replacing a file with different contents resets its approval to pending, on
 purpose. The consultant approved the recording that was there before, not the
 new one, so it has to be checked again.
+
+Re-importing an **unchanged** file changes nothing, so leaving `--watch`
+running or pressing the button twice cannot quietly un-approve reviewed
+footage. The comparison is by file contents, not timestamp.
 
 ## Duration
 
