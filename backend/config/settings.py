@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "core",
+    "clips",
 ]
 
 MIDDLEWARE = [
@@ -140,7 +141,7 @@ TIME_ZONE = "Africa/Accra"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Hashed, compressed static files in deployment only. The manifest backend
@@ -156,7 +157,9 @@ STORAGES = {
     "staticfiles": {"BACKEND": _staticfiles_backend},
 }
 
-MEDIA_URL = "media/"
+# Leading slash matters. Clip URLs are built from this, and a relative value
+# would resolve against whatever path the app happens to be on.
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

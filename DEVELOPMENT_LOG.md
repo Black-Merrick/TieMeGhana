@@ -145,3 +145,129 @@ and is not in any requirements file.
 Port 8000 on this machine is held by an unrelated Django project, so Tie Me
 Ghana's backend runs on 8001 here, set in `frontend/.env.local`, which is not
 committed. Other machines can use the default 8000.
+
+---
+
+## Sprint 1, GhSL clip library and text to sign resolution
+
+**Branch.** `sprint-1-ghsl-clip-library`
+
+**Goal.** FR 1.5, FR 1.6, and FR 1.7 on the backend: the retrieval layer that
+everything visual in the app depends on. Chosen first because it needs neither
+the Khaya API key nor real footage, so nothing external could block it.
+
+**Worked test first**, per `ENGINEERING_STANDARDS.md` section 3. The tests were
+written and run before any implementation existed, failing with
+`ModuleNotFoundError: No module named 'clips.models'`, then the implementation
+was written to satisfy them.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `SignClip` model | One reviewed GhSL clip, keyed on its English gloss, normalized uppercase on save |
+| `resolvable()` queryset | The single rule for "may a patient see this": approved by a consultant **and** filmed |
+| `awaiting_footage()`, `awaiting_review()` | Turn the library into the team's own footage and review tracker |
+| `tokenize()` | Splits captions into word tokens, keeping Twi characters, discarding punctuation |
+| `resolve_sign_sequence()` | FR 1.5 to 1.7, gloss match then fingerspelling fallback then honest unavailable |
+| `GET /api/clips/` | Read only list of clips that are reviewed and filmed |
+| `POST /api/sign-sequence/` | Resolves caption text to an ordered clip sequence for the player |
+| Admin review workflow | Approve and return for rework actions, with filmed and review columns |
+| `manage.py seed_clips` | Seeds 92 glosses with no footage, so the library records what still needs recording |
+
+### Reproducing it
+
+```bash
+cd backend
+source .venv/bin/activate
+python manage.py migrate
+python manage.py seed_clips           # seeds vocabulary, films nothing
+python manage.py seed_clips --report  # what the library still needs
+pytest
+```
+
+Exercising the API directly, with the server on 8001:
+
+```bash
+curl -X POST http://127.0.0.1:8001/api/sign-sequence/ \
+  -H 'Content-Type: application/json' -d '{"text":"head hurts"}'
+
+curl http://127.0.0.1:8001/api/clips/
+
+# Must be 405, clips are admin managed only
+curl -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8001/api/clips/ \
+  -H 'Content-Type: application/json' -d '{"gloss":"FAKE"}'
+```
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Test suite | 31 passed, 29 of them new in this sprint |
+| Formatting, import order, lint | black, isort, ruff all clean |
+| Migration drift | none |
+| Seed command | 92 glosses created, 0 ready for clinical use, which is the correct honest state |
+| Live API | sign sequence resolves and reports coverage, clip write returns 405 |
+
+### Tests worth knowing about
+
+These are the ones that encode something the project would be worse without.
+
+- **An unreviewed clip is never used even when the gloss matches.** The
+  resolver falls back to fingerspelling instead. This is the clinical safety
+  property of the whole module.
+- **Resolution cost does not grow with sentence length.** Asserted with
+  `django_assert_num_queries(2)`. A per token query would have quietly blown
+  NFR 1's five second budget on a long sentence.
+- **Clips cannot be created or deleted through the API.** Locks in the stated
+  design that the library is admin managed and consultant reviewed.
+- **A partially spellable word is reported unavailable, not played with gaps.**
+  A gap would be read by the patient as part of the word.
+- **The tokenizer keeps ɛ and ɔ.** Twi captions are the normal case here, and a
+  tokenizer that stripped them would mangle most real input.
+- **Seeding never produces a resolvable clip.** Seeding records what is needed,
+  it does not fabricate reviewed footage.
+
+### Problems hit, and the fixes
+
+**`ClipKind` was imported inside the `make_clip` fixture, so the `alphabet`
+fixture could not see it.** The import has to be function local because
+`conftest.py` is imported before Django's app registry is ready, so the fix was
+a second local import rather than moving it to module level.
+
+**`bulk_create` bypasses `save()`, so gloss normalization did not run** in the
+seed command. Harmless with the current all uppercase lists, but it would
+silently store a lowercase gloss the resolver could never match. The command
+now normalizes explicitly.
+
+**`MEDIA_URL` was `"media/"` with no leading slash.** Clip URLs are built from
+it, so a relative value would resolve against whatever path the app happened to
+be on. Now `"/media/"`. `STATIC_URL` had the same problem and was fixed with
+it.
+
+**Ruff flagged `typing.Iterable` as deprecated** in favour of
+`collections.abc.Iterable`, and fixed it automatically. Noted because it is the
+lint rules doing their job rather than a mistake needing a decision.
+
+### Known limitations, deliberate
+
+**No footage exists yet, so the library resolves nothing.** Every caption
+currently reports `unavailable`, because the alphabet has no footage either and
+so even fingerspelling cannot complete. This is correct behaviour, not a bug,
+and it is visible rather than hidden. The moment real clips are uploaded and
+approved, resolution starts working with no code change.
+
+**Multi word signs are not matched.** See ADR 010. They fingerspell instead,
+which is worse for the patient. Phrase level matching is a later sprint.
+
+**Clip duration is entered by hand.** Nothing reads it from the video file,
+because that needs ffmpeg, which is deliberately not a runtime dependency per
+ADR 008. `total_duration_ms` is therefore an estimate based on what a reviewer
+typed in.
+
+### Carried forward
+
+Unchanged from sprint 0, and none of it blocked this sprint: the Khaya API key,
+filmed GhSL footage, alphabet footage for FR 1.6, and consultant review of the
+question bank. Sprint 1 made the first three visible as data rather than as a
+note in a file, which is the point of ADR 009.

@@ -147,3 +147,78 @@ unreachable, during the one demo that matters.
 
 **Consequence.** Deployment must set the variable. It is documented in
 `backend/.env.example` next to the setting it controls.
+
+---
+
+## ADR 008, A sign sequence is an ordered playlist, not a stitched video file
+
+**Context.** FR 1.7 says matched clips are "stitched into a single sign video".
+That can be read as server side video concatenation, producing one file per
+sentence, or as an ordered list that one player plays back seamlessly.
+
+**Decision.** The API returns an ordered sequence of clip references. A single
+player component plays them back to back so the patient sees one continuous
+signed sentence.
+
+**Why.** Three reasons, in order of weight.
+
+Server side concatenation costs seconds of encoding per sentence. NFR 1 allows
+five seconds for the entire pipeline including speech recognition and
+translation, so spending most of that budget re encoding video we already have
+would break the requirement outright.
+
+A stitched file is unique to its sentence, so it can never be cached. Clip
+references are cached per clip, which is what makes FR 6.2's offline
+prescription replay possible at all, and what makes the second sentence in a
+consultation faster than the first.
+
+It also needs no ffmpeg in the runtime image, so the backend container stays
+small and the dev setup has one less system dependency.
+
+**Consequence.** Seamless playback is now the player's responsibility, and a
+visible stutter between clips would be a real defect rather than a cosmetic
+one. The player must preload the next clip while the current one plays. That
+is a frontend concern for the sprint that builds it.
+
+---
+
+## ADR 009, A clip row may exist before its footage does
+
+**Context.** The project needs 30 to 50 reviewed GhSL clips, which have to be
+filmed and then checked by a GhSL fluent consultant. Neither had happened when
+the library was built, and the team needs to know what is still outstanding.
+
+**Decision.** `SignClip.video` may be empty. A row with no footage records a
+gloss the project needs. A clip is only resolvable when it is both approved
+and filmed, which is one queryset method, `resolvable()`, used everywhere.
+
+**Why.** The alternative is tracking outstanding footage in a spreadsheet
+beside the code, which goes stale immediately. Making the library itself the
+record means `manage.py seed_clips --report` answers "what still needs
+filming" from the same data the app serves, and the Django admin doubles as the
+review queue.
+
+**Consequence.** Every read path must go through `resolvable()`, never a bare
+`SignClip.objects.all()`, or an unfilmed or unreviewed clip could reach a
+patient. Tests assert this for both the resolver and the API.
+
+---
+
+## ADR 010, Word glosses are single words, phrase matching is deferred
+
+**Context.** Some clinical concepts are one sign but several English words,
+for example "how many" or "two times daily".
+
+**Decision.** Glosses of kind `WORD` are single words only. Multi word signs
+are not matched from captions in this sprint.
+
+**Why.** The tokenizer splits on non word characters, so a gloss like
+`HOW-MANY` could never be produced from a caption and would sit in the library
+looking supported while never matching anything. Honest absence beats a
+feature that appears to exist.
+
+**Consequence.** Multi word concepts currently fingerspell, which is worse for
+the patient. Phrase level matching, longest match first across a token window,
+is the fix and belongs in a later sprint. Emergency alerts avoid the problem
+entirely because the patient selects them directly rather than through
+tokenized text, which is why `CANNOT_BREATHE` is kind `ALERT`.

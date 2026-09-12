@@ -57,13 +57,23 @@ Not a feature, the baseline that makes every later sprint verifiable.
 | 1.2 | Speech transcribed via ASR | 2 | `todo` |
 | 1.3 | English text translated to Twi if needed | 2 | `todo` |
 | 1.4 | Twi caption displayed on screen | 2 | `todo` |
-| 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `todo` |
-| 1.6 | Unmatched words trigger fingerspelling fallback, letter clips in sequence | 1 | `todo` |
-| 1.7 | Matched clips stitched into one sign video, played alongside the caption | 1, 2 | `todo` |
+| 1.5 | Caption tokenized and matched to GhSL clips by English gloss | 1 | `done` |
+| 1.6 | Unmatched words trigger fingerspelling fallback, letter clips in sequence | 1 | `done` |
+| 1.7 | Matched clips stitched into one sign video, played alongside the caption | 1, 2 | `wip`, resolution done, player pending |
 
 Design constraint carried into the code: clips cannot be created through the
 API. The library is admin managed only, because an unreviewed medical sign has
 real clinical consequences. A test locks this in.
+
+Delivered in sprint 1, backend only: the `clips` app, `SignClip` model with a
+`resolvable()` rule requiring both consultant approval and footage,
+`resolve_sign_sequence()` for FR 1.5 to 1.7, `GET /api/clips/`,
+`POST /api/sign-sequence/`, the admin review workflow, and
+`manage.py seed_clips`. 29 tests. See ADR 008, 009, and 010 for the decisions
+this produced, and the sprint 1 entry in `DEVELOPMENT_LOG.md`.
+
+Not yet delivered for FR 1.7: the player that plays a resolved sequence back
+seamlessly, which is sprint 2 along with the Khaya language layer.
 
 ## P0.2, Literacy Check and Guided Interrogation, sprints 3 and 4
 

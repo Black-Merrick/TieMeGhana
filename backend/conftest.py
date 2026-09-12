@@ -6,6 +6,7 @@ once rather than copied between test modules as the feature apps grow.
 """
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 
@@ -13,3 +14,77 @@ from rest_framework.test import APIClient
 def api_client() -> APIClient:
     """A DRF test client for exercising API contracts the frontend depends on."""
     return APIClient()
+
+
+@pytest.fixture(autouse=True)
+def isolated_media_root(settings, tmp_path):
+    """
+    Point MEDIA_ROOT at a temporary directory for every test.
+
+    Autouse because clip tests upload files, and without this they would write
+    into the developer's real media directory and leave rubbish behind that
+    later shows up in the admin as if it were real footage.
+    """
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    settings.MEDIA_ROOT = media_root
+    return media_root
+
+
+@pytest.fixture
+def make_clip(db):
+    """
+    Build a SignClip, defaulting to one that is usable in a sign sequence.
+
+    A clip is only usable when a GhSL fluent consultant has approved it and the
+    footage actually exists, so the factory takes those two conditions as
+    separate switches. Tests that care about the unusable cases flip them
+    individually rather than constructing a model instance by hand.
+    """
+    from clips.models import ClipKind, ReviewStatus, SignClip
+
+    def _make_clip(
+        gloss,
+        *,
+        kind=ClipKind.WORD,
+        approved=True,
+        filmed=True,
+        duration_ms=800,
+    ):
+        # An unfilmed clip stores an empty string rather than NULL, so a single
+        # `exclude(video="")` covers every not yet filmed row.
+        video = (
+            SimpleUploadedFile(
+                f"{gloss.lower()}.webm", b"placeholder-bytes", content_type="video/webm"
+            )
+            if filmed
+            else ""
+        )
+        return SignClip.objects.create(
+            gloss=gloss,
+            kind=kind,
+            video=video,
+            duration_ms=duration_ms if filmed else None,
+            review_status=(ReviewStatus.APPROVED if approved else ReviewStatus.PENDING),
+            reviewed_by="Test Consultant" if approved else "",
+        )
+
+    return _make_clip
+
+
+@pytest.fixture
+def alphabet(make_clip):
+    """
+    The fingerspelling alphabet, needed by the FR 1.6 fallback.
+
+    Provided as a fixture because most sequence tests need letters present but
+    are not themselves about the alphabet.
+    """
+    # Imported here, not at module level, because conftest is loaded before
+    # Django's app registry is ready.
+    from clips.models import ClipKind
+
+    return {
+        letter: make_clip(letter, kind=ClipKind.LETTER, duration_ms=200)
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    }
