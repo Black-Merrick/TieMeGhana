@@ -1151,3 +1151,45 @@ Adding the checksum field means clips imported before it existed have no
 recorded checksum, so the first import after this change counts them as
 replaced and resets their approval once. Correct rather than convenient: we
 cannot know whether the file on disk is the one that was reviewed.
+
+---
+
+## ADR 036, The patient facing API is stateless
+
+**Context.** A doctor approved clips in the Django admin, and the consultation
+screen then failed on every message with "Could not reach the language
+service". The service was fine. The server was returning 403.
+
+DRF's default authentication includes `SessionAuthentication`, which enforces
+CSRF for any request carrying a session cookie. Logging into the admin left
+such a cookie in the same browser, so every API call from the app was treated
+as an authenticated request and CSRF checked, and the app does not send
+`X-CSRFToken`.
+
+The failure was doubly misleading. The frontend cannot tell a 403 from a
+network failure, so it reported the wrong cause. And a `curl` check returned
+200, because an anonymous request is never CSRF checked, so the endpoint looked
+healthy from the terminal while the browser could not use it.
+
+**Decision.** The API authenticates nobody. `DEFAULT_AUTHENTICATION_CLASSES` is
+empty.
+
+**Why this is not a security downgrade.** These endpoints were already
+unauthenticated and already read nothing from `request.user`. CSRF protects
+against a request that changes state *as the authenticated user*, and none of
+them do: they resolve text to clips, translate, synthesise speech, and return
+read only data. The protection was guarding nothing while breaking the app.
+
+The Django admin is untouched, and that is where CSRF matters. Its forms do
+change state as an authenticated user, including the footage import in
+ADR 035, and they remain protected.
+
+**Consequence.** If the API ever authenticates a user, session authentication
+comes back and the frontend has to send `X-CSRFToken` with every write. A test
+pins the setting so that cannot happen silently, and another reproduces the
+original failure with `enforce_csrf_checks` and a logged in user.
+
+That second test matters more than the fix. The default test client skips CSRF,
+which is why the whole suite passed while a real browser could not send a
+message. A test that only exercises the API the way `curl` does cannot see this
+class of bug at all.

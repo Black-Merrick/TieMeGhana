@@ -1455,3 +1455,47 @@ in the containerized stack, broken enough that someone would assume it was.
 | Backend suite | 168 passed, 3 new |
 | `5174/admin/login/` | Django's login page, styled |
 | CSRF through the proxy | POST accepted, credentials rejected on their merits |
+
+---
+
+## Logging into the admin broke the consultation screen
+
+**Symptom.** Every message failed with "Could not reach the language service".
+The service was fine.
+
+**Cause.** Two things I had done collided. DRF's default authentication
+includes `SessionAuthentication`, which enforces CSRF for any request carrying
+a session cookie, and approving clips in the admin left one in the same
+browser. Every API call from the app was then treated as authenticated and
+CSRF checked, and the app does not send `X-CSRFToken`. The server returned 403.
+
+**Two ways this hid itself.**
+
+The message on screen was wrong. The frontend cannot tell a 403 from a network
+failure, so it blamed the language service, which was reachable and working.
+
+And my own `curl` check returned 200, because an anonymous request is never
+CSRF checked. The endpoint looked healthy from the terminal while the browser
+could not use it. Testing an API with curl does not reproduce a browser that
+has cookies.
+
+**Fix.** The API authenticates nobody. It has no user accounts and never reads
+`request.user`, so session authentication bought nothing and cost this. CSRF
+protects against a request that changes state as the authenticated user, and
+none of these do. See ADR 036.
+
+The Django admin is untouched, which is where CSRF actually matters: its forms
+do change state as an authenticated user, including the footage import.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 171 passed, 3 new |
+| Reproduced first | 403 in a test before any fix |
+| Live, with a real session cookie | caption returns 200, `['APPEAR']`, safe to show |
+
+The reproduction needed `enforce_csrf_checks=True` plus a logged in user. The
+default test client skips the check, which is why 416 tests passed while a real
+browser could not send a message. A suite that only exercises the API the way
+curl does cannot see this class of bug.

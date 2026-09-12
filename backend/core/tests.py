@@ -54,3 +54,56 @@ class TestProxiedAdminOrigins:
         # so the setting would look configured and do nothing.
         for origin in settings.CSRF_TRUSTED_ORIGINS:
             assert origin.startswith(("http://", "https://")), origin
+
+
+@pytest.mark.django_db
+class TestApiIsStateless:
+    """
+    The API must not care whether a browser is also logged into the admin.
+
+    A doctor approving clips in the admin leaves a session cookie in the same
+    browser. With session authentication enabled, DRF then treats every API
+    call as an authenticated request and enforces CSRF on it, so the
+    consultation screen starts failing with 403 and the message on screen says
+    the language service is unreachable, which is not what happened.
+
+    Reproduced with `enforce_csrf_checks`, because the default test client
+    skips the check and the failure only appears in a real browser.
+    """
+
+    def test_a_post_works_while_logged_into_the_admin(self, django_user_model):
+        from rest_framework.test import APIClient
+
+        django_user_model.objects.create_superuser(
+            username="reviewer", email="r@example.com", password="pw"
+        )
+        client = APIClient(enforce_csrf_checks=True)
+        client.login(username="reviewer", password="pw")
+
+        response = client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "appear"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+
+    def test_a_post_works_for_a_browser_with_no_session(self):
+        from rest_framework.test import APIClient
+
+        client = APIClient(enforce_csrf_checks=True)
+
+        response = client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "appear"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+
+    def test_the_api_does_not_authenticate_by_session(self, settings):
+        # The patient facing API has no user accounts and reads nothing from
+        # request.user, so session authentication buys nothing and costs the
+        # failure above. The Django admin is unaffected: it is not DRF, and its
+        # own forms are still CSRF protected.
+        assert settings.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] == []

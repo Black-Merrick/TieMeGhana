@@ -173,6 +173,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
+    # No session authentication. The patient facing API has no user accounts
+    # and never reads request.user, so session authentication buys nothing and
+    # costs a confusing failure: a doctor who approves clips in the admin
+    # leaves a session cookie in the same browser, DRF then treats every API
+    # call as authenticated and enforces CSRF on it, and the consultation
+    # screen starts failing with 403 while telling the doctor the language
+    # service is unreachable.
+    #
+    # The Django admin is unaffected. It is not DRF, and its own forms remain
+    # CSRF protected, which is where CSRF actually matters because those
+    # requests change state as an authenticated user. These endpoints do not.
+    #
+    # If the API ever does authenticate a user, this comes back and the
+    # frontend has to send X-CSRFToken with it.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
 }
 
 # The PWA is served from a separate origin in development, so the Vite dev
