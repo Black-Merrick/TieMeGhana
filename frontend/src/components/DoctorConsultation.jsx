@@ -1,6 +1,9 @@
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
+import PatientReply from "./PatientReply.jsx";
+import SpokenResponse from "./SpokenResponse.jsx";
 import useCaption from "../hooks/useCaption.js";
+import useSpokenResponse from "../hooks/useSpokenResponse.js";
 
 /**
  * The literate patient's path, SRS FR 1.1 to FR 1.7 and FR 2.3.
@@ -9,8 +12,9 @@ import useCaption from "../hooks/useCaption.js";
  * the GhSL video. A patient on this path can read, so free captioning is
  * appropriate here and only here.
  */
-export default function DoctorConsultation() {
+export default function DoctorConsultation({ outputLanguage }) {
   const { result, status, send } = useCaption();
+  const spoken = useSpokenResponse();
 
   return (
     <section className="consultation">
@@ -31,6 +35,17 @@ export default function DoctorConsultation() {
       ) : null}
 
       {result ? <CaptionResult result={result} /> : null}
+
+      {/* FR 3.1 and 3.4. The patient types, and their answer is spoken aloud
+          in whichever language the hearing listener set for this visit. */}
+      <PatientReply
+        busy={spoken.status === "working"}
+        onReply={({ text, sourceLanguage }) =>
+          spoken.speak({ text, sourceLanguage, outputLanguage })
+        }
+      />
+
+      <SpokenResponse status={spoken.status} result={spoken.result} />
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -167,5 +167,61 @@ describe("the visit bar", () => {
     expect(
       screen.queryByRole("button", { name: /send to patient/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+
+describe("the spoken output language", () => {
+  it("keeps the listener's language on screen, not in a settings menu", async () => {
+    // Section 4.1 names this specifically as something that must always be
+    // visible, because it decides whether the doctor understands anything.
+    saveLiteracyPath(LiteracyPath.GUIDED);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("output-language")).toBeInTheDocument();
+    });
+  });
+
+  it("defaults to English", async () => {
+    saveLiteracyPath(LiteracyPath.GUIDED);
+
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("output-language"));
+    const group = within(screen.getByTestId("output-language"));
+    expect(group.getByRole("radio", { name: /english/i })).toBeChecked();
+  });
+
+  it("keeps the choice for the rest of the visit", async () => {
+    // FR 3.4 sets it once per session, so it has to survive a reload rather
+    // than being asked again for every answer.
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+
+    await waitFor(() => screen.getByTestId("output-language"));
+    await user.click(
+      within(screen.getByTestId("output-language")).getByRole("radio", {
+        name: /twi/i,
+      }),
+    );
+    unmount();
+
+    render(<App />);
+    await waitFor(() => screen.getByTestId("output-language"));
+    expect(
+      within(screen.getByTestId("output-language")).getByRole("radio", {
+        name: /twi/i,
+      }),
+    ).toBeChecked();
+  });
+
+  it("shows no language toggle before a patient has been routed", async () => {
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("literacy-check"));
+    expect(screen.queryByTestId("output-language")).not.toBeInTheDocument();
   });
 });

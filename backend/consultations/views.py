@@ -6,9 +6,12 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 
+from consultations.response_service import speak_response
 from consultations.serializers import (
     CaptionRequestSerializer,
     CaptionResponseSerializer,
+    SpeakRequestSerializer,
+    SpokenResponseSerializer,
 )
 from consultations.services import build_caption
 from core.language import Language, LanguageError
@@ -76,3 +79,39 @@ def caption(request):
         raise LanguageServiceUnavailable() from error
 
     return Response(CaptionResponseSerializer(result).data)
+
+
+@api_view(["POST"])
+def speak(request):
+    """
+    Speak a patient response aloud to the hearing listener, FR 3.1 to FR 3.5.
+
+    Used for typed responses and for tapped ones alike. FR 3.5 requires the
+    tapped case to be audible too, because the doctor's hands are on the
+    patient rather than the screen.
+    """
+    request_serializer = SpeakRequestSerializer(data=request.data)
+    request_serializer.is_valid(raise_exception=True)
+    validated = request_serializer.validated_data
+
+    try:
+        result = speak_response(
+            text=validated["text"],
+            source_language=Language(validated["source_language"]),
+            output_language=Language(validated["output_language"]),
+        )
+    except LanguageError as error:
+        # Same reasoning as the caption endpoint: the provider's own message is
+        # logged so a failure can be diagnosed without spending metered credit
+        # reproducing it, but never returned, because it can quote the
+        # utterance and the utterance is clinical content.
+        logger.warning(
+            "Speaking a response failed, provider=%s %s to %s: %s",
+            getattr(settings, "LANGUAGE_PROVIDER", "auto"),
+            validated["source_language"],
+            validated["output_language"],
+            error,
+        )
+        raise LanguageServiceUnavailable() from error
+
+    return Response(SpokenResponseSerializer(result).data)

@@ -53,7 +53,7 @@ export default function DoctorUtteranceForm({
   return (
     <>
       <form className="consultation__form" onSubmit={handleSubmit}>
-        <fieldset className="consultation__languages">
+        <fieldset className="consultation__languages" data-testid="doctor-language">
           <legend className="consultation__legend">I am speaking</legend>
           {LANGUAGES.map((language) => (
             <label key={language.value} className="consultation__language">

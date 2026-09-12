@@ -5,8 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GuidedInterrogation from "../components/GuidedInterrogation.jsx";
 import { captionUtterance } from "../api/consultation.js";
 import { fetchBodyLocations } from "../api/clips.js";
+import { speakResponse } from "../api/speech.js";
 
 vi.mock("../api/consultation.js", () => ({ captionUtterance: vi.fn() }));
+vi.mock("../api/speech.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, speakResponse: vi.fn() };
+});
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchBodyLocations: vi.fn() };
@@ -71,15 +76,35 @@ const filmedLocations = [
 beforeEach(() => {
   captionUtterance.mockResolvedValue(caption());
   fetchBodyLocations.mockResolvedValue(filmedLocations);
+  speakResponse.mockResolvedValue({
+    spoken_text: "Yes",
+    language_provider: "khaya",
+    audio_base64: btoa("RIFFWAVE"),
+    audio_media_type: "audio/wav",
+  });
+  vi.stubGlobal(
+    "Audio",
+    class {
+      play() {
+        return Promise.resolve();
+      }
+    },
+  );
+  vi.stubGlobal("URL", {
+    ...globalThis.URL,
+    createObjectURL: () => "blob:spoken",
+    revokeObjectURL: () => {},
+  });
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
-async function askFreely(text = "Did you vomit?") {
+async function askFreely(text = "Did you vomit?", outputLanguage = "en") {
   const user = userEvent.setup();
-  render(<GuidedInterrogation />);
+  render(<GuidedInterrogation outputLanguage={outputLanguage} />);
   await user.type(screen.getByLabelText(/message for the patient/i), text);
   await user.click(screen.getByRole("button", { name: /ask the patient/i }));
   return user;
@@ -89,7 +114,7 @@ describe("asking in the doctor's own words", () => {
   it("offers no fixed question bank", async () => {
     // ADR 023 replaced the bank. The doctor asks whatever the consultation
     // needs, so a preset list would only get in the way.
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
     expect(screen.queryByText(/clinical question bank/i)).not.toBeInTheDocument();
@@ -122,7 +147,7 @@ describe("asking in the doctor's own words", () => {
   it("offers the doctor a microphone as well as typing", async () => {
     // FR 1.2. The doctor's side is identical on both paths, so speaking works
     // here too rather than only for a patient who reads.
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     expect(
       screen.queryByTestId("microphone-button") ??
@@ -234,7 +259,7 @@ describe("the patient answering yes or no", () => {
 describe("asking where it hurts", () => {
   it("asks the one question a patient cannot answer yes or no", async () => {
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
 
@@ -250,7 +275,7 @@ describe("asking where it hurts", () => {
     // FR 2.5. The answer tells the doctor where to focus for the rest of the
     // consultation, which yes or no cannot.
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
 
@@ -263,7 +288,7 @@ describe("asking where it hurts", () => {
 
   it("records the location the patient tapped as their own answer", async () => {
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
     await waitFor(() => screen.getByTestId("answer-option-STOMACH"));
@@ -286,7 +311,7 @@ describe("asking where it hurts", () => {
       bodyLocation("STOMACH", "Stomach", false),
     ]);
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
 
@@ -298,7 +323,7 @@ describe("asking where it hurts", () => {
 
   it("goes back to yes or no for the next ordinary question", async () => {
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
     await waitFor(() => screen.getByTestId("answer-option-HEAD"));
@@ -317,7 +342,7 @@ describe("asking where it hurts", () => {
     // record an answer to a question they were never asked.
     captionUtterance.mockRejectedValue(new Error("offline"));
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
 
@@ -332,7 +357,7 @@ describe("asking where it hurts", () => {
     // blocking the whole mode.
     fetchBodyLocations.mockRejectedValue(new Error("offline"));
     const user = userEvent.setup();
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
 
@@ -344,7 +369,7 @@ describe("asking where it hurts", () => {
 
 describe("the consultation log", () => {
   it("shows nothing before the first answer", () => {
-    render(<GuidedInterrogation />);
+    render(<GuidedInterrogation outputLanguage="en" />);
 
     expect(screen.queryByTestId("exchange-log")).not.toBeInTheDocument();
   });
@@ -357,6 +382,73 @@ describe("the consultation log", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("log-not-saved")).toBeInTheDocument();
+    });
+  });
+});
+
+
+describe("speaking the patient's answer aloud", () => {
+  it("speaks a tapped yes to the hearing listener", async () => {
+    // FR 3.5, the property this whole sprint turns on. The doctor's hands are
+    // on the patient rather than the screen, so a tapped answer has to be
+    // audible without them looking.
+    const user = await askFreely();
+
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith({
+        text: "Yes",
+        sourceLanguage: "en",
+        outputLanguage: "en",
+      });
+    });
+  });
+
+  it("speaks in the language set for this visit", async () => {
+    // FR 3.4. Set once by the doctor or nurse and applied to every response,
+    // so a Twi speaking nurse hears Twi without changing anything per answer.
+    const user = await askFreely("Fever?", "tw");
+
+    await waitFor(() => screen.getByTestId("choice-no"));
+    await user.click(screen.getByTestId("choice-no"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith({
+        text: "No",
+        sourceLanguage: "en",
+        outputLanguage: "tw",
+      });
+    });
+  });
+
+  it("speaks a tapped body location too", async () => {
+    const user = userEvent.setup();
+    render(<GuidedInterrogation outputLanguage="en" />);
+
+    await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await waitFor(() => screen.getByTestId("answer-option-STOMACH"));
+    await user.click(screen.getByTestId("answer-option-STOMACH"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith({
+        text: "Stomach",
+        sourceLanguage: "en",
+        outputLanguage: "en",
+      });
+    });
+  });
+
+  it("confirms on screen that the answer was spoken", async () => {
+    // Section 4.2. The patient cannot hear it, so they need to see it.
+    const user = await askFreely();
+
+    await waitFor(() => screen.getByTestId("choice-yes"));
+    await user.click(screen.getByTestId("choice-yes"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
     });
   });
 });

@@ -671,3 +671,65 @@ than left to look like drift. Worth saying out loud in the pitch: the literacy
 branch is the differentiator, and it survives this change untouched. What went
 away is a constraint on the doctor, not the accessibility guarantee for the
 patient.
+
+---
+
+## ADR 024, The stub speaks real silence, not a placeholder byte string
+
+**Context.** With no Khaya key, the stub provider's `synthesize` returned the
+bytes `b"stub-audio"`. Enough to prove the call happened, and unplayable.
+
+FR 3.4's value is not the audio itself, it is the feedback around it. A Deaf
+patient cannot hear whether their answer reached the doctor, so section 4.2
+requires a visible waveform resolving into a completed state, and section 6
+fixes the vibration: two short pulses when speech starts, one long pulse when
+it ends. All of that hangs off real playback events.
+
+**Decision.** The stub returns a valid, silent WAV file, built by hand from a
+44 byte header and zeroed samples. The browser plays it, the events fire, and
+the whole feedback loop works without a key.
+
+**Why.** Unplayable bytes would make the feedback impossible to see or test
+without spending metered credit, which is the situation ADR 015 exists to
+avoid. Silence is also the honest representation of what the stub is: it made
+no speech, and nobody heard anything.
+
+**Consequence.** Silence is convincing in the wrong way, because the flow looks
+complete. So the interface says, in the strongest wording of any of the stub
+notices, that the audio was **silence, not speech, and nobody heard the
+answer**. This is the ADR 011 problem at its worst: everyone in the room would
+otherwise assume the doctor heard, and the patient would believe they had been
+understood.
+
+---
+
+## ADR 025, The spoken language belongs to the listener and is set once
+
+**Context.** FR 3.4 says the patient's responses are spoken "in either Twi or
+English depending on which the doctor or nurse understands", set once at the
+start of the session.
+
+There are now three language settings on screen: the doctor's input language
+(FR 1.1), the patient's writing language (FR 3.1), and this one. They are
+genuinely three different things, and it would be easy to collapse them into
+one and be wrong.
+
+**Decision.** The spoken output language lives on the visit, not on the
+utterance. It is set once, persists across a reload, is cleared with the
+visit, and sits permanently in the visit bar per section 4.1.
+
+It is the **listener's** language, deliberately, not the patient's. A patient
+writing Twi to a doctor who only speaks English must still be understood, so
+the translation direction is driven by who is listening.
+
+English is the default, because it is what clinical staff in Ghanaian
+hospitals most reliably share. The toggle is on screen, so a Twi speaking nurse
+changes it in one tap rather than the consultation being blocked on a question
+nobody thought to ask.
+
+**Consequence.** A stored visit from before this field existed falls back to
+the default rather than leaving it undefined, because an undefined language
+would be sent to the server, rejected, and turn an old visit into a broken
+consultation. `saveOutputLanguage` returns null when there is no visit, so a
+language cannot be set against a visit that already ended and inherited by the
+next patient.

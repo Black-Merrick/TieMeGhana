@@ -4,7 +4,13 @@ import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
-import { LiteracyPath, endVisit, loadVisit } from "./visit/visit.js";
+import {
+  LiteracyPath,
+  OutputLanguage,
+  endVisit,
+  loadVisit,
+  saveOutputLanguage,
+} from "./visit/visit.js";
 
 /**
  * Application shell.
@@ -48,6 +54,16 @@ export default function App() {
     setVisit(null);
   };
 
+  /**
+   * Change the language the patient's answers are spoken in, FR 3.4.
+   *
+   * Set once and applied for the rest of the visit, and permanently on screen
+   * rather than in settings, per section 4.1.
+   */
+  const changeOutputLanguage = (language) => {
+    setVisit(saveOutputLanguage(language) ?? loadVisit());
+  };
+
   return (
     <main className="shell">
       <h1 className="shell__title">Tie Me Ghana</h1>
@@ -70,6 +86,25 @@ export default function App() {
             <p className="shell__path" data-testid="literacy-path">
               {PATH_LABELS[visit.literacyPath]}
             </p>
+            <fieldset className="shell__output" data-testid="output-language">
+              <legend className="shell__output-legend">Speak answers in</legend>
+              {[
+                { value: OutputLanguage.ENGLISH, label: "English" },
+                { value: OutputLanguage.TWI, label: "Twi" },
+              ].map((language) => (
+                <label key={language.value} className="consultation__language">
+                  <input
+                    type="radio"
+                    name="output-language"
+                    value={language.value}
+                    checked={visit.outputLanguage === language.value}
+                    onChange={() => changeOutputLanguage(language.value)}
+                  />
+                  {language.label}
+                </label>
+              ))}
+            </fieldset>
+
             <button
               type="button"
               className="shell__new-patient"
@@ -83,7 +118,10 @@ export default function App() {
       </div>
 
       {visit ? (
-        <PatientPath path={visit.literacyPath} />
+        <PatientPath
+          path={visit.literacyPath}
+          outputLanguage={visit.outputLanguage}
+        />
       ) : (
         <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
       )}
@@ -99,9 +137,11 @@ export default function App() {
  * version of the constraint in SRS section 4.3 rather than a rule someone has
  * to remember.
  */
-function PatientPath({ path }) {
-  if (path === LiteracyPath.LITERATE) return <DoctorConsultation />;
-  return <GuidedInterrogation />;
+function PatientPath({ path, outputLanguage }) {
+  if (path === LiteracyPath.LITERATE) {
+    return <DoctorConsultation outputLanguage={outputLanguage} />;
+  }
+  return <GuidedInterrogation outputLanguage={outputLanguage} />;
 }
 
 // Status wording is user facing, so it lives in one place rather than being

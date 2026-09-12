@@ -46,6 +46,10 @@ class LanguageProvider(ABC):
     #: real Twi. See ADR 011.
     name: str
 
+    #: What `synthesize` returns, so the browser knows how to play it rather
+    #: than the media type being assumed somewhere up the stack.
+    synthesis_media_type: str = "audio/wav"
+
     @abstractmethod
     def transcribe(
         self, audio: bytes, *, language: Language, content_type: str | None = None

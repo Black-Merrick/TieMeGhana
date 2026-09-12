@@ -21,7 +21,7 @@ Status key: `todo`, `wip`, `done`
 | 2 | Khaya language layer, doctor to patient captioning and sign playback | Completes P0.1, the headline demo: speech to Twi caption to GhSL video |
 | 3 ✅ | Interaction foundations, literacy check | Vibration vocabulary, sign video player, and Yes/No icons built once before the first patient facing screen needs them |
 | 4 | Guided Interrogation Mode | Completes P0.2, the differentiating feature. Depends on sprint 3's shared components |
-| 5 | Patient to doctor spoken output | Completes P0.3. Depends on sprint 2's TTS provider |
+| 5 ✅ | Patient to doctor spoken output | Completes P0.3. Depends on sprint 2's TTS provider |
 | 6 | Session transcript, on device | Completes P0.4. **P0 complete, system is demonstrable end to end** |
 | 7 | Emergency Visual Triage Mode | P1.1. Reuses sprint 5's TTS and sprint 3's tap pattern, no new technology |
 | 8 | GhSL Prescription Playback with QR | P1.2. Reuses the clip library and the PWA cache already in place |
@@ -119,11 +119,11 @@ project exists to serve, so the branching logic gets direct test coverage.
 
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
-| 3.1 | Literate patients type a response in English or Twi | 5 | `todo` |
-| 3.2 | Typed text translated if needed, then converted to speech | 5 | `todo` |
-| 3.3 | Non literate patients respond only through Guided Interrogation | 5 | `todo` |
-| 3.4 | Every response spoken aloud in Twi or English, set once per session | 5 | `todo` |
-| 3.5 | Spoken output fires for tap selected answers too, audible without the doctor looking at the screen | 5 | `todo` |
+| 3.1 | Literate patients type a response in English or Twi | 5 | `done` |
+| 3.2 | Typed text translated if needed, then converted to speech | 5 | `done` |
+| 3.3 | Non literate patients respond only through Guided Interrogation | 5 | `done`, the reply field is never rendered on that path |
+| 3.4 | Every response spoken aloud in Twi or English, set once per session | 5 | `done`, on the visit per ADR 025 |
+| 3.5 | Spoken output fires for tap selected answers too, audible without the doctor looking at the screen | 5 | `done` |
 
 ## P0.4, Session Transcript, sprint 6
 
@@ -177,7 +177,7 @@ per feature. Section 4.4, Consistency, and section 6.
 | One shared sign video player, identical appearance and controls for every clip in the app | §4.4 | `done` |
 | One Yes and No icon set, used in Guided Interrogation, Triage, and any future confirmation | §4.4 | `done` |
 | Literacy path indicator always visible, never in a settings menu | §4.1 | `done` |
-| Output language toggle, always visible | §4.1 | `todo`, arrives with FR 3.4 in sprint 5 |
+| Output language toggle, always visible | §4.1 | `done` |
 
 ### Vibration vocabulary, the single source of truth
 

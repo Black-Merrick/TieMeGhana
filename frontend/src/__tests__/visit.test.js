@@ -169,3 +169,56 @@ describe("failing closed", () => {
     expect(loadVisit(1).literacyPath).toBe(LiteracyPath.GUIDED);
   });
 });
+
+describe("the hearing listener's language", () => {
+  it("defaults to English when a visit starts", async () => {
+    // The language clinical staff most reliably share, and the toggle is on
+    // screen so a Twi speaking nurse changes it in one tap.
+    const { DEFAULT_OUTPUT_LANGUAGE } = await import("../visit/visit.js");
+    saveLiteracyPath(LiteracyPath.GUIDED, 0);
+
+    expect(loadVisit(1).outputLanguage).toBe(DEFAULT_OUTPUT_LANGUAGE);
+  });
+
+  it("keeps the chosen language for the rest of the visit", async () => {
+    // FR 3.4 sets it once per session, so it must survive a reload.
+    const { OutputLanguage, saveOutputLanguage } = await import(
+      "../visit/visit.js"
+    );
+    saveLiteracyPath(LiteracyPath.GUIDED, 0);
+
+    saveOutputLanguage(OutputLanguage.TWI, 1);
+
+    expect(loadVisit(2).outputLanguage).toBe(OutputLanguage.TWI);
+  });
+
+  it("refuses an unrecognized language", async () => {
+    const { saveOutputLanguage } = await import("../visit/visit.js");
+    saveLiteracyPath(LiteracyPath.GUIDED, 0);
+
+    expect(() => saveOutputLanguage("fr", 1)).toThrow();
+  });
+
+  it("will not set a language against a visit that has ended", async () => {
+    // Otherwise the next patient would inherit it along with a half written
+    // visit record.
+    const { OutputLanguage, saveOutputLanguage } = await import(
+      "../visit/visit.js"
+    );
+
+    expect(saveOutputLanguage(OutputLanguage.TWI)).toBeNull();
+    expect(loadVisit()).toBeNull();
+  });
+
+  it("falls back rather than leaving the language undefined", async () => {
+    // A record written before this field existed. Sending a request with no
+    // output language would fail validation on the server.
+    const { DEFAULT_OUTPUT_LANGUAGE } = await import("../visit/visit.js");
+    localStorage.setItem(
+      "tiemeghana.visit",
+      JSON.stringify({ literacyPath: LiteracyPath.GUIDED, startedAt: 1_000 }),
+    );
+
+    expect(loadVisit(1_001).outputLanguage).toBe(DEFAULT_OUTPUT_LANGUAGE);
+  });
+});

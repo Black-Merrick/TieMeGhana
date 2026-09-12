@@ -1,3 +1,5 @@
+import base64
+
 from rest_framework import serializers
 
 from clips.serializers import SignSequenceSerializer
@@ -61,3 +63,41 @@ class CaptionResponseSerializer(serializers.Serializer):
     translation_applied = serializers.BooleanField()
     language_provider = serializers.CharField()
     sequence = SignSequenceSerializer()
+
+
+class SpeakRequestSerializer(serializers.Serializer):
+    """
+    Validates a patient response before speaking it.
+
+    Both languages are required. The source is whichever the patient answered
+    in, the output is the hearing listener's, set once per session per FR 3.4.
+    Defaulting either would risk speaking Twi at someone who only reads English
+    and calling that a successful exchange.
+    """
+
+    text = serializers.CharField(max_length=1000, trim_whitespace=True)
+    source_language = serializers.ChoiceField(choices=[lang.value for lang in Language])
+    output_language = serializers.ChoiceField(choices=[lang.value for lang in Language])
+
+
+class SpokenResponseSerializer(serializers.Serializer):
+    """
+    The spoken response, with the audio inline.
+
+    Audio travels base64 encoded inside the JSON rather than as a separate
+    binary response, so the text that was actually spoken and the provider that
+    produced it arrive with it. That matters for ADR 011: the interface has to
+    be able to say the audio is silence from the stub rather than real speech,
+    and it cannot do that from a bare audio body.
+    """
+
+    source_language = serializers.CharField()
+    output_language = serializers.CharField()
+    spoken_text = serializers.CharField()
+    translation_applied = serializers.BooleanField()
+    language_provider = serializers.CharField()
+    audio_base64 = serializers.SerializerMethodField()
+    audio_media_type = serializers.CharField()
+
+    def get_audio_base64(self, response) -> str:
+        return base64.b64encode(response.audio).decode("ascii")

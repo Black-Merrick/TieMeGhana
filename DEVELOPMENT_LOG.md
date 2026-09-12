@@ -861,3 +861,82 @@ reported rather than guaranteed in advance: a weaker promise, but an honest one.
 Removing the app leaves its two tables behind in any existing `db.sqlite3`,
 since there is no migration to drop them once the app is gone. Harmless, and
 they disappear on a fresh database. Nothing references them.
+
+---
+
+## Sprint 5, Patient responses spoken aloud
+
+**Goal.** FR 3.1 to 3.5. Every patient response reaches the hearing clinician
+as speech, whether the patient typed it or tapped it.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `POST /api/speak/` | Translates if needed, then synthesises, returning audio inline with the text that was spoken |
+| `speak_response()` | FR 3.2, one translation call only when the two languages differ |
+| `useSpokenResponse` | Playback plus the section 6 vibration vocabulary around it |
+| `SpokenResponse` | Section 4.2, waveform while speaking, completed state when finished |
+| `PatientReply` | FR 3.1, the literate patient types in English or Twi |
+| Output language on the visit | FR 3.4, set once, always visible per section 4.1 |
+| Silent WAV from the stub | So the whole feedback loop works with no Khaya key |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 102 passed |
+| Frontend suite | 177 passed, 15 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Production build | PWA builds |
+| Live `POST /api/speak/` | 200, 12.8 KB valid WAV, translation applied, provider reported |
+
+### The feedback is the feature
+
+FR 3.4's value is not the audio, it is knowing the audio happened. A Deaf
+patient cannot hear whether their answer reached the doctor, so section 4.2
+asks for a waveform that resolves into a completed state, and section 6 fixes
+the vibration: two short pulses when speech starts, one long pulse when it
+ends. Both patterns were already defined in sprint 3 and are used here for the
+first time, which is what a single sourced vocabulary is for.
+
+All of that hangs off real playback events, so the stub now returns a valid
+silent WAV rather than the placeholder bytes it used to. See ADR 024. That
+makes the flow demonstrable and testable without spending metered credit.
+
+Silence is convincing in the wrong way, because the flow looks complete. So
+the stub notice here is the bluntest in the app: the audio was **silence, not
+speech, and nobody heard the answer**. This is the ADR 011 problem at its
+worst, since everyone in the room would otherwise assume the doctor heard.
+
+### Problems hit, and the fixes
+
+**Three language selectors now share one screen.** The doctor's input
+language, the patient's writing language, and the spoken output language are
+three different settings per FR 1.1, FR 3.1 and FR 3.4, and every one of them
+offers English and Twi. Tests began failing with "found multiple elements with
+the role radio". Each group now carries an identity and the tests query within
+the group they mean, which is also the accessible structure: a screen reader
+announces the legend with the option.
+
+**A `loadVisit` edit silently did not apply.** A scripted string replacement
+did not match the file, so the output language fallback was never added, and a
+stored visit from before the field existed returned `undefined`. Caught by the
+test written for exactly that case. An undefined language would have been sent
+to the server, rejected, and turned an old visit into a broken consultation.
+
+**Blob URLs leak unless revoked.** Each spoken answer creates one, so a long
+consultation would accumulate them. Released when playback ends and when a new
+answer replaces the previous one, with tests for both.
+
+### Known limitations, deliberate
+
+**Audio is base64 inside the JSON** rather than a separate binary response.
+That costs about a third in size, and buys the spoken text and the provider
+name arriving with the audio, which the interface needs in order to say the
+audio was stub silence. A bare audio body could not carry that.
+
+**Nothing is saved yet.** The consultation log is still in memory. FR 4.1 to
+4.3 make it a durable transcript on the patient's own device, which is the next
+sprint and completes P0.

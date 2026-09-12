@@ -12,9 +12,42 @@ from core.language.base import Language, LanguageProvider
 # something meaningful to resolve against the seeded vocabulary end to end.
 STUB_TRANSCRIPT = "the head hurts today"
 
-# A recognizable, tiny payload. Never played to anyone, it only has to prove
-# the synthesis step ran and returned bytes.
-STUB_AUDIO = b"stub-audio"
+
+def _silent_wav(milliseconds: int = 400, sample_rate: int = 16000) -> bytes:
+    """
+    Build a valid, silent WAV file.
+
+    Real silence rather than a placeholder byte string, so the browser can
+    actually play it. That matters because the whole point of FR 3.4 is the
+    physical feedback around playback: the vibration when speech starts, the
+    waveform while it runs, the pulse when it ends. Unplayable bytes would make
+    that flow impossible to see without a Khaya key.
+    """
+    frames = sample_rate * milliseconds // 1000
+    data_bytes = frames * 2  # 16 bit mono
+
+    header = b"".join(
+        [
+            b"RIFF",
+            (36 + data_bytes).to_bytes(4, "little"),
+            b"WAVEfmt ",
+            (16).to_bytes(4, "little"),
+            (1).to_bytes(2, "little"),  # uncompressed PCM
+            (1).to_bytes(2, "little"),  # mono
+            sample_rate.to_bytes(4, "little"),
+            (sample_rate * 2).to_bytes(4, "little"),
+            (2).to_bytes(2, "little"),
+            (16).to_bytes(2, "little"),
+            b"data",
+            data_bytes.to_bytes(4, "little"),
+        ]
+    )
+    return header + bytes(data_bytes)
+
+
+#: Silence, so the playback flow works without a Khaya key. The interface warns
+#: that it came from the stub, per ADR 011, so it cannot be mistaken for speech.
+STUB_AUDIO = _silent_wav()
 
 
 class StubLanguageProvider(LanguageProvider):

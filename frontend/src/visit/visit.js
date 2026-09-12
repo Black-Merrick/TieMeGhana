@@ -21,6 +21,23 @@ const STORAGE_KEY = "tiemeghana.visit";
  */
 export const VISIT_MAX_AGE_MS = 4 * 60 * 60 * 1000;
 
+/**
+ * The hearing listener's language, FR 3.4.
+ *
+ * Set once per session and applied to every response for the rest of the
+ * visit. It is the listener's language, not the patient's: the point is that
+ * whoever is listening understands, whichever of the two they speak.
+ */
+export const OutputLanguage = { ENGLISH: "en", TWI: "tw" };
+
+/**
+ * English by default, because it is the language clinical staff in Ghanaian
+ * hospitals most reliably share. The toggle is permanently on screen per
+ * section 4.1, so a nurse who speaks Twi changes it in one tap rather than
+ * being asked before the consultation can start.
+ */
+export const DEFAULT_OUTPUT_LANGUAGE = OutputLanguage.ENGLISH;
+
 export const LiteracyPath = {
   /** Reads and writes: free captioning and typed replies, FR 2.3. */
   LITERATE: "literate",
@@ -71,7 +88,16 @@ export function loadVisit(now = Date.now()) {
     return null;
   }
 
-  return visit;
+  return {
+    ...visit,
+    // A record written before this field existed, or carrying a value we do
+    // not recognize, falls back rather than leaving it undefined. An undefined
+    // output language would be sent to the server and rejected, turning an old
+    // stored visit into a broken consultation.
+    outputLanguage: Object.values(OutputLanguage).includes(visit.outputLanguage)
+      ? visit.outputLanguage
+      : DEFAULT_OUTPUT_LANGUAGE,
+  };
 }
 
 /**
@@ -85,7 +111,11 @@ export function saveLiteracyPath(path, now = Date.now()) {
     throw new Error(`Unknown literacy path: ${path}`);
   }
 
-  const visit = { literacyPath: path, startedAt: now };
+  const visit = {
+    literacyPath: path,
+    outputLanguage: DEFAULT_OUTPUT_LANGUAGE,
+    startedAt: now,
+  };
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(visit));
@@ -109,4 +139,31 @@ export function endVisit() {
   } catch {
     // Nothing to clean up if storage was never available.
   }
+}
+
+
+/**
+ * Change the hearing listener's language for the rest of this visit.
+ *
+ * Returns the updated visit, or null if there is none, so a caller cannot
+ * silently set a language against a visit that has already ended.
+ */
+export function saveOutputLanguage(language, now = Date.now()) {
+  if (!Object.values(OutputLanguage).includes(language)) {
+    throw new Error(`Unknown output language: ${language}`);
+  }
+
+  const visit = loadVisit(now);
+  if (!visit) return null;
+
+  const updated = { ...visit, outputLanguage: language };
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Storage unavailable. The caller holds the value in memory, it just will
+    // not survive a reload.
+  }
+
+  return updated;
 }

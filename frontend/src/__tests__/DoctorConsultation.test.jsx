@@ -1,11 +1,16 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import DoctorConsultation from "../components/DoctorConsultation.jsx";
 import { captionUtterance } from "../api/consultation.js";
+import { speakResponse } from "../api/speech.js";
 
 vi.mock("../api/consultation.js", () => ({ captionUtterance: vi.fn() }));
+vi.mock("../api/speech.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, speakResponse: vi.fn() };
+});
 
 function captionResponse(overrides = {}) {
   return {
@@ -38,9 +43,29 @@ function captionResponse(overrides = {}) {
 
 beforeEach(() => {
   captionUtterance.mockResolvedValue(captionResponse());
+  speakResponse.mockResolvedValue({
+    spoken_text: "my head hurts",
+    language_provider: "khaya",
+    audio_base64: btoa("RIFFWAVE"),
+    audio_media_type: "audio/wav",
+  });
+  vi.stubGlobal(
+    "Audio",
+    class {
+      play() {
+        return Promise.resolve();
+      }
+    },
+  );
+  vi.stubGlobal("URL", {
+    ...globalThis.URL,
+    createObjectURL: () => "blob:spoken",
+    revokeObjectURL: () => {},
+  });
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -48,18 +73,26 @@ describe("DoctorConsultation", () => {
   it("shows the input language choice before anything is said", () => {
     // FR 1.1 requires the doctor to pick the language first, and SRS 4.1
     // requires it to be visible rather than buried in a settings menu.
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    expect(screen.getByRole("radio", { name: /english/i })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /twi/i })).toBeInTheDocument();
+    // Scoped to the doctor's own group. The screen also carries the patient's
+    // writing language and the spoken output language, which are three
+    // different settings per FR 1.1, FR 3.1 and FR 3.4.
+    const group = within(screen.getByTestId("doctor-language"));
+    expect(group.getByRole("radio", { name: /english/i })).toBeInTheDocument();
+    expect(group.getByRole("radio", { name: /twi/i })).toBeInTheDocument();
   });
 
   it("sends the typed message in the selected language", async () => {
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.click(screen.getByRole("radio", { name: /twi/i }));
-    await user.type(screen.getByLabelText(/message/i), "wo tiri");
+    await user.click(
+      within(screen.getByTestId("doctor-language")).getByRole("radio", {
+        name: /twi/i,
+      }),
+    );
+    await user.type(screen.getByLabelText(/message for the patient/i), "wo tiri");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -74,9 +107,9 @@ describe("DoctorConsultation", () => {
     // SRS 4.1 is explicit that these appear at the same time, so a patient
     // never has to switch views to follow one sentence.
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -92,9 +125,9 @@ describe("DoctorConsultation", () => {
       captionResponse({ language_provider: "stub" }),
     );
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -110,9 +143,9 @@ describe("DoctorConsultation", () => {
       captionResponse({ language_provider: "stub", transcript_source: "spoken" }),
     );
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -124,9 +157,9 @@ describe("DoctorConsultation", () => {
 
   it("shows no provider warning when real translation was used", async () => {
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -142,9 +175,9 @@ describe("DoctorConsultation", () => {
     response.sequence.fingerspelled_tokens = ["hurts"];
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -157,9 +190,9 @@ describe("DoctorConsultation", () => {
     response.sequence.unavailable_tokens = ["nausea"];
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "nausea");
+    await user.type(screen.getByLabelText(/message for the patient/i), "nausea");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -175,9 +208,9 @@ describe("DoctorConsultation", () => {
     response.sequence.unavailable_tokens = ["tiri"];
     captionUtterance.mockResolvedValue(response);
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "wo tiri");
+    await user.type(screen.getByLabelText(/message for the patient/i), "wo tiri");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -188,9 +221,9 @@ describe("DoctorConsultation", () => {
   it("reports a failure instead of leaving the doctor waiting", async () => {
     captionUtterance.mockRejectedValue(new Error("service unavailable"));
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() => {
@@ -200,7 +233,7 @@ describe("DoctorConsultation", () => {
 
   it("will not send an empty message", async () => {
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
@@ -217,9 +250,9 @@ describe("DoctorConsultation", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<DoctorConsultation />);
+    render(<DoctorConsultation outputLanguage="en" />);
 
-    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.type(screen.getByLabelText(/message for the patient/i), "head hurts");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     expect(screen.getByTestId("working-indicator")).toBeInTheDocument();
@@ -227,6 +260,39 @@ describe("DoctorConsultation", () => {
     resolve(captionResponse());
     await waitFor(() => {
       expect(screen.queryByTestId("working-indicator")).not.toBeInTheDocument();
+    });
+  });
+});
+
+
+describe("the patient's typed reply", () => {
+  it("speaks the reply aloud in the visit's output language", async () => {
+    // FR 3.1, 3.2 and 3.4 together: the patient writes Twi, the doctor hears
+    // English, and the language was set once for the visit.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/type your answer/i), "me tiri yɛ me ya");
+    await user.click(screen.getByRole("button", { name: /speak to the doctor/i }));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith({
+        text: "me tiri yɛ me ya",
+        sourceLanguage: "tw",
+        outputLanguage: "en",
+      });
+    });
+  });
+
+  it("confirms on screen that the reply was spoken", async () => {
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/type your answer/i), "yes");
+    await user.click(screen.getByRole("button", { name: /speak to the doctor/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
     });
   });
 });

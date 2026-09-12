@@ -32,6 +32,9 @@ dist-ssr/
 coverage/
 
 # Editors and OS
+# LibreOffice writes a lock file beside any open document, and the SRS and
+# abstract live in this repository, so one appears whenever they are being read.
+.~lock.*#
 .DS_Store
 .idea/
 .vscode/

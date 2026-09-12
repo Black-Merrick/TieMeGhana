@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -90,7 +90,11 @@ describe("speaking to the patient", () => {
     const user = userEvent.setup();
     render(<DoctorConsultation />);
 
-    await user.click(screen.getByRole("radio", { name: /twi/i }));
+    await user.click(
+      within(screen.getByTestId("doctor-language")).getByRole("radio", {
+        name: /twi/i,
+      }),
+    );
     await user.click(screen.getByTestId("microphone-button"));
 
     await waitFor(() => {

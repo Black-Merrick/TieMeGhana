@@ -5,7 +5,9 @@ import useCaption from "../hooks/useCaption.js";
 import AnswerOptionGrid from "./AnswerOptionGrid.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
+import SpokenResponse from "./SpokenResponse.jsx";
 import YesNoChoice from "./YesNoChoice.jsx";
+import useSpokenResponse from "../hooks/useSpokenResponse.js";
 
 /**
  * Guided Interrogation Mode, SRS FR 2.4 to FR 2.7.
@@ -28,8 +30,9 @@ import YesNoChoice from "./YesNoChoice.jsx";
 
 const ANSWERED_BY = { PATIENT: "patient", DOCTOR: "doctor" };
 
-export default function GuidedInterrogation() {
+export default function GuidedInterrogation({ outputLanguage }) {
   const { result, status, send, clear } = useCaption();
+  const spoken = useSpokenResponse();
   const [exchanges, setExchanges] = useState([]);
   const [bodyLocations, setBodyLocations] = useState(null);
   const [awaitingLocation, setAwaitingLocation] = useState(false);
@@ -62,6 +65,15 @@ export default function GuidedInterrogation() {
    * tapped something they never touched.
    */
   const recordAnswer = (answerText, answeredBy) => {
+    // FR 3.5. A tapped answer is spoken aloud too, not just a typed one,
+    // because the doctor's hands are on the patient rather than the screen and
+    // they may not be looking when the patient answers.
+    spoken.speak({
+      text: answerText,
+      sourceLanguage: "en",
+      outputLanguage,
+    });
+
     setExchanges((previous) => [
       ...previous,
       {
@@ -146,6 +158,8 @@ export default function GuidedInterrogation() {
           )}
         </>
       ) : null}
+
+      <SpokenResponse status={spoken.status} result={spoken.result} />
 
       {exchanges.length > 0 ? <ExchangeLog exchanges={exchanges} /> : null}
     </section>
