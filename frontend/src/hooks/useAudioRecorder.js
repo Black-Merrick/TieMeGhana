@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { toWavFile } from "../audio/wav.js";
+
 /**
  * Microphone capture for the doctor's spoken input, SRS FR 1.2.
  *
@@ -136,17 +138,34 @@ export default function useAudioRecorder() {
           return;
         }
 
-        recorder.onstop = () => {
+        recorder.onstop = async () => {
           const type = recorder.mimeType || "audio/webm";
-          const audio = new Blob(chunksRef.current, { type });
+          const recorded = new Blob(chunksRef.current, { type });
 
           releaseMicrophone();
           chunksRef.current = [];
-          setStatus("idle");
 
           // An empty recording means the doctor tapped stop instantly. Sending
           // it would spend a transcription call to get nothing back.
-          resolve(audio.size > 0 ? audio : null);
+          if (recorded.size === 0) {
+            setStatus("idle");
+            resolve(null);
+            return;
+          }
+
+          try {
+            // Converted rather than uploaded as recorded, because no browser
+            // can record a format speech recognition reliably accepts. ADR 018.
+            const wav = await toWavFile(recorded);
+            setStatus("idle");
+            resolve(wav);
+          } catch {
+            // Decoding is the browser's own audio stack failing on its own
+            // output, which should not happen, so it is surfaced rather than
+            // uploading a format the service cannot read.
+            setStatus("failed");
+            resolve(null);
+          }
         };
 
         recorder.stop();

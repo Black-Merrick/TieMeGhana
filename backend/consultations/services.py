@@ -33,6 +33,10 @@ class Caption:
     caption: str
     caption_language: str
     sign_lookup_text: str
+    # "spoken" or "typed". Needed because a stubbed transcript is invented
+    # rather than merely untranslated, so the interface has to say something
+    # stronger when the doctor spoke than when they typed.
+    transcript_source: str
     translation_applied: bool
     language_provider: str
     sequence: SignSequence
@@ -80,6 +84,7 @@ def build_caption(
         caption=caption,
         caption_language=str(CAPTION_LANGUAGE),
         sign_lookup_text=sign_lookup_text,
+        transcript_source="spoken" if audio is not None else "typed",
         translation_applied=source_language != CAPTION_LANGUAGE,
         language_provider=provider.name,
         sequence=resolve_sign_sequence(sign_lookup_text),

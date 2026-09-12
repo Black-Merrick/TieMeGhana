@@ -88,9 +88,12 @@ and 017.
 Two things about it are **not** verified, and both need the same real device
 session that tests the filmed clips:
 
-- **Whether Khaya's ASR accepts WebM or MP4.** Confirming it needs one real
-  transcription call with real speech, which spends metered credit. The route
-  and credential are verified, the audio format is not.
+- **Whether Khaya's ASR accepts our WAV.** The first real recording failed:
+  no browser can record WAV or MP3, and Khaya's own client examples transcribe
+  from a plain audio file, so recordings are now converted to 16 kHz mono WAV
+  in the browser before upload. See ADR 018. Confirming it needs one real
+  transcription call, which costs credit. The provider's error is now logged
+  server side, so a further failure says why.
 - **That audio actually records on a real device.** jsdom has no microphone, so
   the tests stand one in. They prove the state machine, the format choice, and
   that the microphone is released, not that sound reaches the server.

@@ -1,11 +1,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toWavFile } from "../audio/wav.js";
 import useAudioRecorder, {
   isRecordingSupported,
   pickMimeType,
   recordingSupport,
 } from "../hooks/useAudioRecorder.js";
+
+vi.mock("../audio/wav.js", () => ({ toWavFile: vi.fn() }));
 
 /**
  * FR 1.2, capturing the doctor's speech in the browser.
@@ -48,6 +51,7 @@ let stream;
 
 beforeEach(() => {
   stream = fakeStream();
+  toWavFile.mockResolvedValue(new Blob(["RIFFWAVE"], { type: "audio/wav" }));
   FakeMediaRecorder.supported = ["audio/webm;codecs=opus", "audio/webm"];
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   vi.stubGlobal("navigator", {
@@ -137,7 +141,9 @@ describe("useAudioRecorder", () => {
     expect(result.current.status).toBe("recording");
   });
 
-  it("resolves with the recorded audio when stopped", async () => {
+  it("resolves with WAV audio when stopped", async () => {
+    // No browser records a format speech recognition reliably accepts, so the
+    // recording is converted before it ever leaves the device. ADR 018.
     const { result } = renderHook(() => useAudioRecorder());
     await act(async () => {
       await result.current.start();
@@ -148,8 +154,40 @@ describe("useAudioRecorder", () => {
       audio = await result.current.stop();
     });
 
-    expect(audio).toBeInstanceOf(Blob);
-    expect(audio.size).toBeGreaterThan(0);
+    expect(toWavFile).toHaveBeenCalledOnce();
+    expect(audio.type).toBe("audio/wav");
+  });
+
+  it("reports a failure rather than uploading audio it could not convert", async () => {
+    // Uploading the raw recording would spend a metered transcription call on
+    // a format the service cannot read.
+    toWavFile.mockRejectedValue(new Error("cannot decode"));
+    const { result } = renderHook(() => useAudioRecorder());
+    await act(async () => {
+      await result.current.start();
+    });
+
+    let audio;
+    await act(async () => {
+      audio = await result.current.stop();
+    });
+
+    expect(audio).toBeNull();
+    expect(result.current.status).toBe("failed");
+  });
+
+  it("releases the microphone even when conversion fails", async () => {
+    toWavFile.mockRejectedValue(new Error("cannot decode"));
+    const { result } = renderHook(() => useAudioRecorder());
+    await act(async () => {
+      await result.current.start();
+    });
+
+    await act(async () => {
+      await result.current.stop();
+    });
+
+    expect(stream._track.stop).toHaveBeenCalled();
   });
 
   it("releases the microphone when recording stops", async () => {

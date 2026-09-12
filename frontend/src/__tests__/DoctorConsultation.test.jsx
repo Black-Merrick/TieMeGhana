@@ -14,6 +14,7 @@ function captionResponse(overrides = {}) {
     caption: "head hurts",
     caption_language: "tw",
     sign_lookup_text: "head hurts",
+    transcript_source: "typed",
     translation_applied: true,
     language_provider: "khaya",
     sequence: {
@@ -98,6 +99,26 @@ describe("DoctorConsultation", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("provider-warning")).toBeInTheDocument();
+    });
+  });
+
+  it("says speech was not transcribed when the stub handled a recording", async () => {
+    // Stronger than the typed case. The stub invents a transcript rather than
+    // just leaving it untranslated, so a spoken demo would otherwise show
+    // words the doctor never said as though they were heard.
+    captionUtterance.mockResolvedValue(
+      captionResponse({ language_provider: "stub", transcript_source: "spoken" }),
+    );
+    const user = userEvent.setup();
+    render(<DoctorConsultation />);
+
+    await user.type(screen.getByLabelText(/message/i), "head hurts");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-warning")).toHaveTextContent(
+        /not transcribed/i,
+      );
     });
   });
 

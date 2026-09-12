@@ -154,7 +154,8 @@ export default function DoctorConsultation() {
 
       {recorder.status === "failed" ? (
         <p className="consultation__note" data-testid="microphone-failed" role="alert">
-          Recording could not start on this device. Type the message instead.
+          The recording could not be completed on this device. Type the
+          message instead.
         </p>
       ) : null}
 
@@ -200,9 +201,21 @@ function CaptionResult({ result }) {
     <div className="result">
       {result.language_provider === "stub" ? (
         <p className="result__warning" data-testid="provider-warning">
-          Development language service. This caption was <strong>not</strong>{" "}
-          translated into Twi, so it still reads in the language it was typed
-          in. Add a Khaya API key for real translation.
+          {result.transcript_source === "spoken" ? (
+            <>
+              Development language service. Your speech was{" "}
+              <strong>not transcribed</strong>, the text below is placeholder
+              content and not what you said. Switch to the Khaya provider to
+              transcribe real speech.
+            </>
+          ) : (
+            <>
+              Development language service. This caption was{" "}
+              <strong>not translated</strong> into Twi, so it still reads in the
+              language it was typed in. Switch to the Khaya provider for real
+              translation.
+            </>
+          )}
         </p>
       ) : null}
 

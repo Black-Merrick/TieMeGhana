@@ -55,6 +55,9 @@ class CaptionResponseSerializer(serializers.Serializer):
     # sign is missing, the doctor needs to see which English word was searched
     # for, which is not always the word they typed.
     sign_lookup_text = serializers.CharField()
+    # Whether the transcript came from speech or from typing. The interface
+    # needs it because a stub transcript is fabricated, not just untranslated.
+    transcript_source = serializers.CharField()
     translation_applied = serializers.BooleanField()
     language_provider = serializers.CharField()
     sequence = SignSequenceSerializer()

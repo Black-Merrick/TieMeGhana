@@ -488,3 +488,91 @@ not prove sound reaches the server.
 
 **An empty recording is discarded client side**, so tapping stop immediately
 does not spend a transcription call to get nothing back.
+
+---
+
+## Sprint 2c, Making the microphone actually transcribe
+
+**Trigger.** The first real recording through the browser failed with "could
+not reach the language service".
+
+### What the failure actually was
+
+Two separate problems, one masking the other.
+
+**The running dev server was stale.** It had been started with `--noreload`
+before `LANGUAGE_PROVIDER` existed, so it was on `auto`, saw the key in
+`.env`, and called real Khaya. Typed messages worked, because translation
+works. Audio failed. The server is now run with the reloader on, since a stale
+server had caused a misleading failure three times by this point.
+
+**Khaya's ASR rejected the upload.** `MediaRecorder` cannot produce WAV or MP3
+in any browser: Chrome and Firefox give WebM with Opus, Safari gives MP4 with
+AAC. Khaya's developer portal renders client side, so its docs cannot be read
+programmatically, but the community Dart client GhanaNLP's own site links to
+transcribes from a plain `.mp3` and uses language code `tw`. The strong
+implication is that Khaya wants an ordinary audio file.
+
+Recordings are now converted in the browser to 16 kHz mono WAV, the standard
+speech recognition input, using the browser's own decoder and
+`OfflineAudioContext`. This keeps ffmpeg out of the runtime per ADR 008 and
+removes the Chrome versus Safari format split entirely. See ADR 018.
+
+### The gap that made this expensive
+
+**The provider's error message was being thrown away.** `LanguageError`
+carried Khaya's actual response text, the view discarded it and returned a
+generic 503, and Django's default logging does not configure our app loggers,
+so nothing was written anywhere. Diagnosing the failure meant reproducing it,
+and reproducing it costs metered credit.
+
+Now logged server side, with the provider, the source language, and whether
+the input was audio or text. Deliberately **not** returned to the client: a
+provider message can quote the utterance back, and the utterance is clinical
+content. Two tests cover it, one that the message is logged and one that it
+never reaches the response.
+
+### A disclosure problem found on the way
+
+With the stub provider, a recording "works" but the transcript is **invented**.
+The stub returns a fixed sentence regardless of what was said. The existing
+provider warning only mentioned translation, so a spoken demo would have shown
+words the doctor never said as though they had been heard, which is a worse
+version of exactly the failure ADR 011 exists to prevent.
+
+The response now reports `transcript_source`, and a stubbed recording says the
+speech was not transcribed and the text is placeholder content.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 78 passed |
+| Frontend suite | 65 passed, 7 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Production build | PWA builds, service worker generated |
+| Audio path, stub provider | 200, transcript and caption returned through the dev proxy |
+
+### Problems hit, and the fixes
+
+**jsdom's `Blob` has no `arrayBuffer()`,** so the WAV header could not be read
+back in a test. Split the encoder into `encodeWavBuffer`, returning raw bytes,
+and `encodeWav`, wrapping it in a Blob. Better design regardless: the pure
+function is the part worth testing, and the header is now asserted field by
+field.
+
+**`propagate: False` on our loggers meant nothing could observe them.**
+Records reached our console handler but not the root logger, so the test
+asserting the provider error is logged failed. The test caught a real config
+mistake, not a test problem: any log aggregator would have been just as blind.
+Root has no handler of its own, so propagating logs nothing twice.
+
+**The upload was still named `utterance.webm`** after conversion to WAV. The
+extension is now derived from the blob's own type, because a filename that
+misdescribes the bytes is exactly the kind of thing a media service trusts.
+
+### Still unverified
+
+**Whether Khaya accepts this WAV.** It needs one real transcription call, which
+costs credit. If it still fails, the log now says why rather than requiring
+another round of guessing.

@@ -420,3 +420,55 @@ the server needs https, or the microphone will not appear. Recorded here
 because it is a deployment fact that no amount of frontend code can work
 around, and it is the kind of thing discovered at the worst moment. Typing
 remains a fully supported path precisely so this degrades rather than blocks.
+
+---
+
+## ADR 018, Recordings are converted to 16 kHz mono WAV before upload
+
+**Context.** The first real recording through the microphone failed. Khaya's
+ASR endpoint returned an error, the caption endpoint turned that into a 503,
+and the doctor saw "could not reach the language service".
+
+The cause is a format mismatch. `MediaRecorder` cannot produce WAV or MP3 in
+any browser: Chrome and Firefox record WebM with Opus, Safari records MP4 with
+AAC. Khaya's developer portal renders client side so its documentation is not
+readable programmatically, but the community Dart client that GhanaNLP's own
+site links to transcribes from a plain `.mp3` file and uses language code
+`tw`. That strongly suggests Khaya expects an ordinary audio file rather than
+a WebM container.
+
+**Decision.** Convert the recording in the browser to 16 kHz mono 16 bit PCM
+WAV before uploading. Decoding uses the browser's own audio stack via
+`decodeAudioData`, and resampling and downmixing use `OfflineAudioContext`.
+
+**Why.**
+
+16 kHz mono is the standard input rate for speech recognition, so it is what
+the model expects rather than something it has to resample itself. It is also
+about a tenth the size of 48 kHz stereo, which matters on the connections
+NFR 5 describes.
+
+Converting in the browser rather than the server keeps ffmpeg out of the
+runtime image, so ADR 008 still holds. Each browser can decode the format it
+just recorded, so the same code path works on Chrome and on Safari, which also
+removes the WebM versus MP4 split that ADR 016 had to work around.
+
+WAV is uncompressed, which is the real cost. At 16 kHz mono a five second
+utterance is roughly 160 KB, which is acceptable for a single consultation
+turn and is the trade we would make anyway to get transcription working at all.
+
+Resampling is handed to `OfflineAudioContext` rather than written by hand
+because a naive resampler aliases, and aliasing makes speech harder to
+transcribe rather than easier.
+
+**Consequence.** Conversion can fail, in principle only if the browser cannot
+decode its own recording. That is surfaced as a failure rather than uploading
+bytes the service cannot read, because uploading them would spend metered
+credit to get an error back. The upload's filename extension is derived from
+the blob's type rather than hardcoded, since a stale `.webm` name would
+misdescribe WAV bytes to anything that trusts the filename.
+
+**Still unverified.** Whether Khaya accepts this WAV is not yet confirmed. It
+needs one real transcription call, which costs credit. The provider's own
+error message is now logged server side, so if it still fails, the next
+attempt says why instead of having to be rediscovered by spending more credit.

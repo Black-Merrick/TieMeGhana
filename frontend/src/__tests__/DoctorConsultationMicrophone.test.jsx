@@ -41,6 +41,7 @@ beforeEach(() => {
     caption: "Ɛhe na ɛyɛ yaw",
     caption_language: "tw",
     sign_lookup_text: "where does it hurt",
+    transcript_source: "spoken",
     translation_applied: true,
     language_provider: "khaya",
     sequence: {

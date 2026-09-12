@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import APIException
@@ -9,6 +12,8 @@ from consultations.serializers import (
 )
 from consultations.services import build_caption
 from core.language import Language, LanguageError
+
+logger = logging.getLogger(__name__)
 
 
 class LanguageServiceUnavailable(APIException):
@@ -55,6 +60,19 @@ def caption(request):
             ),
         )
     except LanguageError as error:
+        # Log what the provider actually said. The doctor gets a short, useful
+        # message, but discarding the provider's own error made a failure
+        # impossible to diagnose without guessing, which cost real credit on a
+        # metered account to rediscover. Logged server side only, never
+        # returned, because a provider message could quote the utterance and
+        # the utterance is clinical content.
+        logger.warning(
+            "Caption failed, provider=%s source_language=%s input=%s: %s",
+            getattr(settings, "LANGUAGE_PROVIDER", "auto"),
+            validated["source_language"],
+            "audio" if audio_file is not None else "text",
+            error,
+        )
         raise LanguageServiceUnavailable() from error
 
     return Response(CaptionResponseSerializer(result).data)

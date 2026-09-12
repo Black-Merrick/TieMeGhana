@@ -281,3 +281,78 @@ class TestSpokenAudioFormat:
         )
 
         assert captured["content_type"] == "audio/webm"
+
+
+@pytest.mark.django_db
+class TestCaptionFailureIsDiagnosable:
+    def test_the_provider_error_is_logged_for_diagnosis(
+        self, api_client, monkeypatch, caplog
+    ):
+        # The doctor gets a short message, but the provider's own error has to
+        # reach a log or a failure cannot be diagnosed without spending
+        # metered credit to reproduce it.
+        from core.language.base import LanguageError
+        from core.language.stub import StubLanguageProvider
+
+        def fail(self, text, *, source, target):
+            raise LanguageError("Khaya returned 400 for /asr/v1/transcribe")
+
+        monkeypatch.setattr(StubLanguageProvider, "translate", fail)
+
+        with caplog.at_level("WARNING", logger="consultations.views"):
+            api_client.post(
+                reverse("caption"),
+                {"source_language": "en", "text": "head"},
+                format="json",
+            )
+
+        assert "asr/v1/transcribe" in caplog.text
+
+    def test_the_provider_error_never_reaches_the_client(self, api_client, monkeypatch):
+        # A provider message can quote the utterance back, and the utterance is
+        # clinical content, so it stays server side.
+        from core.language.base import LanguageError
+        from core.language.stub import StubLanguageProvider
+
+        def fail(self, text, *, source, target):
+            raise LanguageError("failed on text: patient has HIV")
+
+        monkeypatch.setattr(StubLanguageProvider, "translate", fail)
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "patient has HIV"},
+            format="json",
+        )
+
+        assert response.status_code == 503
+        assert "HIV" not in response.json()["detail"]
+
+
+@pytest.mark.django_db
+class TestTranscriptSource:
+    """
+    The stub invents a transcript for spoken audio rather than merely leaving
+    it untranslated. That is a stronger claim to have to disclose, so the
+    response says which of the two happened.
+    """
+
+    def test_typed_input_is_reported_as_typed(self, api_client, alphabet):
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "head"},
+            format="json",
+        )
+
+        assert response.json()["transcript_source"] == "typed"
+
+    def test_spoken_input_is_reported_as_spoken(self, api_client, alphabet):
+        audio = SimpleUploadedFile("a.webm", b"audio", content_type="audio/webm")
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "audio": audio},
+            format="multipart",
+        )
+
+        assert response.json()["transcript_source"] == "spoken"

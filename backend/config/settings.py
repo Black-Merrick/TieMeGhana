@@ -194,6 +194,26 @@ KHAYA_API_KEY = os.environ.get("KHAYA_API_KEY", "")
 # run. See ADR 015.
 LANGUAGE_PROVIDER = os.environ.get("LANGUAGE_PROVIDER", "auto").strip().lower()
 
+# Our own app loggers reach the console. Django configures logging for its own
+# loggers only, so without this a warning we deliberately recorded, such as the
+# reason a language call failed, would be written nowhere and the failure would
+# have to be rediscovered by spending metered credit on it again.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "{levelname} {name}: {message}", "style": "{"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    # propagate stays on. Records reach the root logger as well as our console
+    # handler, which is what lets a test or an aggregator observe them. The
+    # root logger has no handler of its own, so nothing is logged twice.
+    "loggers": {
+        app: {"handlers": ["console"], "level": "INFO", "propagate": True}
+        for app in ("core", "clips", "consultations")
+    },
+}
+
 # Transport security, applied outside development only. Gated on an explicit
 # variable rather than on DEBUG alone, because a hackathon demo may legitimately
 # run over plain http on a local network, where forcing an HTTPS redirect would
