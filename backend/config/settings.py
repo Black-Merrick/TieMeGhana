@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "core",
     "clips",
+    "consultations",
 ]
 
 MIDDLEWARE = [

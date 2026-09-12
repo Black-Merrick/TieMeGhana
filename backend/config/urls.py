@@ -9,6 +9,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("core.urls")),
     path("api/", include("clips.urls")),
+    path("api/", include("consultations.urls")),
 ]
 
 # GhSL clips are served by Django only in development. In deployment they are

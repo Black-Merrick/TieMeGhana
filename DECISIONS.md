@@ -222,3 +222,51 @@ the patient. Phrase level matching, longest match first across a token window,
 is the fix and belongs in a later sprint. Emergency alerts avoid the problem
 entirely because the patient selects them directly rather than through
 tokenized text, which is why `CANNOT_BREATHE` is kind `ALERT`.
+
+---
+
+## ADR 011, Every caption response names the provider that produced it
+
+**Context.** With no Khaya key, the stub provider returns the input text
+unchanged rather than translating it. The response therefore contains English
+text in a field labelled as a Twi caption. In a demo that is indistinguishable
+from working translation until a Twi speaker reads it.
+
+**Decision.** The caption response carries a `language_provider` field, either
+`"khaya"` or `"stub"`, and the interface shows a visible notice whenever it is
+`"stub"`.
+
+**Why.** The failure mode this prevents is the worst kind: silently
+overclaiming. A judge who is a Twi speaker would immediately notice untranslated
+output presented as a translation, and the project would look like it was
+faking the feature rather than honestly running without a credential. Making
+the provider visible turns a potential credibility problem into evidence of
+deliberate engineering.
+
+The alternative, having the stub invent Twi from a small hardcoded glossary,
+is worse. Fabricated clinical Twi would be confidently wrong in exactly the
+setting where being wrong matters most, and nobody on the team can verify it.
+
+**Consequence.** The field is part of the API contract, and the frontend must
+render the notice. A test asserts the field is present and correct, and another
+asserts the stub leaves text unchanged so nobody later mistakes that for a bug
+and "fixes" it by inventing translations.
+
+---
+
+## ADR 012, The live exchange app is `consultations`, not `sessions_log`
+
+**Context.** `ENGINEERING_STANDARDS.md` anticipated a backend app called
+`sessions_log`. ADR 002 then moved the transcript to the patient's own device.
+
+**Decision.** The app is called `consultations` and owns the live doctor to
+patient exchange, starting with the caption pipeline.
+
+**Why.** There is no server side session log for an app to own. Keeping the
+name `sessions_log` would advertise storage that ADR 002 deliberately does not
+exist, and the first person to go looking for stored transcripts would waste
+time before finding out why the directory is empty. The name should say which
+of the two things this is.
+
+**Consequence.** A deviation from the scaffold the engineering standards
+describe, recorded here so it reads as a decision rather than drift.
