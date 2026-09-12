@@ -13,6 +13,10 @@ class ClipKind(models.TextChoices):
     WORD = "word", "Word sign"
     LETTER = "letter", "Fingerspelling letter"
     ALERT = "alert", "Emergency alert"
+    # A question the app itself asks, such as the FR 2.1 literacy check. Kept
+    # separate from WORD so a system prompt can never be matched as an ordinary
+    # word while tokenizing a caption.
+    PROMPT = "prompt", "System prompt"
 
 
 class ReviewStatus(models.TextChoices):

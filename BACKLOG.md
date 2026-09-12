@@ -19,7 +19,7 @@ Status key: `todo`, `wip`, `done`
 | 0 | Foundation, tooling, CI, walking skeleton | A green baseline before any feature code, so a later failure is never ambiguous |
 | 1 | GhSL clip library, gloss resolution, fingerspelling fallback | The retrieval layer everything visual depends on. Pure backend, fully testable without the Khaya API |
 | 2 | Khaya language layer, doctor to patient captioning and sign playback | Completes P0.1, the headline demo: speech to Twi caption to GhSL video |
-| 3 | Interaction foundations, literacy check | Vibration vocabulary, sign video player, and Yes/No icons built once before the first patient facing screen needs them |
+| 3 ✅ | Interaction foundations, literacy check | Vibration vocabulary, sign video player, and Yes/No icons built once before the first patient facing screen needs them |
 | 4 | Guided Interrogation Mode | Completes P0.2, the differentiating feature. Depends on sprint 3's shared components |
 | 5 | Patient to doctor spoken output | Completes P0.3. Depends on sprint 2's TTS provider |
 | 6 | Session transcript, on device | Completes P0.4. **P0 complete, system is demonstrable end to end** |
@@ -103,9 +103,9 @@ rather than claiming the browser cannot record. Typing works either way.
 
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
-| 2.1 | First use prompt, sign video only, two large icon options, no text | 3 | `todo` |
-| 2.2 | Answer saved, determines the interaction path for the visit | 3 | `todo` |
-| 2.3 | Literate patients proceed to free captioning and typed responses | 3 | `todo` |
+| 2.1 | First use prompt, sign video only, two large icon options, no text | 3 | `done`, needs the prompt clip filmed |
+| 2.2 | Answer saved, determines the interaction path for the visit | 3 | `done`, visit scoped per ADR 020 |
+| 2.3 | Literate patients proceed to free captioning and typed responses | 3 | `done` |
 | 2.4 | Non literate patients use Guided Interrogation, doctor picks from a preset clinical question bank, played as sign video | 4 | `todo` |
 | 2.5 | Selection questions present a grid of sign video answer options | 4 | `todo` |
 | 2.6 | Yes or no questions instruct the patient in sign video to nod or shake, observed in person. No camera gesture detection | 4 | `todo` |
@@ -172,11 +172,12 @@ per feature. Section 4.4, Consistency, and section 6.
 
 | Item | Requirement source | Status |
 | --- | --- | --- |
-| Vibration vocabulary module, the five patterns in SRS section 6, defined once and imported everywhere | §6, §4.2 | `todo` |
-| Graceful degradation to visual only feedback where the Vibration API is absent | NFR 3 | `todo` |
-| One shared sign video player, identical appearance and controls for every clip in the app | §4.4 | `todo` |
-| One Yes and No icon set, used in Guided Interrogation, Triage, and any future confirmation | §4.4 | `todo` |
-| Persistent language toggle and literacy path indicator, always visible, never in a settings menu | §4.1 | `todo` |
+| Vibration vocabulary module, the five patterns in SRS section 6, defined once and imported everywhere | §6, §4.2 | `done` |
+| Graceful degradation to visual only feedback where the Vibration API is absent | NFR 3 | `done` |
+| One shared sign video player, identical appearance and controls for every clip in the app | §4.4 | `done` |
+| One Yes and No icon set, used in Guided Interrogation, Triage, and any future confirmation | §4.4 | `done` |
+| Literacy path indicator always visible, never in a settings menu | §4.1 | `done` |
+| Output language toggle, always visible | §4.1 | `todo`, arrives with FR 3.4 in sprint 5 |
 
 ### Vibration vocabulary, the single source of truth
 

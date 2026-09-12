@@ -264,3 +264,114 @@ body {
   color: var(--colour-muted);
   margin: 0.75rem 0 0;
 }
+
+/* Visit bar. Section 4.1 keeps the patient's path and the new patient control
+   permanently visible rather than behind a menu. */
+.shell__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+
+.shell__path {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: #e8f0ec;
+  color: var(--colour-primary);
+}
+
+.shell__new-patient {
+  font: inherit;
+  font-size: 0.85rem;
+  margin-left: auto;
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  border: 1px solid #c8d2ce;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--colour-ink);
+  cursor: pointer;
+}
+
+/* Literacy check, FR 2.1. Nothing here requires reading. */
+.literacy {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.literacy__loading {
+  display: flex;
+  justify-content: center;
+  margin: 3rem 0;
+}
+
+.literacy__unavailable {
+  border-left: 4px solid var(--colour-accent);
+  background: #fdf9ec;
+  padding: 0.75rem 1rem;
+  border-radius: 0.25rem;
+  margin: 0;
+}
+
+/* Yes and No, the app's single answer control, section 4.4.
+   Large, clearly bordered, generously spaced, so they visibly invite a tap
+   rather than resembling plain text. Section 4.5, Affordances. */
+.choice {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+}
+
+.choice__option {
+  flex: 1 1 0;
+  max-width: 11rem;
+  aspect-ratio: 1;
+  padding: 1rem;
+  border: 3px solid #c8d2ce;
+  border-radius: 1rem;
+  background: var(--colour-surface);
+  cursor: pointer;
+}
+
+.choice__option svg {
+  width: 100%;
+  height: 100%;
+}
+
+.choice__icon-ground {
+  fill: #eef2f0;
+}
+
+.choice__icon-mark {
+  stroke: var(--colour-muted);
+}
+
+.choice__option--yes .choice__icon-mark {
+  stroke: var(--colour-primary);
+}
+
+.choice__option--no .choice__icon-mark {
+  stroke: var(--colour-offline);
+}
+
+/* The chosen option is marked by a thicker border and a filled ground, not by
+   colour alone, so the confirmation is visible to a colour blind patient. */
+.choice__option--chosen {
+  border-color: var(--colour-primary);
+  border-width: 6px;
+}
+
+.choice__option--chosen .choice__icon-ground {
+  fill: #d9e6e0;
+}
+
+.choice__option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

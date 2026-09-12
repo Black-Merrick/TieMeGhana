@@ -1,5 +1,6 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
-from rest_framework.decorators import api_view
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from clips.models import SignClip
@@ -26,6 +27,19 @@ class SignClipViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Only clips that are both approved and filmed are ever exposed.
         return SignClip.objects.resolvable()
+
+    @action(detail=False, url_path=r"by-gloss/(?P<gloss>[^/]+)")
+    def by_gloss(self, request, gloss=None):
+        """
+        Fetch one clip by its gloss rather than by database id.
+
+        The frontend needs specific clips by name, for example the FR 2.1
+        literacy prompt, and it should not have to know or store primary keys
+        to find them. A missing clip is a 404 rather than an empty response,
+        so a caller cannot mistake "not filmed yet" for "played successfully".
+        """
+        clip = get_object_or_404(self.get_queryset(), gloss=gloss.strip().upper())
+        return Response(self.get_serializer(clip).data)
 
 
 @api_view(["POST"])

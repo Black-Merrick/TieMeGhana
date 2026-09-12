@@ -289,3 +289,71 @@ class TestSeedClipsCommand:
             )
         )
         assert set("ABCDEFGHIJKLMNOPQRSTUVWXYZ") <= letters
+
+
+@pytest.mark.django_db
+class TestClipByGloss:
+    """
+    Fetching a named clip, which is how the frontend gets the FR 2.1 literacy
+    prompt without storing database ids.
+    """
+
+    def test_returns_the_clip_for_a_known_gloss(self, api_client, make_clip):
+        make_clip("CAN_YOU_READ_AND_WRITE", kind=ClipKind.PROMPT, duration_ms=3000)
+
+        response = api_client.get(
+            reverse("clip-by-gloss", args=["CAN_YOU_READ_AND_WRITE"])
+        )
+
+        assert response.status_code == 200
+        assert response.json()["gloss"] == "CAN_YOU_READ_AND_WRITE"
+        assert response.json()["kind"] == ClipKind.PROMPT
+
+    def test_gloss_lookup_ignores_case(self, api_client, make_clip):
+        make_clip("CAN_YOU_READ_AND_WRITE", kind=ClipKind.PROMPT)
+
+        response = api_client.get(
+            reverse("clip-by-gloss", args=["can_you_read_and_write"])
+        )
+
+        assert response.status_code == 200
+
+    def test_unfilmed_prompt_is_not_found_rather_than_returned_empty(
+        self, api_client, make_clip
+    ):
+        # A caller must not be able to mistake "not filmed yet" for "played
+        # successfully", which for the literacy check would mean asking the
+        # patient nothing and then acting on their answer.
+        make_clip("CAN_YOU_READ_AND_WRITE", kind=ClipKind.PROMPT, filmed=False)
+
+        response = api_client.get(
+            reverse("clip-by-gloss", args=["CAN_YOU_READ_AND_WRITE"])
+        )
+
+        assert response.status_code == 404
+
+    def test_unreviewed_prompt_is_not_found(self, api_client, make_clip):
+        make_clip("CAN_YOU_READ_AND_WRITE", kind=ClipKind.PROMPT, approved=False)
+
+        response = api_client.get(
+            reverse("clip-by-gloss", args=["CAN_YOU_READ_AND_WRITE"])
+        )
+
+        assert response.status_code == 404
+
+    def test_unknown_gloss_is_not_found(self, api_client):
+        response = api_client.get(reverse("clip-by-gloss", args=["NOT_A_GLOSS"]))
+
+        assert response.status_code == 404
+
+    def test_a_prompt_clip_is_never_matched_while_tokenizing_a_caption(
+        self, make_clip, alphabet
+    ):
+        # A system prompt is not a word the doctor can say. If it were matched
+        # as one, a caption containing it would play the app's own question at
+        # the patient in the middle of a consultation.
+        make_clip("PROMPT", kind=ClipKind.PROMPT)
+
+        sequence = resolve_sign_sequence("prompt")
+
+        assert sequence.segments[0].match == "fingerspell"

@@ -592,3 +592,75 @@ Remaining for NFR 6 is a Safari and iOS device pass, which is a manual check
 rather than an engineering task. The WAV conversion makes it much more likely
 to work, since it removes the WebM versus MP4 difference that would otherwise
 have made iOS a separate code path.
+
+---
+
+## Sprint 3, Interaction foundations and the literacy check
+
+**Goal.** Build the cross cutting pieces SRS section 4.4 requires to be single
+sourced, then FR 2.1 to 2.3: the literacy check that routes a patient to the
+right interaction path.
+
+### What was built
+
+| Piece | Purpose |
+| --- | --- |
+| `feedback/vibration.js` | The five patterns from SRS section 6, defined once. NFR 3 degradation built in |
+| `visit/visit.js` | The literacy answer, scoped to a visit and expiring. ADR 020 |
+| `YesNoChoice` | The app's single Yes and No control, section 4.4, no visible text per FR 2.1 |
+| `signs/sequence.js` | Wraps one named clip as a sequence so it plays through the shared player |
+| `LiteracyCheck` | FR 2.1 to 2.3, the question in sign video with icon answers |
+| `ClipKind.PROMPT` | A clip the app asks in its own voice, kept out of caption tokenizing |
+| `GET /api/clips/by-gloss/<gloss>/` | Fetch a named clip without the frontend knowing database ids |
+| App routing | Literacy check first, then the path FR 2.2 selected, with the path always visible |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Backend suite | 84 passed |
+| Frontend suite | 116 passed, 11 files |
+| Lint and formatting | black, isort, ruff, eslint all clean |
+| Migration drift | none |
+| Production build | PWA builds, service worker generated |
+
+### The risk this sprint was really about
+
+FR 2.2 says the literacy answer lasts "for the visit". That scope is load
+bearing, because the app runs on a device handed from patient to patient. An
+answer that outlived its visit would route the next patient down the previous
+patient's path, and showing captions to a patient who cannot read print is
+exactly the failure the literacy check exists to prevent.
+
+So the answer persists across a reload, an always visible "New patient" control
+clears it, and a visit older than four hours is treated as finished even if
+nobody pressed the button. Every ambiguous case fails closed and re asks: a
+corrupt record, a missing timestamp, an unrecognized path, or storage being
+unavailable. See ADR 020.
+
+### Problems hit, and the fixes
+
+**The staleness guard rejected a timestamp of zero.** It tested
+`!visit.startedAt`, and `!0` is true, so a visit that legitimately started at
+epoch zero was discarded as invalid. Found by the test asserting a visit inside
+the window survives. A falsy check on a numeric field is the kind of fault that
+hides until a clock or a fixture produces that one value, so it now checks the
+type with `Number.isFinite` and there is a regression test for the zero case.
+
+**The stored path was trusted without validation.** An unrecognized value would
+have fallen through to whichever branch the UI defaults to, which for this
+screen means routing a patient by accident. It now fails closed and re asks.
+
+### Known limitations, deliberate
+
+**The literacy prompt clip is not filmed**, so the app cannot yet ask the
+question in GhSL. Rather than route the patient anyway, the screen says the
+video is missing and asks staff to put the question in person, while still
+recording the answer. Blocking entirely would make the whole app unusable
+before filming is done; routing silently would defeat the check. The gloss
+`CAN_YOU_READ_AND_WRITE` is seeded and waiting for footage.
+
+**Guided Interrogation Mode is not built**, so a patient routed there sees a
+staff facing notice. It deliberately tells the doctor not to fall back to typed
+captions for that patient, because doing so is the specific harm FR 2.4 exists
+to avoid. Sprint 4 builds it.

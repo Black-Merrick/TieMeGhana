@@ -96,6 +96,11 @@ WORDS = BODY_PARTS + SYMPTOMS + CLINICAL + EVERYDAY
 # are never looked up by tokenizing a caption.
 ALERTS = ["ASTHMA", "PREGNANCY", "CANNOT_BREATHE"]
 
+# Questions the app asks in its own voice, delivered as sign video only. FR 2.1
+# requires the literacy check to carry no text at all, so this clip is the only
+# way the question can be asked.
+PROMPTS = ["CAN_YOU_READ_AND_WRITE"]
+
 
 class Command(BaseCommand):
     help = "Seed the GhSL vocabulary the clip library needs, without footage."
@@ -118,6 +123,7 @@ class Command(BaseCommand):
                 (ClipKind.LETTER, LETTERS),
                 (ClipKind.WORD, WORDS),
                 (ClipKind.ALERT, ALERTS),
+                (ClipKind.PROMPT, PROMPTS),
             ):
                 created = self._seed(kind, glosses)
                 created_total += created

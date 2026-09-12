@@ -507,3 +507,44 @@ remain available for anything genuinely separable, such as the P1 additions.
 **Consequence.** Nothing is pushed to `main` or `develop` without being asked.
 Merging the feature branch into `develop` is a pull request and a deliberate
 decision, not an automatic step on finishing a sprint.
+
+---
+
+## ADR 020, The literacy answer is scoped to a visit and expires
+
+**Context.** FR 2.2 says the patient's literacy answer "determines their
+interaction path for the visit". The obvious implementation is to persist it on
+the device so a mid consultation page reload does not ask the same patient
+twice.
+
+But this app runs on a device hospital staff hand from one patient to the
+next. A persisted answer with no expiry would route the next patient down the
+previous patient's path, and the wrong direction here is not a cosmetic
+mismatch: it shows captions to a patient who cannot read print, which is
+precisely the failure the literacy check exists to prevent.
+
+**Decision.** Three mechanisms together.
+
+The answer persists on the device, so a reload does not re ask. An always
+visible "New patient" control ends the visit and clears it, which is the
+primary mechanism. And a visit older than four hours is treated as finished
+even if nobody pressed the button.
+
+Four hours is longer than any consultation and shorter than a shift, so in
+practice the window cannot span two patients.
+
+**Why.** Staff under time pressure will forget to press a button. A safety net
+that fails closed costs the patient a few seconds of being asked again. Failing
+open costs them the consultation. Every ambiguous case therefore re asks: a
+corrupt record, a missing timestamp, an unrecognized path, or storage being
+unavailable all produce "no visit" rather than a guess.
+
+**Consequence.** The answer lives in `localStorage` on the device only, never
+sent to a server, consistent with ADR 002. Tests cover each failing closed
+path individually, because they are the ones that matter and none of them is
+exercised by ordinary use.
+
+One bug found writing this is worth recording: the staleness guard originally
+tested `!visit.startedAt`, which rejects a legitimate timestamp of `0`. A
+falsy check on a numeric field is the kind of fault that hides until a clock or
+a fixture happens to produce that one value.
