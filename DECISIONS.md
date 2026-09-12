@@ -857,3 +857,50 @@ from one that worked silently. They would believe they had answered the doctor.
 browser supports it, since offering an option that is not there would be its own
 small lie. The warning clears on the first keystroke rather than on the next
 submit, so it never lingers to contradict what is on screen.
+
+---
+
+## ADR 030, Clips are played through two buffers, so the joins are invisible
+
+**Context.** ADR 008 chose an ordered playlist over a server stitched video
+file, which put the burden of making it look like one video on the player. The
+first implementation held one `<video>` element and changed its `src` when each
+clip ended, with a second hidden element preloading the next clip's data.
+
+That is not seamless. Changing `src` makes the browser tear down the current
+video, load the new one, and decode its first frame, and it shows as a flash of
+black between every word. Preloading into a *different* element does not help,
+because the element that has to display it still has to load and decode it
+itself.
+
+**Decision.** Two video elements stacked in the same space. While one plays,
+the other already holds the next clip with `preload="auto"`, fully fetched and
+decoding. When the playing clip ends, the two swap roles: the standby element
+becomes visible and plays, and the element just vacated loads the clip after
+that.
+
+The newly visible element keeps the `src` it already had, so nothing reloads
+and playback continues on the following frame.
+
+**Why.** It produces the outcome, a sentence that reads as one continuous
+signed utterance, without the costs server side concatenation carries: no
+ffmpeg in the runtime image, no per sentence encoding inside NFR 1's five
+second budget, and clips stay individually cacheable, which is what makes
+FR 6.2's offline replay possible.
+
+The standby element is hidden with `opacity: 0` rather than `display: none` or
+`visibility: hidden`. A `display: none` video is not required to keep decoding,
+which would defeat the entire purpose of holding it ready.
+
+**Consequence.** Two videos are on screen at once, so the standby one is
+`aria-hidden` and carries no controls: only one of them is the utterance. The
+handover is asserted by element identity in a test, that the standby element
+becomes the playing one rather than the playing one being given a new source,
+because that identity is the whole mechanism and a refactor that reintroduced a
+`src` swap would look correct while restoring the flash.
+
+**If a visible join remains** on real footage, the next step is server side
+concatenation with ffmpeg, cached per resolved sentence so the cost is paid
+once. That is a larger change and it gives up per clip caching, so it is worth
+doing only if this proves insufficient with clips that are actually filmed.
+Recorded here so the option is not forgotten.

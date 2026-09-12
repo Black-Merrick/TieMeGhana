@@ -4,8 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Plays a resolved sign sequence as one continuous signed utterance.
  *
  * ADR 008 returns an ordered playlist rather than a server stitched video, so
- * making the seam between clips invisible is this component's job. It holds one
- * visible video element and a hidden one that preloads whatever comes next.
+ * making the joins invisible is this component's whole job.
+ *
+ * It uses two stacked video elements rather than one. Swapping the `src` of a
+ * single element forces the browser to tear down the current video, load the
+ * next, and decode its first frame, which shows as a flash of black between
+ * every word. Instead, while one element plays, the other already holds the
+ * next clip fully loaded. When the first ends they swap, the next clip is
+ * already decoded, and it starts on the following frame, so the sentence reads
+ * as one video. See ADR 030.
  *
  * This is the only sign video player in the app, per SRS section 4.4. A
  * doctor's question, a patient's answer option, and a prescription instruction
@@ -29,29 +36,40 @@ export default function SignSequencePlayer({
   );
 
   const [index, setIndex] = useState(0);
+  const [active, setActive] = useState(0);
   const [playingSequence, setPlayingSequence] = useState(sequence);
-  const videoRef = useRef(null);
 
-  // A new utterance must start at its own first clip rather than resuming from
+  const bufferA = useRef(null);
+  const bufferB = useRef(null);
+  const buffers = [bufferA, bufferB];
+
+  // A new utterance starts at its own first clip rather than resuming from
   // wherever the previous sentence stopped. Adjusted during render rather than
-  // in an effect: an effect runs after the render that needed the new value, so
-  // a shorter sequence would be indexed out of bounds for one frame and the
-  // player would crash before the reset ever applied.
+  // in an effect: an effect runs after the render that needed the new value,
+  // so a shorter sequence would be indexed out of bounds for one frame.
   if (playingSequence !== sequence) {
     setPlayingSequence(sequence);
     setIndex(0);
+    setActive(0);
   }
 
+  // Clamped, because a render-phase state adjustment re-renders but does not
+  // abort the pass that triggered it.
+  const safeIndex = Math.min(index, Math.max(clips.length - 1, 0));
+  const current = clips[safeIndex];
+  const next = clips[safeIndex + 1];
+
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    const video = buffers[active].current;
+    if (!video || clips.length === 0) return;
 
     // play() rejects when autoplay is blocked or the clip is missing. That is
     // recoverable, the patient can press play, so it must not surface as an
     // unhandled rejection.
     const played = video.play();
     if (played?.catch) played.catch(() => {});
-  }, [index, clips]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, safeIndex, clips.length]);
 
   if (clips.length === 0) {
     return (
@@ -63,17 +81,17 @@ export default function SignSequencePlayer({
     );
   }
 
-  // Clamped, because a render-phase state adjustment re-renders but does not
-  // abort the pass that triggered it. Without this, the render that first sees
-  // a shorter sequence still reads the old, now out of range index and throws
-  // before React discards its output.
-  const safeIndex = Math.min(index, clips.length - 1);
-  const current = clips[safeIndex];
-  const next = clips[safeIndex + 1];
-
+  /**
+   * Hand over to the buffer already holding the next clip.
+   *
+   * The newly active buffer keeps the same `src` it had while standing by, so
+   * React does not reload it and playback continues on the next frame. The
+   * buffer just vacated is the one that takes the clip after this.
+   */
   const handleEnded = () => {
     if (safeIndex + 1 < clips.length) {
       setIndex(safeIndex + 1);
+      setActive((showing) => 1 - showing);
       return;
     }
     onFinished?.();
@@ -81,30 +99,41 @@ export default function SignSequencePlayer({
 
   return (
     <div className="player">
-      <video
-        ref={videoRef}
-        data-testid="sign-video"
-        className="player__video"
-        src={current.video_url}
-        onEnded={handleEnded}
-        controls={controls}
-        loop={loop}
-        playsInline
-        // muted because these are sign clips with no meaningful audio, and an
-        // unmuted autoplay would be blocked by the browser outright.
-        muted
-      />
+      <div className="player__stage">
+        {[0, 1].map((buffer) => {
+          const isActive = buffer === active;
+          // The active buffer shows the current clip. The standby buffer holds
+          // the next one, already loading, so the swap has nothing to wait for.
+          const clip = isActive ? current : next;
 
-      {/* Preloading the next clip is what keeps the seam invisible. */}
-      {next ? (
-        <video
-          data-testid="sign-video-preload"
-          src={next.video_url}
-          preload="auto"
-          muted
-          hidden
-        />
-      ) : null}
+          return (
+            <video
+              key={buffer}
+              ref={buffers[buffer]}
+              // The testids follow the roles rather than the elements, so a
+              // caller always finds the clip on screen under one name.
+              data-testid={isActive ? "sign-video" : "sign-video-preload"}
+              className={
+                isActive
+                  ? "player__video"
+                  : "player__video player__video--standby"
+              }
+              src={clip?.video_url}
+              onEnded={isActive ? handleEnded : undefined}
+              controls={controls && isActive}
+              loop={loop}
+              playsInline
+              // Fully buffered while standing by, which is what removes the
+              // gap. The browser will not decode a frame it has not fetched.
+              preload="auto"
+              // muted because these are sign clips with no meaningful audio,
+              // and an unmuted autoplay would be blocked outright.
+              muted
+              aria-hidden={!isActive}
+            />
+          );
+        })}
+      </div>
 
       {controls ? (
         <p className="player__progress">

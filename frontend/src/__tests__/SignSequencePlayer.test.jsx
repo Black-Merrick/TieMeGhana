@@ -32,6 +32,11 @@ const sequence = {
   unavailable_tokens: [],
 };
 
+/** End whichever clip is currently on screen, as a real browser would. */
+function endCurrentClip() {
+  fireEvent.ended(screen.getByTestId("sign-video"));
+}
+
 const emptySequence = {
   source_text: "",
   segments: [],
@@ -55,7 +60,7 @@ describe("SignSequencePlayer", () => {
     // rather than a single word.
     render(<SignSequencePlayer sequence={sequence} />);
 
-    fireEvent.ended(screen.getByTestId("sign-video"));
+    endCurrentClip();
 
     expect(screen.getByTestId("sign-video")).toHaveAttribute(
       "src",
@@ -63,12 +68,64 @@ describe("SignSequencePlayer", () => {
     );
   });
 
+  it("hands over to the element that already holds the next clip", () => {
+    // The point of ADR 030. The next clip is not loaded when the current one
+    // ends, it was already loaded and decoding, so the swap costs no frames.
+    // Asserted by element identity: the standby element becomes the playing
+    // one, rather than the playing one being given a new src and reloading.
+    render(<SignSequencePlayer sequence={sequence} />);
+    const wasPlaying = screen.getByTestId("sign-video");
+    const wasStandby = screen.getByTestId("sign-video-preload");
+
+    endCurrentClip();
+
+    expect(screen.getByTestId("sign-video")).toBe(wasStandby);
+    expect(screen.getByTestId("sign-video-preload")).toBe(wasPlaying);
+  });
+
+  it("does not change the src of the clip it hands over to", () => {
+    // If the src changed on handover the browser would reload it, which is the
+    // flash of black this design exists to remove.
+    render(<SignSequencePlayer sequence={sequence} />);
+    const standbySrc = screen
+      .getByTestId("sign-video-preload")
+      .getAttribute("src");
+
+    endCurrentClip();
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute("src", standbySrc);
+  });
+
+  it("keeps both buffers fully preloaded, not merely hinted", () => {
+    // `preload="auto"` is what makes the browser fetch the whole clip. It will
+    // not decode a frame it has not fetched, so metadata alone would leave the
+    // gap in place.
+    render(<SignSequencePlayer sequence={sequence} />);
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute("preload", "auto");
+    expect(screen.getByTestId("sign-video-preload")).toHaveAttribute(
+      "preload",
+      "auto",
+    );
+  });
+
+  it("hides the standby clip from assistive technology", () => {
+    // Two videos are on screen at once. Only one is the utterance.
+    render(<SignSequencePlayer sequence={sequence} />);
+
+    expect(screen.getByTestId("sign-video-preload")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
   it("flattens segments so a fingerspelled word plays letter by letter", () => {
     render(<SignSequencePlayer sequence={sequence} />);
-    const video = screen.getByTestId("sign-video");
 
-    fireEvent.ended(video);
-    fireEvent.ended(video);
+    // Re-queried each time, because the two buffers alternate which one is on
+    // screen. Only the playing element fires `ended` in a real browser.
+    endCurrentClip();
+    endCurrentClip();
 
     expect(screen.getByTestId("sign-video")).toHaveAttribute(
       "src",
@@ -90,11 +147,10 @@ describe("SignSequencePlayer", () => {
   it("reports when the whole sequence has finished", () => {
     const onFinished = vi.fn();
     render(<SignSequencePlayer sequence={sequence} onFinished={onFinished} />);
-    const video = screen.getByTestId("sign-video");
 
-    fireEvent.ended(video);
-    fireEvent.ended(video);
-    fireEvent.ended(video);
+    endCurrentClip();
+    endCurrentClip();
+    endCurrentClip();
 
     expect(onFinished).toHaveBeenCalledOnce();
   });

@@ -1075,3 +1075,56 @@ supports it. See ADR 029.
 | Frontend suite | 226 passed, 17 files |
 | Lint | eslint clean at zero warnings |
 | Production build | PWA builds |
+
+---
+
+## Making the stitched video actually continuous
+
+**The problem.** Playback advanced by changing the `src` of a single video
+element. That makes the browser tear down the current video, load the next, and
+decode its first frame, which shows as a flash of black between every word. The
+hidden preload element helped the network but not the display, because the
+element that has to show the clip still had to load and decode it itself.
+
+So the sentence played as a series of clips with visible joins, not as one
+video, which is what FR 1.7 asks for.
+
+**The fix.** Two video elements stacked in the same space. While one plays, the
+other already holds the next clip fully fetched and decoding. When the playing
+clip ends they swap roles, and the newly visible element keeps the `src` it
+already had, so nothing reloads and playback continues on the following frame.
+See ADR 030.
+
+The standby element is hidden with `opacity: 0`, not `display: none`. A
+`display: none` video is not required to keep decoding, which would have
+defeated the whole point.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Frontend suite | 230 passed, 17 files |
+| Lint | eslint clean at zero warnings |
+| Production build | PWA builds |
+
+The handover is asserted by element identity: the standby element must *become*
+the playing one, rather than the playing one being given a new source. That
+identity is the mechanism, and a refactor that reintroduced a `src` swap would
+look correct while quietly restoring the flash.
+
+### Problems hit, and the fixes
+
+**Two existing tests held a stale element.** They captured the video once and
+fired `ended` on it repeatedly. With two buffers the playing element alternates,
+so the second event landed on the standby element, which has no `ended`
+handler. That is correct behaviour, not a bug: in a real browser only the
+playing element fires the event. The tests now re-query before each event, which
+is also a more accurate description of what happens.
+
+### Still open, deliberately
+
+If a visible join remains once real footage is in, the next step is server side
+concatenation with ffmpeg, cached per resolved sentence. That gives up per clip
+caching and adds a runtime dependency, so it is worth doing only if this proves
+insufficient with clips that are actually filmed. Noted in ADR 030 so the
+option is not lost.
