@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -111,11 +111,52 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function askFreely(text = "Did you vomit?", outputLanguage = "en") {
+/**
+ * Play the sign video through to its end.
+ *
+ * The answers replace the video once the patient has watched it, so a test
+ * that wants to answer has to watch first. jsdom does not play media, so the
+ * ended event is dispatched directly, which is what a real browser fires.
+ */
+async function watchQuestion() {
+  let video = null;
+  try {
+    video = await waitFor(() => {
+      const element = document.querySelector("video");
+      if (!element) throw new Error("no sign video on screen");
+      return element;
+    });
+  } catch {
+    // No video, which is the case for a refused sentence and for one still
+    // behind the confirmation gate. Nothing to watch, and nothing to assert
+    // here: those cases have their own tests.
+    return;
+  }
+
+  fireEvent.ended(video);
+
+  // The answers replace the video after a short settle, so waiting for the
+  // event alone would race the swap.
+  await waitFor(() =>
+    expect(screen.getByTestId("stage-answers")).toBeInTheDocument(),
+  );
+}
+
+async function askFreely(
+  text = "Did you vomit?",
+  outputLanguage = "en",
+  { watch = true } = {},
+) {
   const user = userEvent.setup();
   render(<GuidedInterrogation outputLanguage={outputLanguage} />);
   await user.type(screen.getByLabelText(/message for the patient/i), text);
   await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+
+  // The patient watches the question before answering it, so the answers
+  // replace the video only once it has played. Every test that goes on to
+  // answer needs that to have happened.
+  if (watch) await watchQuestion();
+
   return user;
 }
 
@@ -142,8 +183,9 @@ describe("asking in the doctor's own words", () => {
 
   it("plays the question to the patient as a stitched sign video", async () => {
     // FR 2.4. The patient sees GhSL, stitched from the clip library, not the
-    // English the doctor typed.
-    await askFreely();
+    // English the doctor typed. Left unwatched: once it has played the answers
+    // take its place, which is what the next tests are about.
+    await askFreely("Did you vomit?", "en", { watch: false });
 
     await waitFor(() => {
       expect(screen.getByTestId("sign-video")).toHaveAttribute(
@@ -185,13 +227,25 @@ describe("the patient answering yes or no", () => {
   });
 
   it("needs no typing from the patient", async () => {
-    // Section 4.3. The patient is never asked to type. The only text input on
-    // screen is the doctor's own, which they use to ask the question.
+    // Section 4.3. The patient is never asked to type.
+    //
+    // This used to assert that the answer buttons carried no text, which was
+    // a proxy for the requirement rather than the requirement, and it broke
+    // when the buttons gained labels under ADR 047. What it should have
+    // checked all along: the only place to type on this screen is the
+    // doctor's, and the patient answers by tapping.
     await askFreely();
 
     await waitFor(() => screen.getByTestId("choice-yes"));
-    expect(screen.getByTestId("choice-yes")).toHaveTextContent("");
-    expect(screen.getByTestId("choice-no")).toHaveTextContent("");
+
+    const typeable = [
+      ...document.querySelectorAll("textarea, input[type='text'], [contenteditable='true']"),
+    ];
+    expect(typeable).toHaveLength(1);
+    expect(typeable[0]).toBe(screen.getByLabelText(/message for the patient/i));
+
+    expect(screen.getByTestId("choice-yes").tagName).toBe("BUTTON");
+    expect(screen.getByTestId("choice-no").tagName).toBe("BUTTON");
   });
 
   it("tells the doctor a nod counts, and that their tap is what is recorded", async () => {
@@ -271,6 +325,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(captionUtterance).toHaveBeenCalledWith({
@@ -287,6 +342,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("answer-option-HEAD")).toBeInTheDocument();
@@ -300,6 +356,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
     await waitFor(() => screen.getByTestId("answer-option-STOMACH"));
     await user.click(screen.getByTestId("answer-option-STOMACH"));
 
@@ -323,6 +380,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("incomplete-locations")).toBeInTheDocument();
@@ -335,10 +393,12 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
     await waitFor(() => screen.getByTestId("answer-option-HEAD"));
 
     await user.type(screen.getByLabelText(/message for the patient/i), "Fever?");
     await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
@@ -354,6 +414,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("caption-error")).toBeInTheDocument();
@@ -369,6 +430,7 @@ describe("asking where it hurts", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("incomplete-locations")).toBeInTheDocument();
@@ -454,6 +516,7 @@ describe("speaking the patient's answer aloud", () => {
     render(<GuidedInterrogation outputLanguage="en" />);
 
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
     await waitFor(() => screen.getByTestId("answer-option-STOMACH"));
     await user.click(screen.getByTestId("answer-option-STOMACH"));
 
@@ -501,6 +564,7 @@ describe("surviving a page reload", () => {
 
     cleanup();
     render(<GuidedInterrogation outputLanguage="en" />);
+    await watchQuestion();
 
     expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
   });
@@ -524,10 +588,12 @@ describe("surviving a page reload", () => {
     const user = userEvent.setup();
     render(<GuidedInterrogation outputLanguage="en" />);
     await user.click(screen.getByTestId("ask-where-it-hurts"));
+    await watchQuestion();
     await waitFor(() => screen.getByTestId("answer-option-HEAD"));
 
     cleanup();
     render(<GuidedInterrogation outputLanguage="en" />);
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("answer-option-HEAD")).toBeInTheDocument();
@@ -592,6 +658,7 @@ describe("the safety gate, ADR 033", () => {
     expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("confirm-show"));
+    await watchQuestion();
 
     await waitFor(() => {
       expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
@@ -637,5 +704,83 @@ describe("the safety gate, ADR 033", () => {
       expect(screen.getByTestId("caption")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("utterance-confirm")).not.toBeInTheDocument();
+  });
+});
+
+describe("the answers take the video's place", () => {
+  it("withholds the answers until the patient has watched the question", async () => {
+    // A Deaf patient learns the question from the sign video. Offering Yes and
+    // No before it has played invites a tap on a question not yet understood.
+    await askFreely("Did you vomit?", "en", { watch: false });
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("puts them where the video was, not below it", async () => {
+    // The reason this moved. A Yes the patient has to scroll to find is a Yes
+    // they may not find, and the doctor cannot see what they are looking at.
+    await askFreely();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("stage-answers")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("stage-answers")).toContainElement(
+      screen.getByTestId("choice-yes"),
+    );
+    // The video is gone, so nothing competes with the answer for the space.
+    expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("keeps the caption on screen while they answer", async () => {
+    // The caption is the question. Removing it with the video would leave the
+    // patient choosing between Yes and No with nothing to answer.
+    await askFreely();
+
+    await waitFor(() => screen.getByTestId("stage-answers"));
+    expect(screen.getByTestId("caption")).toBeInTheDocument();
+  });
+
+  it("lets the question be played again", async () => {
+    // A sign seen once may not have been understood, and a patient who cannot
+    // ask for a repeat will guess.
+    const user = await askFreely();
+
+    await waitFor(() => screen.getByTestId("replay-question"));
+    await user.click(screen.getByTestId("replay-question"));
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("offers the answers when there is no video to wait for", async () => {
+    // Every word resolved to an omission, so the sentence is safe to show and
+    // answerable but no video will ever fire an ended event. Waiting for one
+    // would leave the patient with no way to answer at all.
+    const c = caption();
+    c.sequence.segments = [];
+    captionUtterance.mockResolvedValue(c);
+
+    await askFreely("Did you vomit?", "en", { watch: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    });
+    // Nothing to replay, so nothing offers to.
+    expect(screen.queryByTestId("replay-question")).not.toBeInTheDocument();
+  });
+
+  it("starts the next question unwatched", async () => {
+    // Otherwise the answers would already be on screen for a question the
+    // patient has not seen.
+    const user = await askFreely();
+    await waitFor(() => screen.getByTestId("choice-yes"));
+
+    await user.click(screen.getByTestId("choice-yes"));
+    await user.type(screen.getByLabelText(/message for the patient/i), "Fever?");
+    await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
   });
 });

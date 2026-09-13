@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -201,5 +201,87 @@ describe("taking a copy", () => {
 
     expect(screen.queryByTestId("patient-name")).not.toBeInTheDocument();
     expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("naming the saved copy, in a dialog", () => {
+  it("asks for the name in a dialog rather than under the list", async () => {
+    // The panel it replaces sat below a transcript that scrolls, so on a long
+    // consultation the field the patient had just asked for was off screen and
+    // the button that completed the action was back up in the header.
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toContainElement(screen.getByTestId("patient-name"));
+    expect(dialog).toContainElement(screen.getByTestId("save-transcript"));
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("puts the cursor in the field", async () => {
+    // The dialog exists to hold one field, so making the patient find it
+    // first would be the only thing it asks of them.
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+
+    expect(screen.getByTestId("patient-name")).toHaveFocus();
+  });
+
+  it("saves on Enter, without reaching for the button", async () => {
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+    await user.type(screen.getByTestId("patient-name"), "Ama Mensah{Enter}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes on Escape", async () => {
+    // What a keyboard user reaches for first, and it goes through the same
+    // path as Cancel so the two cannot drift apart.
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("still refuses to save without a name", async () => {
+    // The name is the point of asking, so an unnamed record would defeat it.
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+    await user.click(screen.getByTestId("save-transcript"));
+
+    expect(screen.getByTestId("patient-name-warning")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("forgets the name after saving, per ADR 028", async () => {
+    // A name stored beside a clinical transcript on a shared device is what
+    // makes a stray record identifying.
+    const user = userEvent.setup();
+    render(<TranscriptView entries={entries} onDiscard={() => {}} />);
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+    await user.type(screen.getByTestId("patient-name"), "Ama Mensah");
+    await user.click(screen.getByTestId("save-transcript"));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("start-save-transcript"));
+    expect(screen.getByTestId("patient-name")).toHaveValue("");
   });
 });

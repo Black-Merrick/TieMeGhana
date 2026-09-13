@@ -46,6 +46,15 @@ const ALERTS = [
   alert("PREGNANCY", "Pregnant", "pregnancy"),
 ];
 
+/**
+ * A spoken response with audio that can actually be played.
+ *
+ * The empty `audio_base64` this used to carry made `audioUrlFrom` throw, so
+ * the hook went straight to "failed" and no triage test ever reached the
+ * playing state at all. A fixture whose default is the broken case is the
+ * mirror of the problem recorded in ADR 022: it quietly excuses the code from
+ * the path it spends its life on.
+ */
 function speech(text) {
   return {
     text,
@@ -53,7 +62,8 @@ function speech(text) {
     output_language: "tw",
     translated_text: text,
     audio_url: null,
-    audio_base64: "",
+    audio_base64: btoa("RIFFWAVE"),
+    audio_media_type: "audio/wav",
     language_provider: "stub",
   };
 }
@@ -63,6 +73,25 @@ beforeEach(() => {
   fetchCriticalAlerts.mockResolvedValue(ALERTS);
   speakResponse.mockImplementation(async ({ text }) => speech(text));
   vi.stubGlobal("navigator", { ...navigator, vibrate: vi.fn() });
+  vi.stubGlobal("URL", {
+    ...globalThis.URL,
+    createObjectURL: () => "blob:spoken",
+    revokeObjectURL: () => {},
+  });
+
+  // Plays and finishes at once. jsdom does not implement media playback, so
+  // without this every test sat permanently mid speech, which since the
+  // speaking overlay arrived means permanently unable to tap anything.
+  vi.stubGlobal(
+    "Audio",
+    class {
+      play() {
+        this.onplay?.();
+        this.onended?.();
+        return Promise.resolve();
+      }
+    },
+  );
 });
 
 afterEach(() => {
@@ -321,7 +350,7 @@ describe("a malformed response", () => {
 });
 
 describe("the body outline", () => {
-  it("keeps the nine region ids the rest of the app looks clips up by", async () => {
+  it("keeps the body region ids the rest of the app looks clips up by", async () => {
     // These ids are glosses. Renaming one to suit the drawing would silently
     // stop a body location sign resolving, with no error anywhere.
     renderTriage();
@@ -340,6 +369,50 @@ describe("the body outline", () => {
     ]) {
       expect(screen.getByTestId(`body-part-${id}`)).toBeInTheDocument();
     }
+  });
+
+  it("offers the face parts a full length figure cannot", async () => {
+    // An eye on the body figure is around fifteen pixels across on a phone,
+    // which a patient in distress cannot hit, so the face is drawn enlarged
+    // with its own regions.
+    renderTriage();
+    await settle();
+
+    for (const id of ["FACE", "EYE", "EAR", "NOSE", "MOUTH"]) {
+      expect(screen.getByTestId(`body-part-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("does not let a trunk region colour the arms", async () => {
+    // The bug this structure exists to prevent: with one figure wide clip, the
+    // chest band was clipped to the whole silhouette, so its fill ran out
+    // along the arms and tapping the chest lit up the arms as well. Asserted
+    // on the clips rather than on pixels, because that is the thing that stops
+    // it: a region can only paint inside the outline it is clipped to.
+    renderTriage();
+    await settle();
+
+    const clipOf = (id) =>
+      screen.getByTestId(`body-part-${id}`).getAttribute("clip-path");
+
+    for (const trunk of ["CHEST", "STOMACH", "WAIST", "LEG"]) {
+      expect(clipOf(trunk)).toBe(clipOf("HEAD"));
+      expect(clipOf(trunk)).not.toBe(clipOf("ARM"));
+    }
+    expect(clipOf("HAND")).toBe(clipOf("ARM"));
+  });
+
+  it("gives no two regions the same name", async () => {
+    // Two controls called "Head" pointing at different drawings is how a
+    // clinician ends up unsure which one the patient tapped.
+    renderTriage();
+    await settle();
+
+    const names = [
+      ...document.querySelectorAll(".body__part"),
+    ].map((part) => part.getAttribute("aria-label"));
+
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it("is symmetric about the centre line", async () => {
@@ -399,5 +472,135 @@ describe("the body outline", () => {
     await userEvent.click(screen.getByTestId("body-part-STOMACH"));
 
     expect(screen.getByTestId("body-chosen")).toHaveTextContent("Stomach");
+  });
+});
+
+describe("telling the patient they are being heard", () => {
+  /** An audio element that starts and never finishes, so speech stays live. */
+  function stillSpeaking() {
+    vi.stubGlobal(
+      "Audio",
+      class {
+        play() {
+          this.onplay?.();
+          return Promise.resolve();
+        }
+      },
+    );
+  }
+
+  it("shows a speaking face, a wave and the words, over everything", async () => {
+    // The patient has no way to hear whether anything was said, and a cue they
+    // have to scroll to find is a cue that arrives too late.
+    stillSpeaking();
+    renderTriage();
+
+    await userEvent.click(screen.getByTestId("pain-level-5"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("speaking-overlay")).toBeInTheDocument();
+    });
+
+    const overlay = screen.getByTestId("speaking-overlay");
+    expect(overlay.querySelector(".wave")).not.toBeNull();
+    expect(screen.getByTestId("talking-face")).toBeInTheDocument();
+    expect(screen.getByTestId("speaking-text")).toHaveTextContent("Worst pain");
+  });
+
+  it("takes no further taps until it has finished", async () => {
+    // One tap has to mean one answer. Two queued underneath each other reach
+    // the doctor as two sentences with nothing to say which tap produced
+    // which, and in triage that is a wrong answer rather than a clumsy one.
+    stillSpeaking();
+    renderTriage();
+
+    await userEvent.click(screen.getByTestId("pain-level-5"));
+    await waitFor(() => screen.getByTestId("speaking-overlay"));
+
+    speakResponse.mockClear();
+    await userEvent.click(screen.getByTestId("body-part-CHEST"));
+
+    expect(speakResponse).not.toHaveBeenCalled();
+    expect(screen.getByTestId("body-chosen")).toHaveTextContent("");
+  });
+
+  it("can always be stopped, so a stalled answer cannot trap the patient", async () => {
+    // An audio element that stalls would otherwise leave a dialog with no way
+    // out, which in an emergency is worse than the ambiguity it prevents.
+    stillSpeaking();
+    renderTriage();
+
+    await userEvent.click(screen.getByTestId("pain-level-5"));
+    await waitFor(() => screen.getByTestId("stop-speaking"));
+
+    await userEvent.click(screen.getByTestId("stop-speaking"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("speaking-overlay")).not.toBeInTheDocument();
+    });
+    // Reported as stopped, not as spoken: part of an answer reaching the
+    // doctor is not the same as all of it, and the patient cannot hear the
+    // difference.
+    expect(screen.getByTestId("spoken-stopped")).toBeInTheDocument();
+  });
+
+  it("puts what was said at the top, not below the fold", async () => {
+    renderTriage();
+
+    await userEvent.click(screen.getByTestId("pain-level-4"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
+    });
+    expect(document.querySelector(".triage__spoken")).toContainElement(
+      screen.getByTestId("spoken-response"),
+    );
+  });
+
+  it("lets a selection be said again for a doctor who missed it", async () => {
+    vi.stubGlobal(
+      "Audio",
+      class {
+        play() {
+          this.onplay?.();
+          this.onended?.();
+          return Promise.resolve();
+        }
+      },
+    );
+
+    renderTriage();
+    await userEvent.click(screen.getByTestId("body-part-CHEST"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("replay-answer")).toBeInTheDocument();
+    });
+
+    speakResponse.mockClear();
+    await userEvent.click(screen.getByTestId("replay-answer"));
+
+    // Replayed from the response already in hand, so repeating costs no
+    // further metered Khaya credit. ADR 015.
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+
+  it("offers nothing to replay before anything has been said", async () => {
+    renderTriage();
+    await settle();
+
+    expect(screen.queryByTestId("replay-answer")).not.toBeInTheDocument();
+  });
+});
+
+describe("the two figures", () => {
+  it("puts the head and the body side by side", async () => {
+    // The head is enlarged so an eye can be hit at all; the body is the larger
+    // of the two because most of what a patient points at is on it.
+    renderTriage();
+    await settle();
+
+    expect(screen.getByTestId("face-map")).toBeInTheDocument();
+    expect(screen.getByTestId("body-map")).toBeInTheDocument();
+    expect(document.querySelectorAll(".body__figure-wrap")).toHaveLength(2);
   });
 });

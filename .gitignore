@@ -28,6 +28,9 @@ htmlcov/
 node_modules/
 dist/
 dist-ssr/
+# vite-plugin-pwa writes the development service worker here, now that the PWA
+# is generated during `npm run dev` so installing can be tested where it is built.
+frontend/dev-dist/
 .vite/
 coverage/
 

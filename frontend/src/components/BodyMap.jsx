@@ -1,7 +1,19 @@
 import { useId } from "react";
 
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
-import { DETAIL_MARKS, REGIONS, SILHOUETTE, VIEW_BOX } from "./bodySilhouette.js";
+import {
+  ARM_PATHS,
+  CLIPS,
+  DETAIL_MARKS,
+  EAR_PATHS,
+  FACE_MARKS,
+  FACE_PATH,
+  FACE_REGIONS,
+  FACE_VIEW_BOX,
+  REGIONS,
+  TRUNK_PATH,
+  VIEW_BOX,
+} from "./bodySilhouette.js";
 
 /**
  * A tappable outline of a human body, SRS FR 5.2.
@@ -18,15 +30,19 @@ import { DETAIL_MARKS, REGIONS, SILHOUETTE, VIEW_BOX } from "./bodySilhouette.js
  * before a single clip is filmed. The patient is pointing at a picture of a
  * body, not choosing between sign videos.
  *
- * The figure itself lives in `bodySilhouette.js`. It is one continuous contour,
- * and every region here is clipped to it, so a region can only ever cover the
- * part of the body that is actually there. A horizontal band across the chest
- * comes out chest shaped.
+ * Two figures, not one. The face is drawn enlarged beside the body because an
+ * eye on a full length figure is about fifteen pixels across on a phone, which
+ * is far below what a person in distress can hit. Printed anatomical charts
+ * enlarge the head for the same reason.
  */
 export default function BodyMap({ onChoose, chosenId = null, disabled = false }) {
-  // An id per instance. Two maps on one page sharing a clip path id would have
+  const chosen =
+    [...REGIONS, ...FACE_REGIONS].find((region) => region.id === chosenId) ?? null;
+
+  // Ids per instance. Two maps on one page sharing a clip path id would have
   // the second silently reuse the first one's clip.
-  const clipId = `${useId()}-body`;
+  const base = useId();
+  const clipId = (name) => `${base}-${name}`;
 
   const choose = (region) => {
     if (disabled) return;
@@ -38,76 +54,148 @@ export default function BodyMap({ onChoose, chosenId = null, disabled = false })
     onChoose(region);
   };
 
-  const chosen = REGIONS.find((region) => region.id === chosenId) ?? null;
+  const regionGroup = (region) => (
+    <g
+      key={`${region.clip}-${region.id}`}
+      className={
+        chosenId === region.id ? "body__part body__part--chosen" : "body__part"
+      }
+      clipPath={`url(#${clipId(region.clip)})`}
+      // SVG shapes are not natively focusable or clickable, so the role, the
+      // label and the key handling are all explicit. Without them the map
+      // would be unusable with a keyboard or a screen reader.
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-label={region.label}
+      aria-pressed={chosenId === region.id}
+      onClick={() => choose(region)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          choose(region);
+        }
+      }}
+      data-testid={`body-part-${region.id}`}
+    >
+      {/* Arms, hands, eyes and ears come in pairs, so a region can own more
+          than one shape. Either side of the body says the same thing. */}
+      {region.outlines.map((points, index) => (
+        <polygon key={index} points={points} />
+      ))}
+    </g>
+  );
 
   return (
-    <figure className="body">
-      <svg
-        className="body__figure"
-        viewBox={`0 0 ${VIEW_BOX.width} ${VIEW_BOX.height}`}
-        role="group"
-        aria-label="Where does it hurt"
-        data-testid="body-map"
-      >
-        <defs>
-          <clipPath id={clipId}>
-            <path d={SILHOUETTE} />
-          </clipPath>
-        </defs>
-
-        {/* The body itself, so an untouched figure reads as one shape rather
-            than as nine tiles waiting to be coloured in. */}
-        <path className="body__fill" d={SILHOUETTE} />
-
-        <g clipPath={`url(#${clipId})`}>
-          {REGIONS.map((region) => (
-            <g
-              key={region.id}
-              className={
-                chosenId === region.id ? "body__part body__part--chosen" : "body__part"
-              }
-              // SVG shapes are not natively focusable or clickable, so the role,
-              // the label and the key handling are all explicit. Without them the
-              // map would be unusable with a keyboard or a screen reader.
-              role="button"
-              tabIndex={disabled ? -1 : 0}
-              aria-label={region.label}
-              aria-pressed={chosenId === region.id}
-              onClick={() => choose(region)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  choose(region);
-                }
-              }}
-              data-testid={`body-part-${region.id}`}
-            >
-              {/* Arms and hands come in pairs, so a region can own more than
-                  one shape. Either side of the body says the same thing. */}
-              {region.outlines.map((points, index) => (
-                <polygon key={index} points={points} />
+    <div className="body">
+      <div className="body__figure-wrap body__figure-wrap--face">
+        <p className="body__caption">Head</p>
+        <svg
+          className="body__face"
+          viewBox={`0 0 ${FACE_VIEW_BOX.width} ${FACE_VIEW_BOX.height}`}
+          role="group"
+          aria-label="Point to the part of the face"
+          data-testid="face-map"
+        >
+          <defs>
+            <clipPath id={clipId(CLIPS.FACE)}>
+              <path d={FACE_PATH} />
+              {EAR_PATHS.map((ear) => (
+                <path key={ear} d={ear} />
               ))}
-            </g>
-          ))}
-        </g>
+            </clipPath>
+          </defs>
 
-        {/* Contour and interior marks last, so a selected region is tinted
-            underneath them and the body keeps its edges. Neither takes taps:
-            they sit over the regions and would otherwise swallow them. */}
-        <path className="body__outline" d={SILHOUETTE} />
-        <g className="body__detail">
-          {DETAIL_MARKS.map((mark) => (
-            <path key={mark} d={mark} />
+          <path className="body__fill" d={FACE_PATH} />
+          {EAR_PATHS.map((ear) => (
+            <path key={ear} className="body__fill" d={ear} />
           ))}
-        </g>
-      </svg>
+
+          {FACE_REGIONS.map(regionGroup)}
+
+          <path className="body__outline" d={FACE_PATH} />
+          {EAR_PATHS.map((ear) => (
+            <path key={ear} className="body__outline" d={ear} />
+          ))}
+
+          {/* Drawn features, so the head reads as a face. The tap areas above
+              are rectangles, which are easier to hit than an eye's real shape
+              and need not match it. */}
+          <g className="body__detail">
+            {FACE_MARKS.map((mark, index) =>
+              mark.kind === "pupil" ? (
+                <circle
+                  key={index}
+                  cx={mark.cx}
+                  cy={mark.cy}
+                  r={mark.r}
+                  className="body__pupil"
+                />
+              ) : (
+                <path
+                  key={index}
+                  d={mark.d}
+                  className={mark.kind === "eye" ? "body__eye" : undefined}
+                />
+              ),
+            )}
+          </g>
+        </svg>
+      </div>
+
+      <div className="body__figure-wrap body__figure-wrap--body">
+        <p className="body__caption">Body</p>
+        <svg
+          className="body__figure"
+          viewBox={`0 0 ${VIEW_BOX.width} ${VIEW_BOX.height}`}
+          role="group"
+          aria-label="Point to where it hurts"
+          data-testid="body-map"
+        >
+          <defs>
+            {/* Two clips rather than one. The trunk and the arms are separate
+                outlines, so a chest band clipped to the trunk cannot bleed out
+                along the arms hanging beside it, which is exactly what a single
+                figure wide clip used to do. */}
+            <clipPath id={clipId(CLIPS.TRUNK)}>
+              <path d={TRUNK_PATH} />
+            </clipPath>
+            <clipPath id={clipId(CLIPS.ARMS)}>
+              {ARM_PATHS.map((arm) => (
+                <path key={arm} d={arm} />
+              ))}
+            </clipPath>
+          </defs>
+
+          {/* The untouched figure. One tone across trunk and arms, so it reads
+              as a body rather than as parts waiting to be coloured in. */}
+          <path className="body__fill" d={TRUNK_PATH} />
+          {ARM_PATHS.map((arm) => (
+            <path key={arm} className="body__fill" d={arm} />
+          ))}
+
+          {REGIONS.map(regionGroup)}
+
+          {/* Contour and interior marks last, so a selected region is tinted
+              underneath them and the body keeps its edges. Neither takes taps:
+              they sit over the regions and would otherwise swallow them. */}
+          <path className="body__outline" d={TRUNK_PATH} />
+          {ARM_PATHS.map((arm) => (
+            <path key={arm} className="body__outline" d={arm} />
+          ))}
+          <g className="body__detail">
+            {DETAIL_MARKS.map((mark) => (
+              <path key={mark} d={mark} />
+            ))}
+          </g>
+        </svg>
+      </div>
 
       {/* Read by the clinician, and announced to a screen reader. The patient
           has the tinted region and the spoken output; this is confirmation for
           whoever is treating them that the tap landed where they think. */}
-      <figcaption className="body__chosen" aria-live="polite" data-testid="body-chosen">
+      <p className="body__chosen" aria-live="polite" data-testid="body-chosen">
         {chosen ? chosen.label : ""}
-      </figcaption>
-    </figure>
+      </p>
+    </div>
   );
 }

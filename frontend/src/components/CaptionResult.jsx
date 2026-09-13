@@ -25,7 +25,7 @@ import SignSequencePlayer from "./SignSequencePlayer.jsx";
  * nothing wrong with it would teach the doctor to tap through the
  * confirmation without reading it, which would make the gate worthless.
  */
-export default function CaptionResult({ result, onShown }) {
+export default function CaptionResult({ result, onShown, answers = null }) {
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedFor, setConfirmedFor] = useState(result);
 
@@ -71,7 +71,7 @@ export default function CaptionResult({ result, onShown }) {
     );
   }
 
-  return <ShownUtterance result={result} />;
+  return <ShownUtterance result={result} answers={answers} />;
 }
 
 /** The sentence cannot be signed without changing what it means. */
@@ -172,11 +172,72 @@ function ConfirmUtterance({ result, onShow }) {
  * Reached only once the sentence is safe, and confirmed if anything about it
  * differed from what the doctor typed.
  */
-function ShownUtterance({ result }) {
+/**
+ * How long the last sign stays on screen before the answers replace it.
+ *
+ * A sign ends on a handshape, and the final one carries meaning. Swapping the
+ * video out on the same frame as the `ended` event cuts that shape off and
+ * makes the change feel like something went wrong rather than like the
+ * question finishing. Long enough to read as deliberate, short enough that
+ * nobody waits.
+ */
+const ANSWER_DELAY_MS = 650;
+
+function ShownUtterance({ result, answers }) {
+  // Whether the patient has watched the question through to the end. Held per
+  // utterance, so a new question starts unwatched however the last one ended.
+  const [watched, setWatched] = useState(false);
+  const [watchedFor, setWatchedFor] = useState(result);
+
+  // A counter rather than a boolean, because replaying means mounting a fresh
+  // player: the key below changes, the old one is discarded, and the new one
+  // starts at the first clip. That is exactly "show it again".
+  const [replays, setReplays] = useState(0);
+
+  if (watchedFor !== result) {
+    setWatchedFor(result);
+    setWatched(false);
+    setReplays(0);
+  }
+
+  // Cleared on unmount and whenever the question changes, so a pending swap
+  // from the previous question cannot land on the next one and show its
+  // answers before it has played.
+  const settle = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (settle.current) clearTimeout(settle.current);
+    },
+    [result],
+  );
+
+  const finished = () => {
+    if (settle.current) clearTimeout(settle.current);
+    settle.current = setTimeout(() => setWatched(true), ANSWER_DELAY_MS);
+  };
+
+  // Nothing to play, which happens when every word resolved to an omission.
+  // The sentence is still safe to show and still answerable, but no video will
+  // ever fire its ended event, so waiting for one would leave the patient with
+  // no way to answer at all. Treated as already watched.
+  const hasVideo = (result.sequence.segments ?? []).some(
+    (segment) => (segment.clips ?? []).length > 0,
+  );
+
+  // The answers take the video's place rather than sitting under it. A patient
+  // who has to scroll to find Yes and No may not find them, and the doctor
+  // cannot see what they are looking at. Section 4.5: the option has to be
+  // where the patient is already looking.
+  const answering = answers !== null && (watched || !hasVideo);
+
   return (
     <div className="result">
       {result.language_provider === "stub" ? (
-        <p className="result__warning" data-testid="provider-warning">
+        <p className="notice notice--warn" data-testid="provider-warning">
+          <span className="notice__icon" aria-hidden="true">
+            <InfoIcon />
+          </span>
           {result.transcript_source === "spoken" ? (
             <>
               Development language service. Your speech was{" "}
@@ -195,15 +256,65 @@ function ShownUtterance({ result }) {
         </p>
       ) : null}
 
-      <p
-        className="result__caption"
-        data-testid="caption"
-        lang={result.caption_language}
-      >
-        {result.caption}
-      </p>
+      {/* The sign and the caption on one panel, never as tabs, per section
+          4.1. The video is the message and gets the contrast; the caption sits
+          beneath it on the same dark ground, so the patient reads both without
+          looking away. */}
+      <div className="stage">
+        <div className="stage__bar">
+          <span className="stage__chip">
+            <span className="shell__dot" aria-hidden="true" />
+            {answering ? "Your answer" : "Sign video"}
+          </span>
+          <span className="stage__room">Ghanaian Sign Language</span>
+        </div>
 
-      <SignSequencePlayer sequence={result.sequence} />
+        {answering ? (
+          <div className="stage__answers" data-testid="stage-answers">
+            {answers}
+
+            {/* Always offered when there is something to replay. A sign seen
+                once may not have been understood, and a patient who cannot ask
+                for a repeat will guess. */}
+            {hasVideo ? (
+              <button
+                type="button"
+                className="stage__replay"
+                onClick={() => {
+                  setWatched(false);
+                  setReplays((count) => count + 1);
+                }}
+                data-testid="replay-question"
+              >
+                Show the question again
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <SignSequencePlayer
+            key={replays}
+            sequence={result.sequence}
+            onFinished={finished}
+          />
+        )}
+
+        <p className="stage__caption" data-testid="caption" lang={result.caption_language}>
+          <span className="stage__caption-label">The doctor said</span>
+          {result.caption}
+        </p>
+      </div>
     </div>
+  );
+}
+
+/* Inline so a notice cannot lose the mark that distinguishes it from body
+   text on a slow connection. */
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 8.8v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="10" cy="6.2" r="1.05" fill="currentColor" />
+    </svg>
   );
 }

@@ -1,78 +1,762 @@
+/*
+ * Design tokens.
+ *
+ * Sampled from the mockups in `frontend/UI/`, which set the visual direction:
+ * a deep green, a pale cyan page, white cards, and one accent each for
+ * caution and danger. Every colour the app uses is named here, so a screen
+ * cannot quietly invent a fifteenth shade of green.
+ *
+ * No webfont. The mockups show a display face for headings, and loading one
+ * from a CDN would mean the layout shifts or falls back to something else
+ * entirely on a hospital connection, which NFR 5 exists to prevent. System
+ * fonts render instantly, offline, on every device, and the weight and
+ * tracking below carry most of what the display face was doing.
+ */
 :root {
   --colour-ink: #10221c;
   --colour-surface: #ffffff;
-  --colour-primary: #0b3d2e;
+  /* The page behind the cards. A cool near white, sampled from the desktop
+     mockup: enough separation for a white card to read as raised, without the
+     tint competing with the mint and cream that carry meaning. */
+  --colour-page: #f8fafc;
+  --colour-primary: #0a4a3a;
+  /* Darker still, for the logo tile and headings, where the mockups go almost
+     black green. */
+  --colour-primary-deep: #00352b;
   --colour-accent: #f5c542;
   --colour-muted: #5d6f68;
-  --colour-offline: #b04a3a;
+  --colour-offline: #b93829;
+
+  /* Soft grounds. Each pairs with one of the colours above and is only ever
+     used behind it, so a tinted panel always means the same thing. */
+  --colour-mint: #e8f5ef;
+  /* Paler still, for the role chips, which sit on white and must not shout. */
+  --colour-mint-pale: #f0fdf9;
+  --colour-mint-deep: #d6ecf1;
+  --colour-danger-soft: #fdedec;
+  --colour-amber: #d97706;
+  --colour-amber-soft: #fefbef;
+  --colour-cream: #fffdf5;
+  --colour-inset: #f8fafc;
+  --colour-line: #e6ebef;
+  /* Fields get a darker hairline than cards do. A card's edge only has to
+     separate it from the page, but a box someone is meant to type into has to
+     announce itself, and at the card border's weight it read as a flat panel
+     that nobody would click. Still 1px: deeper, not thicker. */
+  --colour-field-line: #aebbc5;
+
+  --radius: 0.7rem;
+  --radius-lg: 1rem;
+  --shadow-card: 0 1px 2px rgba(16, 34, 28, 0.04), 0 1px 8px rgba(16, 34, 28, 0.04);
 
   color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--colour-ink);
-  background-color: var(--colour-surface);
+  background-color: var(--colour-page);
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Present for a screen reader, absent on screen. Used where a heading already
+   says the thing visually but the form control still needs its own label. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--colour-page);
 }
 
-.shell {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 3rem 1.5rem;
+/* The app is a column: a bar that stays, and a region under it that holds the
+   screen. Laying it out this way rather than by measuring the bar's height in
+   JavaScript means the bar can grow a line without the panes beneath it
+   guessing wrong. */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
 }
 
-.shell__title {
-  margin: 0;
-  font-size: 2rem;
+/* Shared pieces, so a card on one screen is the same card on the next.
+   ------------------------------------------------------------------ */
+
+/* A small caps label above a heading or a group. The mockups use these
+   everywhere to name a region without spending a heading on it. */
+.eyebrow {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.card {
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem;
+}
+
+/* A status pill. Always a shape and a word, never colour alone. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--colour-inset);
+  color: var(--colour-muted);
+  white-space: nowrap;
+}
+
+.pill--ok {
+  background: var(--colour-mint);
   color: var(--colour-primary);
 }
 
-.shell__subtitle {
-  margin: 0.25rem 0 2rem;
-  color: var(--colour-muted);
+.pill--info {
+  background: var(--colour-mint-deep);
+  color: var(--colour-primary-deep);
 }
 
-.shell__status {
+/* Notices. Amber says someone has to do something, red says something was
+   refused. Both carry a left bar as well as a tint, so the distinction does
+   not rest on colour. */
+/* A block, deliberately not flex or grid.
+
+   Both of those make every element child of the notice its own item, so a
+   sentence like "Development language service: This caption was not
+   translated into Twi" split into one narrow column per <strong>. A notice
+   holds prose, and prose has to be allowed to wrap as prose, so the icon is
+   taken out of flow instead. */
+.notice {
+  display: block;
+  position: relative;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.4rem;
+  border-left: 4px solid var(--colour-muted);
+  background: var(--colour-inset);
+  line-height: 1.45;
+}
+
+.notice:has(.notice__icon) {
+  padding-left: 2.6rem;
+}
+
+.notice__icon {
+  position: absolute;
+  left: 1rem;
+  top: 0.95rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--colour-amber);
+}
+
+.notice--warn {
+  border-left-color: var(--colour-amber);
+  background: var(--colour-amber-soft);
+  color: #7a4a06;
+}
+
+.notice--danger {
+  border-left-color: var(--colour-offline);
+  background: var(--colour-danger-soft);
+  color: #8a2b1c;
+  font-weight: 600;
+}
+
+.notice__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Buttons. Three weights: the one action a screen wants, the ones beside it,
+   and the one that is dangerous. */
+.btn {
+  font: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
+  color: var(--colour-ink);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn--primary {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary);
+  color: #fff;
+}
+
+.btn--outline {
+  border-color: var(--colour-primary);
+  color: var(--colour-primary);
+  background: transparent;
+}
+
+.btn--danger {
+  border-color: var(--colour-offline);
+  background: var(--colour-offline);
+  color: #fff;
+}
+
+.btn--small {
+  min-height: 2.25rem;
+  font-size: 0.85rem;
+  padding: 0 0.8rem;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn__icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.btn__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The top bar. Section 4.1 requires the path, the connection and the controls
+   to be permanently visible rather than behind a menu, so this is a bar rather
+   than a header with a hamburger.
+   ------------------------------------------------------------------------- */
+.topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "brand status actions primary";
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 1.25rem;
+  background: var(--colour-surface);
+  border-bottom: 1px solid var(--colour-line);
+
+  /* Stuck to the top. Section 4.1 requires the path, the connection and the
+     controls to be permanently visible, and "permanently" has to survive
+     scrolling: a long transcript would otherwise push the Emergency button off
+     screen exactly when someone needs it.
+
+     On the split layout the bar is outside the scrolling region altogether, so
+     this only does any work on the screens that scroll as one page. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex: 0 0 auto;
+}
+
+.topbar__brand {
+  grid-area: brand;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.95rem;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+/* The mark. A drawn dot rather than an image file, so the app's name cannot be
+   preceded by a broken image icon on a slow connection. */
+.topbar__logo {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.5rem;
+  display: block;
+}
+
+.topbar__names {
+  min-width: 0;
+}
+
+.topbar__title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--colour-primary);
+}
+
+.topbar__subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.25;
   color: var(--colour-muted);
 }
 
-/* Status is carried by a shape and a label, never by colour alone, so the
-   indicator stays readable for colour blind users. */
+/* Signal bars, not a sentence. The wording lives on as the accessible name
+   and the tooltip, and the state is carried by which bars are filled, so it
+   survives greyscale and a colour blind reader. */
+.signal {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  cursor: default;
+}
+
+.signal svg {
+  width: 1.4rem;
+  height: 1.15rem;
+  display: block;
+  overflow: visible;
+}
+
+.signal__bar {
+  fill: #c4cfd6;
+}
+
+.signal__slash {
+  stroke: var(--colour-offline);
+  fill: none;
+}
+
+/* Connected: all three filled. */
+.signal--connected .signal__bar {
+  fill: #16a34a;
+}
+
+/* Checking: the first bar only, and it pulses, so the state reads as being in
+   progress rather than as a weak signal that has settled. */
+.signal--checking .signal__bar--1 {
+  fill: var(--colour-accent);
+  animation: signal-pulse 1.1s ease-in-out infinite;
+}
+
+/* Offline: bars stay grey and the slash does the talking. */
+.signal--offline .signal__bar {
+  fill: #cbd5db;
+}
+
+@keyframes signal-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal--checking .signal__bar--1 {
+    animation: none;
+  }
+}
+
+.topbar__status {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.topbar__actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.topbar__primary {
+  grid-area: primary;
+  display: flex;
+  align-items: center;
+}
+
+/* The phone layout.
+   ----------------
+   The name and Emergency on the first line, because those are the two things
+   that must never move. The status under them. The two secondary actions in a
+   bar at the foot of the screen, which is both where a thumb reaches on a
+   phone and where the mockups put them.
+
+   Before this the four groups were one wrapping row, which on a 390px screen
+   came out as three ragged lines of buttons and pushed the consultation itself
+   below the fold. */
+@media (max-width: 52rem) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand primary"
+      "status status";
+    gap: 0.5rem 0.75rem;
+    padding: 0.6rem 1rem;
+  }
+
+  .topbar__status {
+    justify-content: flex-start;
+  }
+
+  .topbar__title {
+    font-size: 1.1rem;
+  }
+
+  .topbar__subtitle {
+    font-size: 0.74rem;
+  }
+
+  .topbar__logo {
+    width: 2.1rem;
+    height: 2.1rem;
+  }
+
+  /* Fixed rather than scrolled with the page: New patient is the control that
+     stops one patient's answers being applied to the next person handed the
+     device, and section 4.1 asks for it to be permanently visible. */
+  .topbar__actions:not(:empty) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    justify-content: stretch;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    background: var(--colour-surface);
+    border-top: 1px solid var(--colour-line);
+    box-shadow: 0 -2px 12px rgba(16, 34, 28, 0.06);
+  }
+
+  .topbar__actions > * {
+    flex: 1 1 0;
+    min-height: 2.75rem;
+  }
+
+  .install__button {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+
+  /* Opens upward, because on a phone this control sits in the bar at the foot
+     of the screen and there is nothing below it to open into. */
+  .install__help {
+    top: auto;
+    bottom: calc(100% + 0.5rem);
+    right: 0;
+  }
+
+  /* Room for that bar, so the last card is not hidden behind it. */
+  .shell {
+    padding-bottom: 5.5rem;
+  }
+}
+
+.shell {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+/* The consultation is not a reading column, so it does not get one. Measured
+   off the desktop mockup: the cards run to within about 20px of both edges and
+   the two columns are separated by about 18px, with no centred maximum width
+   at all. On a wide monitor that puts the doctor's side and the patient's
+   video side by side at full size, which is the point of the layout: the
+   device is turned between the two of them, and both halves need to be
+   readable from arm's length. */
+.shell--wide {
+  max-width: none;
+  padding: 0.75rem 1.25rem 2rem;
+}
+
+@media (max-width: 52rem) {
+  .shell--wide {
+    padding: 0.75rem 1rem 5.5rem;
+  }
+}
+
+
+/* The consultation, two columns on a desk and one on a phone.
+   ---------------------------------------------------------- */
+.consult {
+  display: grid;
+  gap: 1.125rem;
+  align-items: start;
+}
+
+@media (min-width: 62rem) {
+  /* Equal halves, as measured. Neither side is the secondary one: the doctor
+     is typing on the left and the patient is reading on the right, at the same
+     time, on the same device. */
+  .consult {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Each side scrolls on its own.
+
+     The reason is the device rather than the aesthetics: it gets turned
+     between the two of them. The doctor scrolling back through the record must
+     not drag the patient's video off screen, and the patient replaying a long
+     answer must not move the doctor's box. Previously the page scrolled as one
+     and the video column was merely sticky, which meant the video stayed put
+     but nothing else did. */
+  .app--split {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app--split .shell--wide {
+    /* A flex column rather than a height percentage, so the region's own
+       padding is taken out of the space the panes divide up instead of being
+       added to it. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0.75rem;
+  }
+
+  .app--split .consult,
+  .app--split .triage {
+    flex: 1 1 auto;
+    min-height: 0;
+
+    /* This is the line that makes the panes scroll at all. The base rule uses
+       align-items: start, which sizes each column to its content, so a long
+       column grew past the region instead of overflowing inside it and there
+       was nothing for overflow-y to act on. Stretching them to the row height
+       gives each one a definite height to scroll within. */
+    align-items: stretch;
+  }
+
+  .app--split .consult__doctor,
+  .app--split .consult__patient,
+  .app--split .triage__side {
+    overflow-y: auto;
+    min-height: 0;
+    /* Room for the scrollbar, so it does not sit on top of a card's edge. */
+    padding-right: 0.4rem;
+    /* A thin, quiet scrollbar. Two of them side by side at the default weight
+       reads as a broken frame rather than as two panes. */
+    scrollbar-width: thin;
+    scrollbar-color: #c8d3d9 transparent;
+    /* Stops a flick inside one pane from carrying on into the page behind it
+       once the pane reaches its end. */
+    overscroll-behavior: contain;
+  }
+
+  /* Emergency is a header plus two panes, so the panes divide what the header
+     leaves rather than the whole region. */
+  .app--split .triage {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app--split .triage__columns {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  /* The last card in a pane needs air under it, or it looks cut off at the
+     bottom of the scroll rather than finished. */
+  .app--split .consult__doctor::after,
+  .app--split .consult__patient::after,
+  .app--split .triage__side::after {
+    content: "";
+    display: block;
+    height: 0.25rem;
+  }
+}
+
+.consult__doctor,
+.consult__patient {
+  display: grid;
+  gap: 1.125rem;
+  min-width: 0;
+  align-content: start;
+}
+
+/* A card that belongs to one side of the conversation. The chip in its header
+   is the only thing that says whose it is, which matters on a device being
+   passed back and forth. */
+.panel {
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--colour-ink);
+}
+
+.panel__aside {
+  margin-left: auto;
+}
+
+/* Role chips. Mint is the doctor, cream is the patient, and they mean the same
+   thing everywhere they appear, including in the transcript. */
+.role {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.3rem;
+  white-space: nowrap;
+}
+
+.role--doctor {
+  background: var(--colour-mint-pale);
+  color: var(--colour-primary);
+  border: 1px solid #cfeee1;
+}
+
+.role--patient {
+  background: var(--colour-cream);
+  color: #8a5a12;
+  border: 1px solid #f2e3bd;
+}
+
+/* The patient's video, on black. The sign is the message here, so it gets the
+   contrast and the room, and the caption sits under it rather than beside it,
+   per section 4.1: never as tabs. */
+.stage {
+  background: #0d1512;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.stage__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+}
+
+.stage__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.35rem;
+  background: rgba(22, 163, 74, 0.16);
+  color: #6ee7b7;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.stage__chip .shell__dot {
+  background: #22c55e;
+}
+
+/* Opposite the chip. Names the language the patient is being signed to, which
+   is a fact about the footage rather than a boast about the app. */
+.stage__room {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #8ba79c;
+}
+
+.stage__empty {
+  display: grid;
+  place-items: center;
+  min-height: 14rem;
+  padding: 2rem 1.5rem;
+  color: #8ba79c;
+  text-align: center;
+}
+
+/* The caption, on the same panel as the video it belongs to. Large, because
+   this is the line the patient is reading. */
+.stage__caption {
+  margin: 0;
+  padding: 0.9rem 1.1rem 1.1rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff;
+}
+
+.stage__caption-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #8ba79c;
+}
+
+/* Kept for the prescription deep link, which renders no top bar. */
+.shell__title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--colour-primary-deep);
+}
+
+/* A small live dot, used by the stage chips and the literacy eyebrow. The
+   connection indicator that used to share it is now `.signal`, so the
+   `--checking`, `--offline` and `.shell__status` rules that went with it have
+   been removed rather than left to be read as still in use. */
 .shell__dot {
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: var(--colour-muted);
 }
 
-.shell__dot--checking {
-  background: var(--colour-accent);
-}
-
 .shell__dot--connected {
-  background: var(--colour-primary);
-}
-
-.shell__dot--offline {
-  background: var(--colour-offline);
+  background: #16a34a;
 }
 
 /* Doctor to patient consultation, SRS FR 1.1 to 1.7.
    Controls stay large and visibly tappable per section 4.5, Affordances. */
 .consultation {
-  margin-top: 2rem;
-  border-top: 1px solid #e3e8e6;
-  padding-top: 1.5rem;
+  display: contents;
 }
 
 .consultation__form {
@@ -81,53 +765,80 @@ body {
   gap: 0.75rem;
 }
 
+/* A language choice reads as one control rather than two loose radios, and it
+   sits on the card header beside the title, which is where the mockups put
+   it: the doctor sets it once and then stops looking at it. */
 .consultation__languages {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
   align-items: center;
-  border: 1px solid #e3e8e6;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 999px;
+  background: var(--colour-inset);
+  padding: 0.3rem 0.85rem;
   margin: 0;
 }
 
 .consultation__legend {
-  font-size: 0.8rem;
+  float: left;
+  font-size: 0.68rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.09em;
   color: var(--colour-muted);
-  padding: 0 0.35rem;
+  padding: 0 0.4rem 0 0;
 }
 
 .consultation__language {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 1rem;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
+.consultation__language input {
+  accent-color: var(--colour-primary);
+}
+
 .consultation__field {
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--colour-muted);
 }
 
 .consultation__input {
   font: inherit;
-  padding: 0.75rem;
-  border: 1px solid #c8d2ce;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--colour-field-line);
   border-radius: 0.5rem;
+  background: var(--colour-surface);
   resize: vertical;
   width: 100%;
 }
 
+.consultation__input:hover {
+  border-color: #8fa3ae;
+}
+
+.consultation__input:focus-visible {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 1px;
+  border-color: var(--colour-primary);
+}
+
 .consultation__send {
   font: inherit;
-  font-weight: 600;
-  align-self: flex-start;
-  min-height: 3rem;
-  padding: 0 1.5rem;
-  border: none;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.9rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--colour-primary);
   border-radius: 0.5rem;
   background: var(--colour-primary);
   color: #fff;
@@ -178,7 +889,6 @@ body {
 }
 
 .result {
-  margin-top: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -245,6 +955,28 @@ body {
   color: var(--colour-muted);
 }
 
+/* On the dark stage the player is flush: the stage already supplies the black
+   ground and the corners, so the video must not paint a second rounded box
+   inside the first. */
+.stage .player {
+  gap: 0;
+}
+
+.stage .player__stage {
+  border-radius: 0;
+}
+
+.stage .player--empty {
+  border: 0;
+  color: #8ba79c;
+}
+
+.stage .player__message,
+.stage .player__progress {
+  color: #8ba79c;
+  padding: 0 1.1rem;
+}
+
 /* Speaking to the patient, FR 1.2. The microphone sits beside Send rather than
    replacing it, because typing stays a first class path on browsers without
    microphone support and whenever permission is refused. */
@@ -257,10 +989,14 @@ body {
 
 .consultation__mic {
   font: inherit;
-  font-weight: 600;
-  min-height: 3rem;
-  padding: 0 1.25rem;
-  border: 2px solid var(--colour-primary);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.9rem;
+  padding: 0 1.15rem;
+  border: 1px solid var(--colour-primary);
   border-radius: 0.5rem;
   background: transparent;
   color: var(--colour-primary);
@@ -286,44 +1022,71 @@ body {
   margin: 0.75rem 0 0;
 }
 
-/* Visit bar. Section 4.1 keeps the patient's path and the new patient control
-   permanently visible rather than behind a menu. */
-.shell__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1.25rem;
-}
-
 .shell__path {
   margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 0.25rem 0.7rem;
-  border-radius: 999px;
-  background: #e8f0ec;
-  color: var(--colour-primary);
 }
 
-.shell__new-patient {
+.shell__new-patient,
+.shell__prescribe,
+.shell__emergency {
   font: inherit;
+  font-weight: 600;
   font-size: 0.85rem;
-  margin-left: auto;
   min-height: 2.25rem;
   padding: 0 0.9rem;
-  border: 1px solid #c8d2ce;
-  border-radius: 0.4rem;
-  background: transparent;
+  border-radius: 0.45rem;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
   color: var(--colour-ink);
   cursor: pointer;
 }
 
-/* Literacy check, FR 2.1. Nothing here requires reading. */
+.shell__prescribe {
+  border-color: var(--colour-primary);
+  color: var(--colour-primary);
+}
+
+/* Red, filled, and always in the same place. A responder looking for it is
+   not reading labels. */
+.shell__emergency {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-color: var(--colour-offline);
+  background: var(--colour-offline);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Literacy check, FR 2.1. Nothing here requires reading.
+   ----------------------------------------------------- */
 .literacy {
-  margin-top: 2rem;
+  margin-top: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.literacy__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: var(--colour-mint-deep);
+  color: var(--colour-primary-deep);
+}
+
+.literacy__video {
+  width: 100%;
+  max-width: 32rem;
 }
 
 .literacy__loading {
@@ -332,64 +1095,118 @@ body {
   margin: 3rem 0;
 }
 
+/* Staff facing. Left aligned inside a centred column, because it is a
+   paragraph to be read rather than a label to be glanced at. */
 .literacy__unavailable {
-  border-left: 4px solid var(--colour-accent);
-  background: #fdf9ec;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
+  text-align: left;
+  width: 100%;
+  max-width: 40rem;
+}
+
+/* The question in text, beside the sign video rather than instead of it.
+   ADR 047. */
+.literacy__question {
   margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--colour-primary-deep);
+}
+
+.literacy__question-twi {
+  margin: 0.25rem 0 0;
+  font-style: italic;
+  color: var(--colour-muted);
 }
 
 /* Yes and No, the app's single answer control, section 4.4.
-   Large, clearly bordered, generously spaced, so they visibly invite a tap
-   rather than resembling plain text. Section 4.5, Affordances. */
+   Card shaped, with the icon on its own tinted tile, so each option visibly
+   invites a tap rather than resembling plain text. Section 4.5.
+   ---------------------------------------------------------------------- */
 .choice {
-  display: flex;
-  gap: 1.5rem;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+  width: 100%;
+  max-width: 32rem;
 }
 
 .choice__option {
-  flex: 1 1 0;
-  max-width: 11rem;
-  aspect-ratio: 1;
-  padding: 1rem;
-  border: 3px solid #c8d2ce;
-  border-radius: 1rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  border: 2px solid var(--colour-line);
+  border-radius: var(--radius-lg);
   background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
   cursor: pointer;
 }
 
+/* The icon sits on a tinted tile inside the card, which is what gives the
+   option its weight at a glance without any text on it. */
 .choice__option svg {
   width: 100%;
-  height: 100%;
+  max-width: 6rem;
+  height: auto;
+  border-radius: 0.8rem;
 }
 
 .choice__icon-ground {
-  fill: #eef2f0;
+  fill: var(--colour-inset);
 }
 
 .choice__icon-mark {
   stroke: var(--colour-muted);
 }
 
+.choice__option--yes .choice__icon-ground {
+  fill: var(--colour-mint);
+}
+
 .choice__option--yes .choice__icon-mark {
   stroke: var(--colour-primary);
+}
+
+.choice__option--no .choice__icon-ground {
+  fill: var(--colour-danger-soft);
 }
 
 .choice__option--no .choice__icon-mark {
   stroke: var(--colour-offline);
 }
 
+.choice__option:hover {
+  border-color: var(--colour-primary);
+}
+
 /* The chosen option is marked by a thicker border and a filled ground, not by
    colour alone, so the confirmation is visible to a colour blind patient. */
 .choice__option--chosen {
   border-color: var(--colour-primary);
-  border-width: 6px;
+  border-width: 4px;
 }
 
-.choice__option--chosen .choice__icon-ground {
-  fill: #d9e6e0;
+.choice__option--chosen.choice__option--no {
+  border-color: var(--colour-offline);
+}
+
+/* Secondary to the icon, and deliberately smaller than it. A patient who does
+   not read acts on the mark above this. ADR 047. */
+.choice__label {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--colour-primary-deep);
+}
+
+.choice__option--no .choice__label {
+  color: var(--colour-offline);
+}
+
+.choice__label-twi {
+  font-weight: 600;
+  font-style: italic;
+  color: var(--colour-muted);
 }
 
 .choice__option:disabled {
@@ -397,11 +1214,28 @@ body {
   cursor: not-allowed;
 }
 
-/* Guided Interrogation Mode, FR 2.4 to 2.7. */
-.guided {
-  margin-top: 2rem;
+/* The "where does it hurt" action, which sits under the doctor's own box
+   because it is a question they ask rather than one they type. */
+.guided__where {
+  font: inherit;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 0.9rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px dashed var(--colour-primary);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--colour-primary);
+  cursor: pointer;
 }
 
+.guided__where:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Guided Interrogation Mode, FR 2.4 to 2.7. */
 .bank__title,
 .log__title {
   font-size: 1.1rem;
@@ -612,18 +1446,16 @@ body {
 
 /* The patient's typed reply, FR 3.1. Only ever on the literate path. */
 .reply {
-  margin-top: 2rem;
-  border-top: 1px solid #e3e8e6;
-  padding-top: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
 .reply__title {
-  font-size: 1.1rem;
   margin: 0;
-  color: var(--colour-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--colour-ink);
 }
 
 /* Playback feedback, section 4.2. Visual as well as physical, because a Deaf
@@ -709,21 +1541,25 @@ body {
 
 /* The patient's record, FR 4.1 to 4.3. Presented as theirs, because the point
    is that it reduces the pressure to bring a relative along to interpret. */
-.transcript {
-  margin-top: 2rem;
-  border-top: 1px solid #e3e8e6;
-  padding-top: 1.5rem;
+/* Title on the left, the patient's own controls on the right. */
+.transcript__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.9rem;
 }
 
 .transcript__title {
-  font-size: 1.1rem;
-  margin: 0 0 0.4rem;
-  color: var(--colour-primary);
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--colour-ink);
 }
 
 .transcript__privacy {
-  margin: 0 0 1rem;
-  font-size: 0.9rem;
+  margin: 0;
+  font-size: 0.85rem;
   color: var(--colour-muted);
 }
 
@@ -745,23 +1581,44 @@ body {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.3rem 0.6rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.5rem;
-  background: #f4f7f6;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.45rem;
+  background: var(--colour-inset);
+}
+
+.transcript__entry--to_patient .transcript__who {
+  background: var(--colour-mint-pale);
+  border: 1px solid #cfeee1;
 }
 
 /* The patient's own words sit apart from the doctor's, so the record reads as
-   a conversation rather than a list. */
+   a conversation rather than a list. Cream for the patient and mint for the
+   doctor, the same pairing the role chips use everywhere else. */
 .transcript__entry--to_doctor {
-  background: #eef5f1;
-  border-left: 3px solid var(--colour-primary);
+  background: var(--colour-cream);
 }
 
+/* The same chip as a panel header, so a row in the record is attributed the
+   same way the live exchange was. */
 .transcript__who {
-  font-size: 0.75rem;
+  font-size: 0.66rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--colour-muted);
+  letter-spacing: 0.09em;
+  padding: 0.2rem 0.42rem;
+  border-radius: 0.28rem;
+  background: var(--colour-mint);
+  color: var(--colour-primary);
+}
+
+.transcript__entry--to_doctor .transcript__who {
+  background: #fff;
+  border: 1px solid #f2e3bd;
+  color: #8a5a12;
+}
+
+.transcript__time {
+  margin-left: auto;
 }
 
 .transcript__text {
@@ -778,30 +1635,42 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .transcript__save,
 .transcript__delete,
 .transcript__cancel {
   font: inherit;
-  min-height: 2.75rem;
-  padding: 0 1rem;
-  border-radius: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-height: 2.3rem;
+  padding: 0 0.85rem;
+  border-radius: 0.45rem;
   cursor: pointer;
 }
 
 .transcript__save {
-  border: 2px solid var(--colour-primary);
-  background: transparent;
-  color: var(--colour-primary);
-  font-weight: 600;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
+  color: var(--colour-ink);
 }
 
+.transcript__save:hover {
+  border-color: var(--colour-primary);
+}
+
+/* Bordered rather than filled. Deleting is the patient's right under FR 4.3,
+   so it stays reachable, but it is not the action the card is inviting. */
 .transcript__delete {
-  border: 1px solid var(--colour-offline);
-  background: transparent;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
   color: var(--colour-offline);
+}
+
+.transcript__delete:hover {
+  border-color: var(--colour-offline);
 }
 
 .transcript__cancel {
@@ -829,18 +1698,7 @@ body {
 
 /* Naming the saved record. The name is used on the downloaded file and then
    discarded, per ADR 028. */
-.transcript__naming {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
 
-.transcript__naming-note {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--colour-muted);
-}
 
 /* The safety gate, ADR 033. Nothing reaches the patient until it is safe to
    show, and the doctor reads back what they will see when it differs from what
@@ -938,9 +1796,71 @@ body {
 .triage__header {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: baseline;
+  gap: 0.75rem 1rem;
+  align-items: flex-start;
   justify-content: space-between;
+}
+
+/* Two columns, same reason as the consultation: the device is turned between
+   the patient and whoever is treating them. The body gets a column of its own
+   so the figure is large enough to point at, which is the mechanism of
+   FR 5.2 rather than a matter of taste. */
+.triage__columns {
+  display: grid;
+  gap: 1.125rem;
+  margin-top: 1.25rem;
+  align-items: start;
+}
+
+@media (min-width: 62rem) {
+  .triage__columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  }
+}
+
+.triage__side {
+  display: grid;
+  gap: 1.125rem;
+  min-width: 0;
+  align-content: start;
+}
+
+/* Red, because this group is the one about something stopping the patient
+   breathing. */
+.triage__priority {
+  background: var(--colour-danger-soft);
+  color: #8a2b1c;
+}
+
+.triage__voice .spoken {
+  margin-top: 0;
+}
+
+/* In the header, so it cannot be scrolled away from. The patient has no way to
+   hear whether anything was said, and a cue they have to go looking for is a
+   cue that arrives too late. */
+.triage__speaking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: var(--colour-primary);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.triage__said {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.triage__wave {
+  color: var(--colour-primary);
 }
 
 .triage__title {
@@ -961,7 +1881,8 @@ body {
 
 .triage__hint {
   color: var(--colour-muted);
-  margin: 0.25rem 0 1.5rem;
+  margin: 0.25rem 0 0;
+  max-width: 34rem;
 }
 
 .triage__group {
@@ -1038,21 +1959,75 @@ body {
 }
 
 /* The body map, FR 5.2. A drawing rather than a list, so tapping the stomach
-   feels like pointing. Section 4.5. */
+   feels like pointing. Section 4.5.
+   ------------------------------------------------------------------------ */
+/* Head on one side, whole body on the other, with the body given the larger
+   share. The head is enlarged because an eye on a full length figure is around
+   fifteen pixels across on a phone, far below what a person in distress can
+   hit, and the body is the bigger of the two because most of what a patient
+   points at is on it. */
 .body {
   margin: 0;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+  align-items: start;
 }
 
-.body__figure {
+.body__chosen {
+  grid-column: 1 / -1;
+}
+
+/* Stacked on a phone, where two columns would make both figures too small to
+   point at, which defeats the whole mechanism. */
+@media (max-width: 40rem) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.body__caption {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+  text-align: center;
+}
+
+.body__face {
   width: 100%;
-  max-width: 15rem;
+  max-width: 14rem;
   height: auto;
   display: block;
   margin: 0 auto;
 }
 
-/* The untouched figure. One shape, so it reads as a body rather than as nine
-   tiles waiting to be coloured in. */
+.body__figure {
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+/* Capped by the viewport as well as by the column, so the figures are as large
+   as the screen allows without either of them pushing the other out of sight.
+   An svg with a viewBox keeps its ratio, so limiting the height narrows the
+   width to match rather than squashing the drawing. */
+@media (min-width: 62rem) {
+  .body__face {
+    max-height: 30vh;
+  }
+
+  .body__figure {
+    max-height: 68vh;
+  }
+}
+
+/* The untouched figure. One tone across trunk and arms, so it reads as a body
+   rather than as parts waiting to be coloured in. */
 .body__fill {
   fill: #dce6e1;
 }
@@ -1079,6 +2054,19 @@ body {
   pointer-events: none;
 }
 
+/* The eye whites and pupils are drawn rather than outlined, so the face reads
+   as a face at a glance. */
+.body__eye {
+  fill: #ffffff;
+  stroke: #2a3b34;
+  stroke-width: 1.4;
+  opacity: 1;
+}
+
+.body__pupil {
+  fill: #2a3b34;
+}
+
 /* Transparent rather than fill:none, which would leave the region with no hit
    area at all and make the map look interactive while ignoring every tap. */
 .body__part polygon {
@@ -1093,9 +2081,9 @@ body {
   fill: rgba(28, 90, 66, 0.22);
 }
 
-/* A focus ring cannot be used here: the regions are clipped to the body, so an
-   outline drawn outside the contour is cut away. Focus is shown by filling the
-   region instead, which is visible for the same reason a hover is. */
+/* A focus ring cannot be used here: the regions are clipped to the figure, so
+   an outline drawn outside the contour is cut away. Focus is shown by filling
+   the region instead, which is visible for the same reason a hover is. */
 .body__part:focus-visible polygon {
   fill: rgba(28, 90, 66, 0.3);
   stroke: var(--colour-accent);
@@ -1105,15 +2093,20 @@ body {
 
 /* The chosen region is marked by a solid fill and a heavier edge, so it does
    not depend on colour alone. */
+/* Translucent rather than solid. At full opacity a large region, the face
+   above all, became a single dark shape with the eyes and mouth buried under
+   it, so the patient lost the very drawing they were pointing at. The fill is
+   still unmistakable, and the heavier edge means the selection does not rest on
+   colour alone. */
 .body__part--chosen polygon {
-  fill: var(--colour-primary);
-  stroke: #2a3b34;
-  stroke-width: 2;
+  fill: rgba(10, 74, 58, 0.55);
+  stroke: #10382c;
+  stroke-width: 2.5;
 }
 
 .body__chosen {
   min-height: 1.5rem;
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   text-align: center;
   font-weight: 700;
   color: var(--colour-primary);
@@ -1123,8 +2116,10 @@ body {
    shared convention the patient may not have. */
 .pain {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
-  gap: 0.75rem;
+  /* Five across, always. Wrapping to four and one reads as a mistake, and the
+     scale is only a scale if the faces are seen in order side by side. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
 }
 
 .pain__option {
@@ -1234,8 +2229,18 @@ body {
   color: inherit;
   min-height: 2.75rem;
   padding: 0 0.6rem;
-  border: 1px solid #c8d2ce;
+  border: 1px solid var(--colour-field-line);
   border-radius: 0.4rem;
+}
+
+.prescription__field input:hover {
+  border-color: #8fa3ae;
+}
+
+.prescription__field input:focus-visible {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 1px;
+  border-color: var(--colour-primary);
 }
 
 .prescription__remove {
@@ -1574,5 +2579,712 @@ body {
   .playlist__item,
   .slip__table tr {
     break-inside: avoid;
+  }
+}
+
+/* Quick answers, FR 3.1. Tapped instead of typed, and they travel the same
+   path as a typed reply: spoken aloud, then recorded as the patient's words. */
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.quick__option {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-height: 2.4rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 999px;
+  background: var(--colour-surface);
+  cursor: pointer;
+}
+
+.quick__option:hover:not(:disabled) {
+  border-color: var(--colour-primary);
+  background: var(--colour-mint-pale);
+}
+
+.quick__option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.quick__twi {
+  font-weight: 500;
+  font-style: italic;
+  color: var(--colour-muted);
+}
+
+/* The answers, in the space the video just left.
+   Section 4.5: the option has to be where the patient is already looking, and
+   a Yes they have to scroll to find is a Yes they may not find.
+
+   A light panel inset into the dark frame rather than controls painted onto
+   the black. The frame stays as the patient's half of the screen, and a box
+   they are meant to read and type into gets a ground that suits reading. */
+.stage__answers {
+  margin: 0 0.55rem 0.55rem;
+  padding: 0.9rem;
+  border-radius: 0.55rem;
+  background: var(--colour-inset);
+}
+
+/* The panels the reply and the answers already live in are redundant inside
+   the stage, which is itself the panel. */
+.stage__answers .panel {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+/* The nod instruction is for the doctor, so it stays quiet against the cards
+   the patient is choosing between. */
+.stage__answers .asking__instruction {
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border: 0;
+  border-left: 3px solid var(--colour-primary);
+  border-radius: 0.3rem;
+  background: var(--colour-mint-pale);
+  color: #2f5245;
+  font-size: 0.85rem;
+}
+
+.stage__answers .choice {
+  max-width: none;
+}
+
+.stage__answers .grid {
+  margin: 0;
+}
+
+/* Full width inside the stage: it is the one action the patient has here. */
+.stage__answers .consultation__send {
+  width: 100%;
+}
+
+.stage__replay {
+  font: inherit;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 0.9rem;
+  min-height: 2.6rem;
+  padding: 0 1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.45rem;
+  background: var(--colour-surface);
+  color: var(--colour-primary);
+  cursor: pointer;
+}
+
+.stage__replay:hover {
+  border-color: var(--colour-primary);
+}
+
+/* Shorter than the full empty state, because the reply sits underneath it. */
+.stage__empty--compact {
+  min-height: 0;
+  padding: 1.5rem 1.25rem 1rem;
+}
+
+/* A sound wave, for an event the patient cannot hear. Bars rather than a
+   spinner: a spinner says "waiting", this says "your voice is going out now". */
+.wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1rem;
+}
+
+.wave span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: center;
+  animation: wave 900ms ease-in-out infinite;
+}
+
+.wave span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.wave span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.wave span:nth-child(4) {
+  animation-delay: 360ms;
+}
+
+.wave span:nth-child(5) {
+  animation-delay: 480ms;
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Still a wave, just not a moving one. NFR 3's principle applied to motion:
+   the cue degrades rather than disappearing. */
+@media (prefers-reduced-motion: reduce) {
+  .wave span {
+    animation: none;
+  }
+
+  .wave span:nth-child(1),
+  .wave span:nth-child(5) {
+    transform: scaleY(0.4);
+  }
+
+  .wave span:nth-child(2),
+  .wave span:nth-child(4) {
+    transform: scaleY(0.7);
+  }
+}
+
+/* The replay sits under the send button rather than beside it, so the one
+   action stays one action and the repeat is clearly secondary. */
+.stage__answers .stage__replay {
+  margin-top: 0.55rem;
+}
+
+/* Speaking to the doctor, SRS section 4.2.
+   Covers the screen on purpose: one tap has to mean one answer, and a second
+   tap queued underneath would reach the doctor as two sentences with nothing
+   to say which came from which. */
+.talk {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(9, 20, 16, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.talk__card {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.75rem 1.5rem 1.5rem;
+  border-radius: 1rem;
+  background: var(--colour-surface);
+  box-shadow: 0 18px 48px rgba(9, 20, 16, 0.28);
+  text-align: center;
+}
+
+.talk__face {
+  width: 8.5rem;
+  height: 8.5rem;
+  display: block;
+  margin: 0 auto 1rem;
+}
+
+.talk__head {
+  fill: var(--colour-mint);
+  stroke: var(--colour-primary);
+  stroke-width: 2.5;
+}
+
+.talk__eye {
+  fill: var(--colour-primary-deep);
+}
+
+.talk__brow,
+.talk__nose {
+  fill: none;
+  stroke: var(--colour-primary-deep);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+/* Scaled rather than morphed: CSS cannot interpolate one path into another,
+   and a script driven mouth would be a timing loop kept in step with audio it
+   cannot read. Open and shut at speaking pace is all this has to convey. */
+.talk__mouth {
+  transform-origin: 60px 86px;
+  animation: talk 320ms ease-in-out infinite;
+}
+
+.talk__mouth ellipse {
+  fill: var(--colour-primary-deep);
+}
+
+@keyframes talk {
+  0%,
+  100% {
+    transform: scaleY(0.18);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.talk__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0;
+  font-weight: 700;
+  color: var(--colour-primary);
+}
+
+.talk__text {
+  margin: 0.6rem 0 0;
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+.talk__stop {
+  font: inherit;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--colour-muted);
+  cursor: pointer;
+}
+
+/* A mouth that only holds one shape still says "this is a mouth mid speech",
+   which is the part that matters. */
+@media (prefers-reduced-motion: reduce) {
+  .talk__mouth {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+}
+
+/* What was said, at the top of the screen rather than in a panel below the
+   fold: the patient cannot hear whether it reached the doctor, so the one
+   record of it must not be somewhere they have to scroll to find. */
+.triage__spoken {
+  margin-top: 1rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.triage__spoken .spoken {
+  margin-top: 0;
+}
+
+.spoken__stopped {
+  margin: 0;
+  font-weight: 600;
+  color: #8a5a12;
+}
+
+
+/* The phone layout for the screens themselves.
+   -------------------------------------------- */
+@media (max-width: 52rem) {
+  /* The patient's side first. On a phone the device is held up to the patient
+     to watch and then turned back, so the video and their reply are what
+     should be on screen when the page opens, not the doctor's keyboard. The
+     mockups order it the same way. */
+  .consult__patient {
+    order: -1;
+  }
+
+  .panel {
+    padding: 0.9rem 1rem 1rem;
+  }
+
+  /* The panel header stacks: a chip, a heading and two language pickers do not
+     fit on one 390px line, and squeezing them makes the radios too small to
+     hit. */
+  .panel__header {
+    gap: 0.5rem 0.6rem;
+  }
+
+  .panel__aside {
+    margin-left: 0;
+  }
+
+  .consultation__languages {
+    padding: 0.25rem 0.7rem;
+  }
+
+  .consultation__language {
+    font-size: 0.82rem;
+  }
+
+  /* Full width, stacked. Two half width buttons on a phone are two buttons
+     that are both slightly too small. */
+  .consultation__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .consultation__send,
+  .consultation__mic {
+    width: 100%;
+  }
+
+  .stage__answers {
+    margin: 0 0.4rem 0.4rem;
+    padding: 0.75rem;
+  }
+
+  /* The caption is the question. It stays large, because it is being read
+     rather than glanced at. */
+  .stage__caption {
+    font-size: 1.05rem;
+    padding: 0.8rem 0.9rem 0.9rem;
+  }
+
+  /* Emergency. The alerts are the reason this mode exists, so they keep their
+     size, and the figures get the width the two columns were using. */
+  .triage__header {
+    gap: 0.6rem;
+  }
+
+  .triage__title {
+    font-size: 1.25rem;
+  }
+
+  .triage__columns {
+    margin-top: 1rem;
+  }
+
+  .alerts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .alerts__option {
+    min-height: 7.5rem;
+  }
+
+  .alerts__icon svg {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .pain {
+    gap: 0.35rem;
+  }
+
+  .body {
+    gap: 0.5rem;
+  }
+
+  /* Bounded by the screen rather than the column now that they are stacked,
+     so neither figure needs scrolling to see whole. */
+  .body__face {
+    max-width: 11rem;
+  }
+
+  .body__figure {
+    max-width: 15rem;
+  }
+
+  /* The transcript keeps its own scroll, but shorter: on a phone an 18rem list
+     is most of the screen. */
+  .transcript__list {
+    max-height: 12rem;
+  }
+
+  .transcript__top {
+    gap: 0.5rem;
+  }
+
+  .transcript__actions {
+    margin-left: 0;
+  }
+
+  /* Prescription. One field per line: medicine, dose and frequency are three
+     different facts and a three column row makes each one too narrow to read
+     what has been typed into it. */
+  .prescription__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prescription__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prescription__add,
+  .prescription__issue {
+    width: 100%;
+  }
+
+  .qr__image {
+    max-width: 14rem;
+  }
+
+  /* The speaking dialog. Narrower, and the face smaller, so the words being
+     said are still on screen without scrolling inside the dialog. */
+  .talk__card {
+    padding: 1.25rem 1.1rem 1.1rem;
+  }
+
+  .talk__face {
+    width: 6.5rem;
+    height: 6.5rem;
+  }
+
+  .talk__text {
+    font-size: 1.05rem;
+  }
+
+  /* The literacy check. The two options stay side by side, because they are a
+     pair and stacking them invites scrolling past the second one. */
+  .choice {
+    gap: 0.6rem;
+  }
+
+  .choice__option {
+    padding: 1rem 0.6rem;
+  }
+
+  .literacy__question {
+    font-size: 1.4rem;
+  }
+}
+
+/* Very narrow phones. A few things have to give way rather than overflow. */
+@media (max-width: 26rem) {
+  .topbar__subtitle {
+    /* Two lines of description on a 360px screen is a third of the bar. The
+       name still identifies the app; the sentence explaining it has done its
+       job by the time the patient is on the second screen. */
+    display: none;
+  }
+
+  .alerts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pain {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+}
+
+/* Installing the app, NFR 5. Offered between patients, where nobody is mid
+   consultation, because an installed copy is what keeps the cached clips and
+   therefore what makes a prescription replay at home with no connection. */
+/* Installing the app, NFR 5. In the bar rather than on one screen, because
+   installing is a one time action and has to be reachable at any point. */
+.install {
+  position: relative;
+}
+
+.install__button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.45rem;
+  background: var(--colour-surface);
+  color: var(--colour-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.install__button:hover {
+  border-color: var(--colour-primary);
+}
+
+/* A panel under the bar rather than inline: the bar has no room for three
+   lines of instructions, and the instructions are only wanted on the one tap
+   that asks for them. */
+.install__help {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 40;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  box-shadow: 0 12px 32px rgba(16, 34, 28, 0.16);
+  text-align: left;
+}
+
+.install__close {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.5rem;
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border: 0;
+  background: none;
+  color: var(--colour-muted);
+  cursor: pointer;
+}
+
+.install__help-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.install__steps {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.92rem;
+}
+
+.install__why {
+  margin: 0.8rem 0 0;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}
+
+/* The in app loader, for a screen whose code is still arriving. Deliberately
+   the same shape as the splash in index.html: loading looks like one thing
+   throughout rather than like three different waits. */
+.loader {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.loader__mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.7rem;
+  display: block;
+}
+
+.loader__label {
+  margin: 0;
+  font-weight: 600;
+  color: var(--colour-primary);
+}
+
+.loader__track {
+  width: 9rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: var(--colour-line);
+  overflow: hidden;
+}
+
+.loader__bar {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--colour-primary);
+  animation: splash-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes splash-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader__bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* A dialog. Used where a question needs the screen to hold still while it is
+   answered: the name for a saved record sat under a scrolling transcript, so
+   on a long consultation the field the patient had just asked for was off
+   screen and the button that completed it was elsewhere. */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(9, 20, 16, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal__card {
+  width: 100%;
+  max-width: 25rem;
+  padding: 1.4rem 1.4rem 1.25rem;
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+  box-shadow: 0 18px 48px rgba(9, 20, 16, 0.28);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.modal__title {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+  color: var(--colour-primary-deep);
+}
+
+.modal__note {
+  margin: 0.1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}
+
+/* The action that completes the dialog sits on the right, where the eye ends
+   up after reading the field above it. */
+.modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+@media (max-width: 40rem) {
+  /* Stacked and full width on a phone, with the confirming action on top:
+     reaching past Cancel to a button in the corner is how the wrong one gets
+     tapped one handed. */
+  .modal__actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal__actions > * {
+    width: 100%;
   }
 }

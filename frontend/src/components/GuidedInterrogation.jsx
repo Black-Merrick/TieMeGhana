@@ -5,6 +5,7 @@ import useCaption from "../hooks/useCaption.js";
 import AnswerOptionGrid from "./AnswerOptionGrid.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
+import SpeakingOverlay from "./SpeakingOverlay.jsx";
 import SpokenResponse from "./SpokenResponse.jsx";
 import TranscriptView from "./TranscriptView.jsx";
 import YesNoChoice from "./YesNoChoice.jsx";
@@ -37,7 +38,7 @@ import { Direction } from "../transcript/transcript.js";
 
 const ANSWERED_BY = { PATIENT: "patient", DOCTOR: "doctor" };
 
-export default function GuidedInterrogation({ outputLanguage }) {
+export default function GuidedInterrogation({ outputLanguage, onOutputLanguageChange }) {
   const { result, status, send, clear } = useCaption();
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
@@ -142,69 +143,115 @@ export default function GuidedInterrogation({ outputLanguage }) {
   };
 
   return (
-    <section className="guided">
-      <DoctorUtteranceForm
-        onSend={askFreely}
-        busy={status === "working"}
-        sendLabel="Ask the patient"
-        placeholder="Did you vomit?"
-      />
-
-      {/* The one question a patient cannot answer yes or no, so it has its own
-          action. Their answer tells the doctor where to focus next. */}
-      <button
-        type="button"
-        className="guided__where"
-        onClick={askWhereItHurts}
-        disabled={status === "working"}
-        data-testid="ask-where-it-hurts"
-      >
-        Ask where it hurts
-      </button>
-
-      {status === "working" ? (
-        <p className="consultation__working" data-testid="working-indicator">
-          <span className="consultation__pulse" aria-hidden="true" />
-          Translating and finding signs
-        </p>
+    <section className="consult">
+      {/* Covers the screen while the patient's answer is being spoken. One tap
+          has to mean one answer: a second one queued underneath would reach
+          the doctor as two sentences with nothing to say which was which. */}
+      {spoken.status === "working" || spoken.status === "playing" ? (
+        <SpeakingOverlay
+          text={spoken.result?.spoken_text ?? null}
+          status={spoken.status}
+          onStop={spoken.stop}
+        />
       ) : null}
 
-      {status === "failed" ? (
-        <p className="consultation__error" data-testid="caption-error" role="alert">
-          Could not reach the language service. Try again, or ask the patient in
-          person.
-        </p>
-      ) : null}
+      {/* Same split as the reading path: the doctor's side on the left, what
+          the patient watches and answers on the right. The patient's half is
+          all taps here rather than typing, per section 4.3. */}
+      <div className="consult__doctor">
+        <DoctorUtteranceForm
+          onSend={askFreely}
+          busy={status === "working"}
+          sendLabel="Ask the patient"
+          title="Ask the patient"
+          outputLanguage={outputLanguage}
+          onOutputLanguageChange={onOutputLanguageChange}
+          placeholder="Did you vomit? Type a question the patient can answer yes or no."
+        >
+          {/* The one question a patient cannot answer yes or no, so it has its
+              own action. Their answer tells the doctor where to focus next. */}
+          <button
+            type="button"
+            className="guided__where"
+            onClick={askWhereItHurts}
+            disabled={status === "working"}
+            data-testid="ask-where-it-hurts"
+          >
+            Ask where it hurts
+          </button>
+        </DoctorUtteranceForm>
 
-      {result ? (
-        <>
-          <CaptionResult result={result} onShown={questionShown} />
+        <TranscriptView
+          entries={transcript.entries}
+          onDiscard={transcript.discard}
+        />
+      </div>
 
-          {/* Answers appear only once the patient has actually seen the
-              question. A refused sentence is never answerable. */}
-          {shownFor !== result ? null : awaitingLocation ? (
-            <BodyLocationAnswer
-              locations={bodyLocations}
-              onChoose={(location) =>
-                recordAnswer(location.english_text, ANSWERED_BY.PATIENT)
-              }
-            />
-          ) : (
-            <YesNoAnswer
-              onChoose={(yes) =>
-                recordAnswer(yes ? "Yes" : "No", ANSWERED_BY.DOCTOR)
-              }
-            />
-          )}
-        </>
-      ) : null}
+      <div className="consult__patient">
+        {status === "working" ? (
+          <p className="consultation__working" data-testid="working-indicator">
+            <span className="consultation__pulse" aria-hidden="true" />
+            Translating and finding signs
+          </p>
+        ) : null}
 
-      <SpokenResponse status={spoken.status} result={spoken.result} />
+        {status === "failed" ? (
+          <p
+            className="notice notice--danger"
+            data-testid="caption-error"
+            role="alert"
+          >
+            Could not reach the language service. Try again, or ask the patient
+            in person.
+          </p>
+        ) : null}
 
-      <TranscriptView
-        entries={transcript.entries}
-        onDiscard={transcript.discard}
-      />
+        {result ? (
+          /* The answers are handed to the stage rather than rendered under it,
+             so they appear where the video was as soon as it finishes. A
+             patient who has to scroll to find Yes and No may not find them.
+
+             Passed only once the question has actually been shown: a refused
+             sentence, or one still behind the confirmation gate, is not
+             answerable. */
+          <CaptionResult
+            result={result}
+            onShown={questionShown}
+            answers={
+              shownFor !== result ? null : awaitingLocation ? (
+                <BodyLocationAnswer
+                  locations={bodyLocations}
+                  onChoose={(location) =>
+                    recordAnswer(location.english_text, ANSWERED_BY.PATIENT)
+                  }
+                />
+              ) : (
+                <YesNoAnswer
+                  onChoose={(yes) =>
+                    recordAnswer(yes ? "Yes" : "No", ANSWERED_BY.DOCTOR)
+                  }
+                />
+              )
+            }
+          />
+        ) : (
+          <div className="stage" data-testid="stage-idle">
+            <div className="stage__bar">
+              <span className="stage__chip">
+                <span className="shell__dot" aria-hidden="true" />
+                Sign video
+              </span>
+              <span className="stage__room">Ghanaian Sign Language</span>
+            </div>
+            <p className="stage__empty">
+              The question will appear here in Ghanaian Sign Language, and the
+              patient answers underneath.
+            </p>
+          </div>
+        )}
+
+        <SpokenResponse status={spoken.status} result={spoken.result} />
+      </div>
     </section>
   );
 }

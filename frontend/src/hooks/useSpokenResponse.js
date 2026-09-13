@@ -12,7 +12,7 @@ import { VibrationPattern, vibrate } from "../feedback/vibration.js";
  * pulses when speech starts, one long pulse when it ends.
  */
 export default function useSpokenResponse() {
-  // idle, working, playing, spoken, failed
+  // idle, working, playing, spoken, stopped, failed
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
   const audioRef = useRef(null);
@@ -29,21 +29,19 @@ export default function useSpokenResponse() {
     audioRef.current = null;
   }, []);
 
-  const speak = useCallback(
-    async (payload) => {
+  /**
+   * Play one spoken response, wiring the cues around it.
+   *
+   * Separate from `speak` because the same audio has to be playable again
+   * without asking the language service for it a second time. A doctor who
+   * did not catch the answer needs it repeated, and the patient cannot know
+   * whether it was heard: they have no way to tell a doctor looking away from
+   * one who simply missed it. Repeating from the response already in hand also
+   * spends no further Khaya credit, per ADR 015.
+   */
+  const play = useCallback(
+    async (spoken) => {
       release();
-      setStatus("working");
-      setResult(null);
-
-      let spoken;
-      try {
-        spoken = await speakResponse(payload);
-      } catch {
-        setStatus("failed");
-        return null;
-      }
-
-      setResult(spoken);
 
       let audio;
       try {
@@ -52,7 +50,7 @@ export default function useSpokenResponse() {
         // The response arrived but cannot be turned into playable audio. The
         // text is still on screen, so the exchange is not lost.
         setStatus("failed");
-        return spoken;
+        return;
       }
 
       audioRef.current = audio;
@@ -77,17 +75,68 @@ export default function useSpokenResponse() {
 
       try {
         // play() rejects when autoplay is blocked, which is recoverable: the
-        // doctor can tap to replay, so it must not surface as an unhandled
-        // rejection.
+        // answer can be replayed by hand, so it must not surface as an
+        // unhandled rejection.
         await audio.play();
       } catch {
         setStatus("failed");
       }
-
-      return spoken;
     },
     [release],
   );
 
-  return { status, result, speak };
+  /**
+   * Cut playback short.
+   *
+   * Reported as "stopped" rather than "spoken", because part of an answer
+   * reaching the doctor is not the same as all of it and the patient has no
+   * way to hear the difference. Claiming it was spoken would be the ADR 011
+   * failure in another costume.
+   */
+  const stop = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      // Cleared first: pausing fires nothing, but a stalled element can still
+      // reach onended afterwards and overwrite the status we are setting here.
+      audio.onended = null;
+      audio.onerror = null;
+      try {
+        audio.pause();
+      } catch {
+        // Nothing to do. The element is being discarded either way.
+      }
+    }
+
+    release();
+    setStatus((current) => (current === "idle" ? current : "stopped"));
+  }, [release]);
+
+  /** Say the last answer again. Nothing to do if there has not been one. */
+  const replay = useCallback(async () => {
+    if (!result) return;
+    await play(result);
+  }, [play, result]);
+
+  const speak = useCallback(
+    async (payload) => {
+      release();
+      setStatus("working");
+      setResult(null);
+
+      let spoken;
+      try {
+        spoken = await speakResponse(payload);
+      } catch {
+        setStatus("failed");
+        return null;
+      }
+
+      setResult(spoken);
+      await play(spoken);
+      return spoken;
+    },
+    [play, release],
+  );
+
+  return { status, result, speak, replay, stop, canReplay: result !== null };
 }

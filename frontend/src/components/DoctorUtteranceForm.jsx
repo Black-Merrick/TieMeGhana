@@ -20,7 +20,11 @@ export default function DoctorUtteranceForm({
   onSend,
   busy = false,
   sendLabel = "Send to patient",
-  placeholder = "Where does it hurt?",
+  placeholder = "Where does it hurt? Type your clinical instructions or question here...",
+  title = "Message for the patient",
+  children = null,
+  outputLanguage = null,
+  onOutputLanguageChange = null,
 }) {
   const [sourceLanguage, setSourceLanguage] = useState("en");
   const [message, setMessage] = useState("");
@@ -66,10 +70,20 @@ export default function DoctorUtteranceForm({
   };
 
   return (
-    <>
-      <form className="consultation__form" onSubmit={handleSubmit}>
-        <fieldset className="consultation__languages" data-testid="doctor-language">
-          <legend className="consultation__legend">I am speaking</legend>
+    <div className="panel">
+      {/* The chip, the heading and the language control on one row. The
+          language is set once and then stopped being looked at, so it belongs
+          beside the title rather than above the box as a bordered group of
+          its own. */}
+      <div className="panel__header">
+        <span className="role role--doctor">Doctor</span>
+        <h2 className="panel__title">{title}</h2>
+
+        <fieldset
+          className="consultation__languages panel__aside"
+          data-testid="doctor-language"
+        >
+          <legend className="consultation__legend">I speak</legend>
           {LANGUAGES.map((language) => (
             <label key={language.value} className="consultation__language">
               <input
@@ -84,7 +98,43 @@ export default function DoctorUtteranceForm({
           ))}
         </fieldset>
 
-        <label className="consultation__field" htmlFor="doctor-message">
+        {/* FR 3.4, the language the patient's answers are spoken aloud in.
+            Beside the doctor's own input language rather than up in the top
+            bar: they are the two halves of one decision, made once at the
+            start of the visit, and section 4.1 asks for them to be on screen
+            rather than in a menu, which this still is. */}
+        {onOutputLanguageChange ? (
+          <fieldset
+            className="consultation__languages"
+            data-testid="output-language"
+          >
+            <legend className="consultation__legend">Speak in</legend>
+            {LANGUAGES.map((language) => (
+              <label key={language.value} className="consultation__language">
+                <input
+                  type="radio"
+                  name="output-language"
+                  value={language.value}
+                  checked={outputLanguage === language.value}
+                  onChange={() => onOutputLanguageChange(language.value)}
+                />
+                {language.label}
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+      </div>
+
+      <form className="consultation__form" onSubmit={handleSubmit}>
+        {/* Kept as the field's own label rather than leaning on the panel
+            heading, because a screen reader reads the label, not the card it
+            sits in. Visually hidden: the heading above says the same thing.
+
+            The wording does not follow the heading. This is the same control
+            on both paths, and section 4.4 asks for consistency, so its
+            accessible name stays put while the heading above it says what this
+            particular screen is for. */}
+        <label className="visually-hidden" htmlFor="doctor-message">
           Message for the patient
         </label>
         <textarea
@@ -121,6 +171,9 @@ export default function DoctorUtteranceForm({
             className="consultation__send"
             disabled={busy || isRecording}
           >
+            <span className="btn__icon" aria-hidden="true">
+              <SendIcon />
+            </span>
             {sendLabel}
           </button>
 
@@ -136,11 +189,18 @@ export default function DoctorUtteranceForm({
               disabled={busy}
               data-testid="microphone-button"
             >
+              <span className="btn__icon" aria-hidden="true">
+                <MicIcon />
+              </span>
               {isRecording ? "Stop and send" : "Speak to patient"}
             </button>
           ) : null}
         </div>
       </form>
+
+      {/* Anything the caller wants under the box, such as the "ask where it
+          hurts" action on the guided path. */}
+      {children}
 
       {/* FR 1.2 falls back to typing rather than disappearing, because NFR 6
           targets browsers that differ in microphone support. The two reasons
@@ -181,6 +241,45 @@ export default function DoctorUtteranceForm({
           Recording. Speak now, then tap Stop and send.
         </p>
       ) : null}
-    </>
+    </div>
+  );
+}
+
+/* Inline so a control cannot lose its mark on a slow connection. */
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path
+        d="M2.5 10 17 3.5 13.5 17 9.5 11.5 2.5 10Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <rect
+        x="7.6"
+        y="2.2"
+        width="4.8"
+        height="9"
+        rx="2.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M4.8 9.4a5.2 5.2 0 0 0 10.4 0M10 14.6v3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

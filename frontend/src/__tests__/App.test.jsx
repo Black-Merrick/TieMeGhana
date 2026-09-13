@@ -62,11 +62,18 @@ describe("connection status", () => {
   it("reports a connected system when the health check succeeds", async () => {
     render(<App />);
 
+    // The bar shows signal bars rather than the sentence now, so the wording
+    // is asserted where it still lives: the accessible name, which is what a
+    // screen reader reads and what the tooltip shows.
     await waitFor(() => {
-      expect(screen.getByTestId("connection-status")).toHaveTextContent(
+      expect(screen.getByTestId("connection-status")).toHaveAccessibleName(
         "Connected to the hospital system",
       );
     });
+    expect(screen.getByTestId("connection-status")).toHaveAttribute(
+      "data-state",
+      "connected",
+    );
   });
 
   it("falls back to an offline message when the API is unreachable", async () => {
@@ -77,10 +84,14 @@ describe("connection status", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("connection-status")).toHaveTextContent(
+      expect(screen.getByTestId("connection-status")).toHaveAccessibleName(
         "Offline, cached content only",
       );
     });
+    // Struck through, so the state is a shape rather than a colour.
+    expect(
+      screen.getByTestId("connection-status").querySelector(".signal__slash"),
+    ).not.toBeNull();
   });
 });
 
@@ -349,7 +360,11 @@ describe("emergency triage is reachable, FR 5", () => {
 
     await userEvent.click(screen.getByTestId("enter-emergency"));
 
-    expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+    // Awaited because emergency triage is split out of the main bundle and
+    // fetched on first use, so it arrives a tick after the tap.
+    await waitFor(() => {
+      expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+    });
     expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
   });
 
@@ -359,7 +374,9 @@ describe("emergency triage is reachable, FR 5", () => {
 
     await userEvent.click(screen.getByTestId("enter-emergency"));
 
-    expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+    });
   });
 
   it("returns to where the patient was when emergency mode is left", async () => {
@@ -369,6 +386,7 @@ describe("emergency triage is reachable, FR 5", () => {
     render(<App />);
 
     await userEvent.click(screen.getByTestId("enter-emergency"));
+    await waitFor(() => screen.getByTestId("leave-emergency"));
     await userEvent.click(screen.getByTestId("leave-emergency"));
 
     expect(screen.queryByTestId("emergency-triage")).not.toBeInTheDocument();
@@ -380,7 +398,9 @@ describe("emergency triage is reachable, FR 5", () => {
 
     await userEvent.click(screen.getByTestId("enter-emergency"));
 
-    expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
+    });
   });
 });
 
@@ -441,7 +461,9 @@ describe("the prescription builder, FR 6.1", () => {
 
     await userEvent.click(screen.getByTestId("enter-prescription"));
 
-    expect(screen.getByTestId("prescription-builder")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-builder")).toBeInTheDocument();
+    });
   });
 
   it("is not offered before there is a patient", async () => {
@@ -459,6 +481,7 @@ describe("the prescription builder, FR 6.1", () => {
     render(<App />);
 
     await userEvent.click(screen.getByTestId("enter-prescription"));
+    await waitFor(() => screen.getByTestId("leave-prescription"));
     await userEvent.click(screen.getByTestId("leave-prescription"));
 
     expect(screen.queryByTestId("prescription-builder")).not.toBeInTheDocument();
@@ -500,10 +523,86 @@ describe("a database missing its migrations", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("connection-status")).toHaveTextContent(
-        "Connected",
+      expect(screen.getByTestId("connection-status")).toHaveAccessibleName(
+        /Connected/,
       );
     });
     expect(screen.queryByTestId("pending-migrations")).not.toBeInTheDocument();
+  });
+});
+
+describe("installing the app, NFR 5", () => {
+  it("is offered before a patient has been asked anything", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("install-app")).toBeInTheDocument();
+    });
+  });
+
+  it("is still offered during a consultation", async () => {
+    // It used to appear only on the literacy screen, which meant it vanished
+    // the moment a consultation started and could only be found again by
+    // ending one. Installing is a one time action, so it lives in the bar.
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    expect(screen.getByTestId("install-app")).toBeInTheDocument();
+  });
+
+  it("closes the instructions again", async () => {
+    render(<App />);
+    await waitFor(() => screen.getByTestId("install-app"));
+
+    await userEvent.click(screen.getByTestId("install-app"));
+    expect(screen.getByTestId("install-help")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("close-install-help"));
+    expect(screen.queryByTestId("install-help")).not.toBeInTheDocument();
+  });
+
+  it("shows the browser's own dialog when the browser has one", async () => {
+    render(<App />);
+    await waitFor(() => screen.getByTestId("install-app"));
+
+    const event = new Event("beforeinstallprompt");
+    event.preventDefault = vi.fn();
+    event.prompt = vi.fn();
+    event.userChoice = Promise.resolve({ outcome: "accepted" });
+    window.dispatchEvent(event);
+
+    // The banner the browser would have shown itself is suppressed, so the
+    // offer appears in one place at a moment the patient chose.
+    expect(event.preventDefault).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByTestId("install-app"));
+    expect(event.prompt).toHaveBeenCalled();
+  });
+
+  it("explains how to install where the browser offers no dialog", async () => {
+    // Safari on iOS fires nothing and exposes no API, so there the
+    // instructions are the feature. Hiding the control would make "install"
+    // look like a bug on a very common device.
+    render(<App />);
+    await waitFor(() => screen.getByTestId("install-app"));
+
+    await userEvent.click(screen.getByTestId("install-app"));
+
+    expect(screen.getByTestId("install-help")).toHaveTextContent(
+      /Add to Home Screen/i,
+    );
+  });
+
+  it("says nothing when already running as an installed app", async () => {
+    vi.stubGlobal("matchMedia", (query) => ({
+      matches: query === "(display-mode: standalone)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+
+    render(<App />);
+    await waitFor(() => screen.getByTestId("literacy-check"));
+
+    expect(screen.queryByTestId("install-app")).not.toBeInTheDocument();
   });
 });

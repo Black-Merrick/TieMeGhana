@@ -10,9 +10,14 @@ import { VibrationPattern, vibrate } from "../feedback/vibration.js";
  * any future confirmation. So this component exists once and is imported,
  * rather than each screen drawing its own pair of buttons.
  *
- * It carries no visible text, per FR 2.1, because it is shown to patients who
- * may not read print. Accessible labels are present for screen readers, which
- * are read aloud rather than displayed, so they do not breach that.
+ * Each option carries a bilingual label under its icon. FR 2.1 asks for icon
+ * options with no text; the label is here at the team's direction, recorded as
+ * ADR 047.
+ *
+ * The rule that keeps it safe is that the icon comes first and always exists.
+ * A patient who does not read sees a large green tick or a large red cross,
+ * which is what they act on. The label is secondary, smaller, and never the
+ * only thing in the button.
  */
 export default function YesNoChoice({ onChoose, disabled = false }) {
   // Section 4.2 requires an immediate, unambiguous response to every tap.
@@ -43,6 +48,9 @@ export default function YesNoChoice({ onChoose, disabled = false }) {
         data-testid="choice-yes"
       >
         <YesIcon />
+        <span className="choice__label">
+          Yes <span className="choice__label-twi" lang="tw">/ Aane</span>
+        </span>
       </button>
 
       <button
@@ -55,6 +63,9 @@ export default function YesNoChoice({ onChoose, disabled = false }) {
         data-testid="choice-no"
       >
         <NoIcon />
+        <span className="choice__label">
+          No <span className="choice__label-twi" lang="tw">/ Daabi</span>
+        </span>
       </button>
     </div>
   );

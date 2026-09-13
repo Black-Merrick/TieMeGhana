@@ -2006,3 +2006,48 @@ would mean burning a Twi caption whose accuracy depends on the translation
 provider permanently into a file the patient keeps. A file with no caption is
 better than a file with a wrong one that cannot be corrected. The captions stay
 on the page.
+
+
+## What the filming list actually is, measured
+
+A question worth recording because the answer was not what the backlog said:
+does a prescription need a clip for each medicine name, or only for the
+numbers?
+
+Neither. The resolver was run against "Paracetamol, one tablet, twice a day"
+under four footage scenarios, inside a rolled back transaction so the
+development database was untouched:
+
+| Filmed | safe_to_show | Why |
+| --- | --- | --- |
+| Nothing | false | `one`, `twice` blocking; `paracetamol`, `tablet`, `day` unavailable |
+| Dose and frequency words | false | `paracetamol` unavailable |
+| Plus the 26 letter alphabet | **true** | `paracetamol` fingerspelled, P-A-R-A-C-E-T-A-M-O-L |
+| Plus a `PARACETAMOL` sign | true | one sign instead of eleven letters |
+
+Two things follow, and both changed the plan.
+
+**The alphabet is the highest value footage in the project.** It was listed as
+a fallback for FR 1.6, below the clinical vocabulary. In fact it is what FR 6
+turns on: a medicine name is a content word, so twenty six clips cover every
+drug that will ever be prescribed, where a clip per drug is an endless list
+that is always missing the one in front of you.
+
+**Numbers cannot be covered the same way.** They are blocking, so they are
+neither droppable nor spellable around, and spelling them would be wrong
+rather than clumsy: sign languages have their own number signs, so T-W-O is
+not what a signer reads for 2. About fifteen clips, and they are real
+vocabulary rather than a fallback.
+
+The wider point is about how the estimate was wrong. "30 to 50 clips for a
+hospital intake scenario" had been in `BACKLOG.md` since Sprint 0 and was a
+guess made before the resolver existed. One probe against the real thing
+produced a list that is a similar size and a completely different shape, and
+reordered the priorities. Worth doing for every remaining estimate in that
+file.
+
+One incidental finding, now in the backlog: a dosage typed as `2` with a
+frequency of `1` resolves correctly once the number clips exist, but signs as a
+bare number with no unit, and the caption reads "para, 2, 1". The app cannot
+tell a terse entry from a wrong one, so it belongs in the guidance the doctors
+get rather than in a validator.

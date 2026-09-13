@@ -55,14 +55,18 @@ describe("LiteracyCheck", () => {
     );
   });
 
-  it("offers only icon answers, with no text to read", async () => {
+  it("offers answers a patient who does not read can still act on", async () => {
+    // The options carry labels since ADR 047, so what matters here is that
+    // each one still leads with its icon. A patient who does not read acts on
+    // the mark, and this screen is the one place in the app where getting that
+    // wrong means acting on an answer to a question nobody was asked.
     render(<LiteracyCheck onDecided={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("choice-yes")).toHaveTextContent("");
-    expect(screen.getByTestId("choice-no")).toHaveTextContent("");
+    expect(screen.getByTestId("choice-yes").querySelector("svg")).not.toBeNull();
+    expect(screen.getByTestId("choice-no").querySelector("svg")).not.toBeNull();
   });
 
   it("routes a patient who reads to the literate path", async () => {
@@ -152,6 +156,46 @@ describe("LiteracyCheck", () => {
 
     await waitFor(() => {
       expect(fetchClipByGloss).toHaveBeenCalledWith("CAN_YOU_READ_AND_WRITE");
+    });
+  });
+});
+
+describe("the question in text as well as in sign, ADR 047", () => {
+  it("prints the question beside the sign video", async () => {
+    fetchClipByGloss.mockResolvedValue(promptClip);
+
+    render(<LiteracyCheck onDecided={() => {}} />);
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(screen.getByText(/can you read and write/i)).toBeInTheDocument();
+  });
+
+  it("prints it in Twi as well, marked as Twi", async () => {
+    // Marked with a lang attribute so a screen reader does not read Twi with
+    // English pronunciation rules.
+    fetchClipByGloss.mockResolvedValue(promptClip);
+
+    render(<LiteracyCheck onDecided={() => {}} />);
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(document.querySelector(".literacy__question-twi")).toHaveAttribute(
+      "lang",
+      "tw",
+    );
+  });
+
+  it("still says the patient has not been asked when the video is missing", async () => {
+    // The point ADR 047 turns on. Printed text is a second rendering of the
+    // question for whoever can read it, not evidence that a patient who does
+    // not read was asked anything.
+    fetchClipByGloss.mockRejectedValue(new Error("not filmed"));
+
+    render(<LiteracyCheck onDecided={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("literacy-unavailable")).toHaveTextContent(
+        /not a substitute/i,
+      );
     });
   });
 });

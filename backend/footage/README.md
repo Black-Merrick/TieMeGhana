@@ -105,3 +105,24 @@ ffmpeg, which is deliberately not a runtime dependency, see ADR 008. Pass
 `--duration-ms` if you want the estimated sequence duration to be accurate.
 Playback itself does not need it, the player advances on each video's own end
 event.
+
+## What to film first
+
+The list is in `BACKLOG.md`, under "The filming list", with the measurement
+behind it. The short version, in order:
+
+1. **The 26 letters, `a.webm` to `z.webm`.** The highest value footage in the
+   project. A medicine name is fingerspelled, so these twenty six cover every
+   drug that will ever be prescribed. Without them a prescription cannot be
+   shown at all.
+2. **Numbers and frequencies:** `one` to `ten`, `once`, `twice`, `daily`,
+   `morning`, `night`. These cannot be fingerspelled around, because dropping a
+   dose changes it and sign languages have their own number signs.
+3. **Dose units:** `tablet`, `spoon`, `drop`, `injection`.
+4. **The two critical alerts:** `cannot_breathe`, `pregnancy`. These improve a
+   screen that already works on drawn icons, rather than unblocking one.
+
+A file named `two_tablets.webm` becomes the phrase gloss `TWO_TABLETS`, which
+is matched ahead of the individual words, per ADR 038. That is worth knowing
+before filming: a phrase clip is smoother to watch than three words stitched,
+and it costs nothing to add later.

@@ -37,6 +37,22 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
+
+        // Without this the plugin generates nothing during `npm run dev`: no
+        // manifest, no service worker, and therefore no install prompt, since
+        // a browser will not offer to install a page that does not claim to be
+        // an app. Requests for /manifest.webmanifest fell through to Vite's
+        // SPA fallback and returned index.html with a 200, which is the most
+        // confusing possible answer: everything looked wired up and nothing
+        // was. Enabled so that installing can be tested where it is built.
+        devOptions: { enabled: true, type: "module" },
+
+        // The plugin adds every manifest icon to the precache by default,
+        // which put the 512px icon back in after globIgnores had taken it out.
+        // The operating system fetches that one when the app is installed, an
+        // action that needs a connection anyway, so it does not have to be
+        // downloaded before the app will open for the first time.
+        includeManifestIcons: false,
         manifest: {
           name: "Tie Me Ghana",
           short_name: "Tie Me Ghana",
@@ -47,11 +63,23 @@ export default defineConfig(({ mode }) => {
           display: "standalone",
           start_url: "/",
           icons: [
+            // Derived from public/icon.png by tools/build_icons.py. Two sizes,
+            // which is what a manifest is expected to carry.
             {
-              src: "icon.svg",
-              sizes: "any",
-              type: "image/svg+xml",
-              purpose: "any maskable",
+              src: "icon-192.png",
+              sizes: "192x192",
+              type: "image/png",
+              purpose: "any",
+            },
+            {
+              src: "icon-512.png",
+              sizes: "512x512",
+              type: "image/png",
+              // Deliberately not "maskable". A launcher crops a maskable icon
+              // to its own rounded shape, and this logo already has one of its
+              // own, so declaring it maskable would round the corners twice
+              // and clip the artwork inside them.
+              purpose: "any",
             },
           ],
         },
@@ -59,6 +87,15 @@ export default defineConfig(({ mode }) => {
           // GhSL clips are the expensive asset. Cache them aggressively so a
           // prescription playlist replays at home with no connection, FR 6.2.
           globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+
+          // The large icons and the stray screenshot are not needed offline,
+          // and precaching them cost around 590 kB on the first visit: the
+          // 512px icon is fetched by the operating system at install time,
+          // which needs a connection anyway, and the 250 kB source is only
+          // there for tools/build_icons.py to derive the rest from. NFR 5 is
+          // about a hospital connection, so what is not needed offline should
+          // not be downloaded before the app will open.
+          globIgnores: ["icon.png", "icon-512.png", "screen.png", "icons.svg"],
           runtimeCaching: [
             {
               urlPattern: /\/media\/clips\/.*\.(mp4|webm)$/,

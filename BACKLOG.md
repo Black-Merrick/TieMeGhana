@@ -103,7 +103,14 @@ rather than claiming the browser cannot record. Typing works either way.
 
 | FR | Requirement | Sprint | Status |
 | --- | --- | --- | --- |
-| 2.1 | First use prompt, sign video only, two large icon options, no text | 3 | `done`, needs the prompt clip filmed |
+| 2.1 | First use prompt, sign video only, two large icon options, no text | 3 | `done, deviated`, needs the prompt clip filmed |
+
+The question is printed in English and Twi beside the sign video, and the two
+options carry labels, both at the team's direction. Recorded as ADR 047, which
+also sets out what keeps it safe: the sign video is still the question, the
+icon still comes first inside each option, and the routing depends on nothing
+being read.
+
 | 2.2 | Answer saved, determines the interaction path for the visit | 3 | `done`, visit scoped per ADR 020 |
 | 2.3 | Literate patients proceed to free captioning and typed responses | 3 | `done` |
 | 2.4 | Non literate patients use Guided Interrogation, question played as sign video | 4 | `done`, **diverges from the SRS**: the doctor asks freely rather than from a bank, ADR 023 |
@@ -240,11 +247,76 @@ solves, so they are tracked explicitly.
 | Dependency | Needed by | Status |
 | --- | --- | --- |
 | Khaya AI API key from GhanaNLP | ~~Sprint 2~~ | **resolved 2026-09-12.** All three endpoints verified live. Free tier is metered, so `LANGUAGE_PROVIDER=stub` in dev per ADR 015 |
-| 30 to 50 filmed or sourced GhSL clips for a hospital intake scenario | **the critical path now.** 92 glosses are recorded and awaiting footage, 0 usable. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
+| **GhSL footage, about 45 clips.** The list, and the reasoning behind it, are in "The filming list" below | **the critical path.** Everything else in P0 and P1 is built and tested. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
 | GhSL fluent consultant review of the emergency alerts | Before any public demo. Covers both the three signs themselves and ADR 040, the judgment that an unfilmed alert is still worth offering | open |
 | Two GhSL clips for the critical alerts, `cannot_breathe` and `pregnancy` | Emergency Triage works without them, per ADR 040, on the drawn icons alone. Once filmed, each clip becomes the card itself, which is what FR 5.3 asks for | open |
 | **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
-| Alphabet clips for fingerspelling, one per letter | FR 1.6 cannot fall back without a complete alphabet, so a partial one leaves words unavailable rather than spelled | open |
-| **Quantity and frequency clips**, `one` to `ten`, `once`, `twice`, `daily`, `morning`, `night` | The critical path for FR 6. Every prescription contains a dose and a frequency, the safety gate treats both as blocking per ADR 033, so until these exist every prescription is correctly refused in sign and has to be explained out loud | open |
 | Authentication and rate limiting on prescription issuing | ADR 044 names this as a known limitation. Issuing is unauthenticated like the rest of the API, so anyone reaching it can create rows. Not a disclosure, since each is readable only by its own unguessable reference, but deployment work | open |
+
+---
+
+## The filming list
+
+Measured rather than estimated. The resolver was run against one real
+prescription, "Paracetamol, one tablet, twice a day", under four footage
+scenarios, and what it returned decided this list:
+
+| Filmed | Result |
+| --- | --- |
+| Nothing | refused: `one` and `twice` blocking, `paracetamol` `tablet` `day` unavailable |
+| The dose and frequency words | refused: `paracetamol` unavailable |
+| **Plus the 26 letter alphabet** | **shown**, with `paracetamol` fingerspelled P-A-R-A-C-E-T-A-M-O-L |
+| Plus a `PARACETAMOL` sign of its own | shown, as one sign rather than eleven letters |
+
+### 1. The alphabet, 26 clips, `A` to `Z`
+
+The highest value footage in the project, and it was previously listed as a
+fallback for FR 1.6 rather than as the thing FR 6 turns on.
+
+A medicine name is a **content** word, so it does not need a clip of its own.
+With the alphabet filmed it is fingerspelled, which is what an interpreter does
+with a drug name anyway. Twenty six clips therefore cover **every medicine that
+will ever be prescribed**, where a clip per drug would be an endless list that
+is always missing the one in front of you.
+
+### 2. Quantities and frequencies, about 15 clips
+
+`one` to `ten`, `once`, `twice`, `daily`, `morning`, `night`.
+
+These are **blocking** words, per ADR 033, and cannot be covered by the
+alphabet. Two reasons, and the second is the one that matters:
+
+- Dropping them changes the dose. "two tablets" becoming "tablets" is the exact
+  harm the safety gate exists to refuse.
+- Spelling them would be wrong rather than merely clumsy. Sign languages have
+  their own number signs, so T-W-O is not what a signer reads for 2. This is
+  real vocabulary, not a fallback.
+
+### 3. Dose units, about 4 clips
+
+`tablet`, `spoon`, `drop`, `injection`. Content words, so the alphabet covers
+them, but they appear on nearly every prescription and spelling them each time
+is slow to watch.
+
+### 4. The two critical alerts
+
+`cannot_breathe` and `pregnancy`, per FR 5.3 and ADR 040. Emergency Triage
+already works without them, on the drawn icons, so these improve a working
+screen rather than unblocking a broken one.
+
+### What is deliberately not on this list
+
+A clip per medicine name. See the alphabet above: fingerspelling covers the
+whole class, and a per drug library would need extending every time a formulary
+changes, with the failure mode landing on whichever patient is holding the
+device.
+
+### A note on entering a dose
+
+Digits work: `2` tokenizes and classifies as blocking correctly, so it resolves
+once the number clips exist. But a dosage typed as `2` with a frequency of `1`
+signs as a bare number with no unit, and the patient's caption reads "para, 2,
+1". `one tablet` and `twice a day` resolve to signs a patient can act on. Worth
+saying in whatever guidance the doctors get, because the app cannot tell the
+difference between a terse entry and a wrong one.

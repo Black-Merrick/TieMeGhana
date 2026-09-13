@@ -35,6 +35,12 @@ export default function SpokenResponse({ status, result }) {
         </p>
       ) : null}
 
+      {status === "stopped" ? (
+        <p className="spoken__stopped" data-testid="spoken-stopped">
+          Stopped before the whole answer was said. Tap to say it again.
+        </p>
+      ) : null}
+
       {status === "failed" ? (
         <p className="consultation__error" role="alert" data-testid="spoken-error">
           The answer could not be spoken aloud. Show this screen to the doctor

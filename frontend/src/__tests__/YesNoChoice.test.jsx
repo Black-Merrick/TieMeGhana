@@ -22,14 +22,30 @@ describe("YesNoChoice", () => {
     expect(screen.getByTestId("choice-no")).toBeInTheDocument();
   });
 
-  it("shows no visible text on either option", () => {
-    // FR 2.1 requires icon based options with no text, because this control is
-    // shown to patients who may not read print. A label that renders on screen
-    // would defeat the entire purpose of the literacy check.
-    render(<YesNoChoice onChoose={vi.fn()} />);
+  it("puts the icon first and never lets the label stand alone", () => {
+    // FR 2.1 asked for no text at all. The label is here at the team's
+    // direction, ADR 047, and what keeps it safe is that the icon always
+    // exists and comes first: a patient who does not read acts on the mark,
+    // not on the word beside it.
+    render(<YesNoChoice onChoose={() => {}} />);
 
-    expect(screen.getByTestId("choice-yes")).toHaveTextContent("");
-    expect(screen.getByTestId("choice-no")).toHaveTextContent("");
+    for (const testId of ["choice-yes", "choice-no"]) {
+      const option = screen.getByTestId(testId);
+      const icon = option.querySelector("svg");
+
+      expect(icon).not.toBeNull();
+      // The icon precedes the label in the DOM, so it is also what a screen
+      // reader and a keyboard user reach first.
+      expect(icon.compareDocumentPosition(option.querySelector(".choice__label")))
+        .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it("labels each option in English and Twi", () => {
+    render(<YesNoChoice onChoose={() => {}} />);
+
+    expect(screen.getByTestId("choice-yes")).toHaveTextContent("Aane");
+    expect(screen.getByTestId("choice-no")).toHaveTextContent("Daabi");
   });
 
   it("still names each option for assistive technology", () => {

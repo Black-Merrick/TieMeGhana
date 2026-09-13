@@ -1,12 +1,30 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
-import EmergencyTriage from "./components/EmergencyTriage.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
+import InstallApp from "./components/InstallApp.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
-import PrescriptionBuilder from "./components/PrescriptionBuilder.jsx";
-import PrescriptionPlayback from "./components/PrescriptionPlayback.jsx";
+import ScreenLoader from "./components/ScreenLoader.jsx";
+
+/*
+ * Split out of the main bundle, fetched the first time they are opened.
+ *
+ * The consultation is not, and that asymmetry is the point: it is what the
+ * app opens into, so making it wait on a second request would put a gap in
+ * front of every visit. Emergency triage and the prescription screens are
+ * each reached by a deliberate tap, and prescription playback is a different
+ * device entirely, arriving by QR code, where nothing else in the bundle is
+ * wanted at all.
+ */
+const EmergencyTriage = lazy(() => import("./components/EmergencyTriage.jsx"));
+const PrescriptionBuilder = lazy(
+  () => import("./components/PrescriptionBuilder.jsx"),
+);
+const PrescriptionPlayback = lazy(
+  () => import("./components/PrescriptionPlayback.jsx"),
+);
+import ConnectionStatus from "./components/ConnectionStatus.jsx";
 import { referenceFromPath } from "./api/prescriptions.js";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import { clearTranscript } from "./transcript/transcript.js";
@@ -129,90 +147,124 @@ export default function App() {
   // FR 6.4.
   if (prescriptionReference) {
     return (
-      <main className="shell">
-        <h1 className="shell__title">Tie Me Ghana</h1>
-        <PrescriptionPlayback reference={prescriptionReference} />
-      </main>
+      <div className="app">
+        <main className="shell">
+          <h1 className="shell__title">Tie Me Ghana</h1>
+          <Suspense fallback={<ScreenLoader label="Opening your prescription" />}>
+            <PrescriptionPlayback reference={prescriptionReference} />
+          </Suspense>
+        </main>
+      </div>
     );
   }
 
+  // Two columns that scroll independently, on the screens built as two
+  // columns: the consultation and emergency triage. Emergency qualifies with
+  // no visit at all, because it is reachable before the literacy check.
+  //
+  // On a phone the columns are stacked and the page scrolls as one, because
+  // two short scroll panes on top of each other is worse than one page.
+  const split = emergency || (Boolean(visit) && !prescribing);
+
   return (
-    <main className="shell">
-      <h1 className="shell__title">Tie Me Ghana</h1>
-      <p className="shell__subtitle">
-        Hospital communication for Deaf and Hard of Hearing patients
-      </p>
+    <div className={split ? "app app--split" : "app"}>
+      <header className="topbar">
+        <div className="topbar__brand">
+          {/* The app's mark, from public/icon.png via tools/build_icons.py.
+              The 96px derivative rather than the 512px source: it draws at
+              about 38px, and the source is a quarter of a megabyte.
 
-      <div className="shell__bar">
-        <p className="shell__status" data-testid="connection-status">
-          <span
-            className={`shell__dot shell__dot--${connection}`}
-            aria-hidden="true"
+              The alt is empty because the name is right beside it, and
+              announcing both would read the app's name twice. */}
+          <img
+            className="topbar__logo"
+            src="/icon-96.png"
+            alt=""
+            width="38"
+            height="38"
           />
-          {CONNECTION_LABELS[connection]}
-        </p>
-
-        {/* Always on screen, with no visit required. A responder should not
-            have to find a menu, and FR 5 exists for the case where there is no
-            time to set anything up. */}
-        {emergency ? null : (
-          <button
-            type="button"
-            className="shell__emergency"
-            onClick={() => setEmergency(true)}
-            data-testid="enter-emergency"
-          >
-            Emergency
-          </button>
-        )}
-
-        {visit ? (
-          <>
-            {/* Section 4.1, the path indicator is never buried in settings. */}
-            <p className="shell__path" data-testid="literacy-path">
-              {PATH_LABELS[visit.literacyPath]}
+          {/* Stacked beside the mark, not strung out after it: the name is the
+              heading and the line under it describes the app. */}
+          <div className="topbar__names">
+            <h1 className="topbar__title">Tie Me Ghana</h1>
+            <p className="topbar__subtitle">
+              Hospital communication for Deaf and Hard of Hearing patients
             </p>
-            <fieldset className="shell__output" data-testid="output-language">
-              <legend className="shell__output-legend">Speak answers in</legend>
-              {[
-                { value: OutputLanguage.ENGLISH, label: "English" },
-                { value: OutputLanguage.TWI, label: "Twi" },
-              ].map((language) => (
-                <label key={language.value} className="consultation__language">
-                  <input
-                    type="radio"
-                    name="output-language"
-                    value={language.value}
-                    checked={visit.outputLanguage === language.value}
-                    onChange={() => changeOutputLanguage(language.value)}
-                  />
-                  {language.label}
-                </label>
-              ))}
-            </fieldset>
+          </div>
+        </div>
 
-            {prescribing ? null : (
+        {/* Four groups rather than one row of controls, so the layout can
+            place them differently on a phone: the name and Emergency on the
+            first line, the status under it, and the two secondary actions in a
+            bar at the bottom of the screen where a thumb reaches. */}
+        <div className="topbar__status">
+          <ConnectionStatus state={connection} />
+
+          {visit ? (
+            <>
+              {/* Section 4.1, the path indicator is never buried in
+                  settings. */}
+              <p className="pill pill--info shell__path" data-testid="literacy-path">
+                {PATH_LABELS[visit.literacyPath]}
+              </p>
+            </>
+          ) : null}
+        </div>
+
+        <div className="topbar__actions">
+          {/* Always here, with or without a visit. It used to sit on the
+              literacy screen, which meant it vanished the moment a
+              consultation started and could only be found again by ending
+              one. Installing is a one time action and belongs somewhere it
+              can be reached at any point. */}
+          <InstallApp />
+
+          {visit ? (
+            <>
+              {prescribing ? null : (
+                <button
+                  type="button"
+                  className="shell__prescribe"
+                  onClick={() => setPrescribing(true)}
+                  data-testid="enter-prescription"
+                >
+                  Prescription
+                </button>
+              )}
+
               <button
                 type="button"
-                className="shell__prescribe"
-                onClick={() => setPrescribing(true)}
-                data-testid="enter-prescription"
+                className="shell__new-patient"
+                onClick={startNewPatient}
+                data-testid="new-patient"
               >
-                Prescription
+                New patient
               </button>
-            )}
+            </>
+          ) : null}
+        </div>
 
+        {/* Always present, with no visit required. A responder should not have
+            to find a menu, and FR 5 exists for the case where there is no time
+            to set anything up. First line on a phone, for the same reason. */}
+        <div className="topbar__primary">
+          {emergency ? null : (
             <button
               type="button"
-              className="shell__new-patient"
-              onClick={startNewPatient}
-              data-testid="new-patient"
+              className="shell__emergency"
+              onClick={() => setEmergency(true)}
+              data-testid="enter-emergency"
             >
-              New patient
+              <span className="btn__icon" aria-hidden="true">
+                <AlertIcon />
+              </span>
+              Emergency
             </button>
-          </>
-        ) : null}
-      </div>
+          )}
+        </div>
+      </header>
+
+      <main className={split ? "shell shell--wide" : "shell"}>
 
       {/* Development only in practice, but shown rather than logged: a
           console warning is a warning nobody reads. */}
@@ -227,18 +279,44 @@ export default function App() {
       ) : null}
 
       {emergency ? (
-        <EmergencyTriage
-          outputLanguage={outputLanguage}
-          onLeave={() => setEmergency(false)}
-        />
+        <Suspense fallback={<ScreenLoader label="Opening emergency mode" />}>
+          <EmergencyTriage
+            outputLanguage={outputLanguage}
+            onLeave={() => setEmergency(false)}
+          />
+        </Suspense>
       ) : prescribing && visit ? (
-        <PrescriptionBuilder onLeave={() => setPrescribing(false)} />
+        <Suspense fallback={<ScreenLoader label="Opening the prescription" />}>
+          <PrescriptionBuilder onLeave={() => setPrescribing(false)} />
+        </Suspense>
       ) : visit ? (
-        <PatientPath path={visit.literacyPath} outputLanguage={outputLanguage} />
-      ) : (
-        <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
-      )}
-    </main>
+        <PatientPath
+          path={visit.literacyPath}
+          outputLanguage={outputLanguage}
+          onOutputLanguageChange={changeOutputLanguage}
+        />
+        ) : (
+          <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
+        )}
+      </main>
+    </div>
+  );
+}
+
+/* Inline so the emergency control cannot lose its mark on a slow connection. */
+function AlertIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path
+        d="M10 2.8 18.2 17H1.8L10 2.8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M10 7.6v4.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="10" cy="14.2" r="1" fill="currentColor" />
+    </svg>
   );
 }
 
@@ -250,20 +328,22 @@ export default function App() {
  * version of the constraint in SRS section 4.3 rather than a rule someone has
  * to remember.
  */
-function PatientPath({ path, outputLanguage }) {
+function PatientPath({ path, outputLanguage, onOutputLanguageChange }) {
   if (path === LiteracyPath.LITERATE) {
-    return <DoctorConsultation outputLanguage={outputLanguage} />;
+    return (
+      <DoctorConsultation
+        outputLanguage={outputLanguage}
+        onOutputLanguageChange={onOutputLanguageChange}
+      />
+    );
   }
-  return <GuidedInterrogation outputLanguage={outputLanguage} />;
+  return (
+    <GuidedInterrogation
+      outputLanguage={outputLanguage}
+      onOutputLanguageChange={onOutputLanguageChange}
+    />
+  );
 }
-
-// Status wording is user facing, so it lives in one place rather than being
-// assembled inline, ready for translation alongside the rest of the UI copy.
-const CONNECTION_LABELS = {
-  checking: "Checking connection to the hospital system",
-  connected: "Connected to the hospital system",
-  offline: "Offline, cached content only",
-};
 
 const PATH_LABELS = {
   [LiteracyPath.LITERATE]: "Reads and writes",

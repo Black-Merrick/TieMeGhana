@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Direction, transcriptAsText } from "../transcript/transcript.js";
 
@@ -17,7 +17,24 @@ export default function TranscriptView({ entries, onDiscard }) {
   const [patientName, setPatientName] = useState("");
   const [nameWarning, setNameWarning] = useState(false);
 
+  useEffect(() => {
+    if (!naming) return undefined;
+
+    const onKey = (event) => {
+      if (event.key === "Escape") cancelNaming();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [naming]);
+
   if (entries.length === 0) return null;
+
+  const cancelNaming = () => {
+    setNaming(false);
+    setNameWarning(false);
+    setPatientName("");
+  };
 
   const saveCopy = () => {
     const name = patientName.trim();
@@ -47,19 +64,72 @@ export default function TranscriptView({ entries, onDiscard }) {
 
     // The name is not kept. See ADR 028: a name stored beside a clinical
     // transcript on a shared device would make a stray record identifying.
-    setPatientName("");
-    setNaming(false);
-    setNameWarning(false);
+    cancelNaming();
   };
 
   return (
-    <section className="transcript" data-testid="transcript">
-      <h2 className="transcript__title">Your record of this consultation</h2>
+    <section className="panel transcript" data-testid="transcript">
+      {/* Title and controls on one row. Saving and deleting are the patient's
+          own actions under FR 4.3, so they belong at the top of their record
+          rather than under a list that can be scrolled past. */}
+      <div className="transcript__top">
+        <div>
+          <h2 className="transcript__title">Your record of this consultation</h2>
+          <p className="transcript__privacy" data-testid="transcript-privacy">
+            Kept on this device only. Deleted automatically when the visit ends.
+          </p>
+        </div>
 
-      <p className="transcript__privacy" data-testid="transcript-privacy">
-        Kept on this device only. It is never sent to the hospital or to us, and
-        it is deleted when the visit ends.
-      </p>
+        <div className="transcript__actions">
+          <button
+            type="button"
+            className="transcript__save"
+            onClick={() => setNaming(true)}
+            data-testid="start-save-transcript"
+          >
+            Save a copy
+          </button>
+
+          {confirmingDelete ? (
+          <>
+            {/* Confirmed rather than immediate. Deleting is the patient's right
+                under FR 4.3, but it is also irreversible, and a mistap during a
+                consultation would destroy the only record they have. */}
+              <span className="transcript__confirm" data-testid="confirm-delete">
+              Delete this record for good?
+              </span>
+              <button
+              type="button"
+              className="transcript__delete"
+              onClick={() => {
+                onDiscard();
+                setConfirmingDelete(false);
+              }}
+              data-testid="confirm-delete-yes"
+            >
+              Yes, delete it
+              </button>
+              <button
+              type="button"
+              className="transcript__cancel"
+              onClick={() => setConfirmingDelete(false)}
+              data-testid="confirm-delete-no"
+            >
+              Keep it
+              </button>
+            </>
+        ) : (
+          <button
+            type="button"
+            className="transcript__delete"
+            onClick={() => setConfirmingDelete(true)}
+            data-testid="delete-transcript"
+          >
+            Delete my record
+            </button>
+        )}
+        </div>
+      </div>
 
       {/* Scrollable per FR 4.3, so a long consultation stays readable without
           pushing the controls off screen. */}
@@ -91,120 +161,97 @@ export default function TranscriptView({ entries, onDiscard }) {
         ))}
       </ol>
 
+      {/* A dialog rather than a panel under the list.
+
+          The panel appeared below a transcript that scrolls, so on a long
+          consultation the field the patient had just asked for was off screen,
+          and the button that completed the action was back up in the header,
+          away from the field it belonged to. A dialog puts the question, the
+          field and the answer in one place and stops the page moving
+          underneath. */}
       {naming ? (
-        <div className="transcript__naming">
-          <label className="consultation__field" htmlFor="patient-name">
-            Patient name, for the saved copy
-          </label>
-          <input
-            id="patient-name"
-            type="text"
-            className={
-              nameWarning
-                ? "consultation__input consultation__input--invalid"
-                : "consultation__input"
-            }
-            value={patientName}
-            onChange={(event) => {
-              setPatientName(event.target.value);
-              if (nameWarning) setNameWarning(false);
+        <div className="modal" data-testid="name-dialog">
+          <form
+            className="modal__card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="patient-name-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveCopy();
             }}
-            aria-invalid={nameWarning}
-            aria-describedby={nameWarning ? "patient-name-warning" : undefined}
-            data-testid="patient-name"
-          />
+          >
+            <h3 className="modal__title" id="patient-name-title">
+              Save a copy of this record
+            </h3>
 
-          {nameWarning ? (
-            <p
-              id="patient-name-warning"
-              className="consultation__warning"
-              role="alert"
-              data-testid="patient-name-warning"
-            >
-              Enter the patient&apos;s name so it appears on the saved record.
+            <label className="consultation__field" htmlFor="patient-name">
+              Patient name, for the saved copy
+            </label>
+            <input
+              id="patient-name"
+              type="text"
+              className={
+                nameWarning
+                  ? "consultation__input consultation__input--invalid"
+                  : "consultation__input"
+              }
+              value={patientName}
+              onChange={(event) => {
+                setPatientName(event.target.value);
+                if (nameWarning) setNameWarning(false);
+              }}
+              // Focused on open, so the patient can type straight away rather
+              // than hunting for the one field in a dialog that exists only to
+              // hold it.
+              autoFocus
+              aria-invalid={nameWarning}
+              aria-describedby={
+                nameWarning ? "patient-name-warning" : "patient-name-note"
+              }
+              data-testid="patient-name"
+            />
+
+            {nameWarning ? (
+              <p
+                id="patient-name-warning"
+                className="consultation__warning"
+                role="alert"
+                data-testid="patient-name-warning"
+              >
+                Enter the patient&apos;s name so it appears on the saved record.
+              </p>
+            ) : null}
+
+            {/* ADR 028. The name is written into the downloaded file and
+                nowhere else, because a name stored beside a clinical
+                transcript on a shared device is what makes a stray record
+                identifying. */}
+            <p className="modal__note" id="patient-name-note">
+              Used only on the file you download. It is not stored on this
+              device.
             </p>
-          ) : null}
 
-          <p className="transcript__naming-note">
-            Used only on the file you download. It is not stored on this device.
-          </p>
+            <div className="modal__actions">
+              <button
+                type="button"
+                className="transcript__cancel"
+                onClick={cancelNaming}
+                data-testid="cancel-save"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="consultation__send"
+                data-testid="save-transcript"
+              >
+                Download the record
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
-
-      <div className="transcript__actions">
-        {naming ? (
-          <>
-            <button
-              type="button"
-              className="transcript__save"
-              onClick={saveCopy}
-              data-testid="save-transcript"
-            >
-              Download the record
-            </button>
-            <button
-              type="button"
-              className="transcript__cancel"
-              onClick={() => {
-                setNaming(false);
-                setNameWarning(false);
-                setPatientName("");
-              }}
-              data-testid="cancel-save"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="transcript__save"
-            onClick={() => setNaming(true)}
-            data-testid="start-save-transcript"
-          >
-            Save a copy
-          </button>
-        )}
-
-        {confirmingDelete ? (
-          <>
-            {/* Confirmed rather than immediate. Deleting is the patient's right
-                under FR 4.3, but it is also irreversible, and a mistap during a
-                consultation would destroy the only record they have. */}
-            <span className="transcript__confirm" data-testid="confirm-delete">
-              Delete this record for good?
-            </span>
-            <button
-              type="button"
-              className="transcript__delete"
-              onClick={() => {
-                onDiscard();
-                setConfirmingDelete(false);
-              }}
-              data-testid="confirm-delete-yes"
-            >
-              Yes, delete it
-            </button>
-            <button
-              type="button"
-              className="transcript__cancel"
-              onClick={() => setConfirmingDelete(false)}
-              data-testid="confirm-delete-no"
-            >
-              Keep it
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="transcript__delete"
-            onClick={() => setConfirmingDelete(true)}
-            data-testid="delete-transcript"
-          >
-            Delete my record
-          </button>
-        )}
-      </div>
     </section>
   );
 }

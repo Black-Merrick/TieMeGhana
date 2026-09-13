@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,6 +47,13 @@ function captionResponse(overrides = {}) {
 }
 
 beforeEach(() => {
+  // The current exchange and the transcript are both kept in localStorage, so
+  // without this a test that renders fresh inherits whatever the previous test
+  // asked the patient. It was harmless until the reply moved into the stage,
+  // where it appears only once the message has been watched: a leaked exchange
+  // put a video on screen in a test that had sent nothing.
+  localStorage.clear();
+
   captionUtterance.mockResolvedValue(captionResponse());
   speakResponse.mockResolvedValue({
     spoken_text: "my head hurts",
@@ -72,6 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("DoctorConsultation", () => {
@@ -392,6 +400,183 @@ describe("the patient's typed reply", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("where the patient replies", () => {
+  async function watchMessage() {
+    const video = await waitFor(() => {
+      const element = document.querySelector("video");
+      if (!element) throw new Error("no sign video on screen");
+      return element;
+    });
+    fireEvent.ended(video);
+
+    // The reply replaces the video after a short settle, so waiting for the
+    // event alone would race the swap.
+    await waitFor(() =>
+      expect(screen.getByTestId("stage-answers")).toBeInTheDocument(),
+    );
+  }
+
+  it("offers a reply before anything has been asked, per FR 3.1", async () => {
+    // A patient on this path can say something unprompted. A screen that only
+    // offered a reply after a question would quietly take that away.
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    expect(screen.getByTestId("stage-idle")).toBeInTheDocument();
+    expect(screen.getByLabelText(/type your answer/i)).toBeInTheDocument();
+  });
+
+  it("takes the video's place once the message has played", async () => {
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "Hello");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+    await watchMessage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("stage-answers")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("stage-answers")).toContainElement(
+      screen.getByLabelText(/type your answer/i),
+    );
+    // Nothing competes with the reply for the space the patient is looking at.
+    expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("keeps the reply out of the way while the message is playing", async () => {
+    // The patient is watching, not typing, and a reply box under a playing
+    // video invites an answer to a question only half seen.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "Hello");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(screen.queryByLabelText(/type your answer/i)).not.toBeInTheDocument();
+  });
+
+  it("is not duplicated in the doctor's column", async () => {
+    // It used to live there. Two reply boxes would let the patient type into
+    // one and send the other, empty.
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    expect(screen.getAllByLabelText(/type your answer/i)).toHaveLength(1);
+  });
+});
+
+describe("telling the patient their answer is being spoken", () => {
+  /**
+   * An Audio stand-in that fires the events a real one fires.
+   *
+   * The shared stub in this file resolves play() and never calls onplay or
+   * onended, which leaves the hook stuck reporting "working". That is fine for
+   * tests about the request, and useless for tests about what the patient sees
+   * while the audio runs, which is the whole cycle.
+   */
+  function stubAudio({ endImmediately = false } = {}) {
+    const played = [];
+
+    vi.stubGlobal(
+      "Audio",
+      class {
+        constructor(src) {
+          this.src = src;
+          played.push(this);
+        }
+
+        play() {
+          this.onplay?.();
+          if (endImmediately) this.onended?.();
+          return Promise.resolve();
+        }
+      },
+    );
+
+    return played;
+  }
+
+  it("shows a wave in the button itself while it speaks", async () => {
+    // Section 4.2. A Deaf patient cannot hear whether their answer went out,
+    // and the button they pressed is where they are already looking, so the
+    // cue belongs in it rather than somewhere else on the screen.
+    // Playing but not finished, which is the state the wave describes.
+    stubAudio();
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/type your answer/i), "I'm good");
+    await user.click(screen.getByTestId("speak-to-doctor"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("speak-to-doctor").querySelector(".wave"))
+        .not.toBeNull();
+    });
+
+    // And nothing to replay yet: it is still being said the first time.
+    expect(screen.queryByTestId("replay-answer")).not.toBeInTheDocument();
+  });
+
+  it("lets the answer be said again for a doctor who missed it", async () => {
+    // The patient has no way to tell a doctor who understood from one who was
+    // not listening, so repeating has to be theirs to do.
+    const played = stubAudio({ endImmediately: true });
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/type your answer/i), "I'm good");
+    await user.click(screen.getByTestId("speak-to-doctor"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("replay-answer")).toBeInTheDocument();
+    });
+
+    speakResponse.mockClear();
+    await user.click(screen.getByTestId("replay-answer"));
+
+    // Played a second time rather than merely re-rendered.
+    expect(played).toHaveLength(2);
+
+    // Replayed from the response already in hand. Asking the language service
+    // again would spend metered Khaya credit to repeat something unchanged,
+    // which ADR 015 exists to avoid.
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+
+  it("offers nothing to replay before anything has been said", async () => {
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    expect(screen.queryByTestId("replay-answer")).not.toBeInTheDocument();
+  });
+});
+
+describe("the pause before the answer interface", () => {
+  it("does not swap the video out on the same frame it ends", async () => {
+    // A sign ends on a handshape and the final one carries meaning. Cutting it
+    // off makes the change read as a fault rather than as the question
+    // finishing.
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "Hello");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    const video = await waitFor(() => {
+      const element = document.querySelector("video");
+      if (!element) throw new Error("no sign video on screen");
+      return element;
+    });
+    fireEvent.ended(video);
+
+    // Still showing the last frame at this point, not the reply.
+    expect(screen.queryByTestId("stage-answers")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("stage-answers")).toBeInTheDocument();
     });
   });
 });

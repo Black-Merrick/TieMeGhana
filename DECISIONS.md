@@ -1614,3 +1614,57 @@ captions stay on the page, where they can be corrected.
 The "Add to Home screen" hint is plain text rather than a browser install
 prompt. That prompt exists on some browsers and fires on some visits, and a
 button that sometimes does nothing is worse than a sentence that always works.
+
+
+## ADR 047: The literacy question is printed as well as signed
+
+**Context.** FR 2.1 asks for the first use prompt to be "sign video only, two
+large icon options, no text". The app was built that way. Reviewing the screen
+against the design direction in `frontend/UI/`, the team asked for the question
+to appear in text alongside the sign video, and for the answer options to carry
+bilingual labels.
+
+The concern raised, and the reason this record exists: FR 2.1's wording is
+deliberate. The patient being asked whether they read may not read, so any
+design that leans on text risks acting on an answer to a question the patient
+was never actually asked. That is the worst failure available on this screen,
+because every later screen is chosen by the answer.
+
+**Decision.** The question is printed in English and Twi next to the sign
+video, and each option carries a label under its icon, "Yes / Aane" and
+"No / Daabi". Made at the team's direction.
+
+**Why it is defensible.** The text is a second rendering of the same question,
+not a replacement for the first. Three things hold that line, and each is
+tested:
+
+The sign video is still the question. It is still fetched, still the largest
+thing on the screen, and its absence is still reported as the question not
+having been asked.
+
+The icon still comes first inside each option, in the DOM as well as visually,
+so a patient who does not read acts on a large green tick or a large red
+cross, and the label is smaller and secondary.
+
+The routing depends on nothing being read. The answer is a tap on an icon,
+exactly as before.
+
+It also buys something real. A hard of hearing patient who reads Twi or English
+but has no GhSL is served by this screen for the first time, and the staff
+member standing beside a patient has the exact wording to ask in person, which
+matters today because the prompt clip is not filmed.
+
+**Consequence.** The code and the SRS now disagree on paper, so the FR 2.1 row
+in `BACKLOG.md` is marked `done, deviated` and points here. This is the third
+such deviation, after ADR 041 on the asthma alert and ADR 044's note on
+unauthenticated issuing, and they are all recorded the same way for the same
+reason: a deviation visible only as code that does not match the spec gets read
+as an oversight and undone by whoever next reconciles the two.
+
+One test was rewritten rather than deleted, and the reason is worth keeping.
+`GuidedInterrogation` asserted "needs no typing from the patient" by checking
+that the answer buttons contained no text, which is a proxy for the
+requirement rather than the requirement, and it failed the moment the buttons
+gained labels. It now asserts that the only typeable element on the screen is
+the doctor's own box. A test that breaks when something unrelated changes was
+testing the wrong thing.
