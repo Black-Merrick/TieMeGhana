@@ -1866,3 +1866,64 @@ A guarantee made of absences is the strongest kind and the easiest to lose
 without noticing, which is the same reasoning as the route walking test from
 sprint 6 and the API surface test that has now caught two sprints in a row of
 new endpoints being added without being declared.
+
+
+## The same migration bug, for the third time, and a guard for it
+
+Creating a QR code failed with "The prescription could not be saved". The
+underlying response:
+
+```
+POST /api/prescriptions/  ->  500
+OperationalError: table prescriptions_prescriptionitem has no column named caption_provider
+```
+
+`prescriptions.0002_prescriptionitem_caption_provider` had been written and
+never applied. `python manage.py migrate` fixed it in one command.
+
+### Why this keeps happening
+
+Three properties line up, and none of them is obviously wrong on its own.
+
+`runserver` does warn about unapplied migrations, but only at startup. A server
+running since before the migration was written reloads on the file change
+without printing the notice again, so the warning is issued at the one moment
+nobody needs it.
+
+The test suite cannot see it. pytest builds its database from scratch and
+applies every migration, so a missing column in the developer's database is
+invisible to a green suite by construction. This is the third time: ADR 010 was
+found this way, `clips_clipalias` was found this way, and now this.
+
+And the symptom points somewhere else entirely. The doctor is told to check
+their connection, which is what the interface can honestly say about a failed
+request, and whoever debugs it starts with the network.
+
+### The guard
+
+`/api/health/` now reports the schema as its own fact:
+
+```json
+{"status": "ok", "database": "ok", "migrations": "ok"}
+```
+
+and when the schema is stale, `"migrations": "pending"` with the list of names.
+The app shows that as a visible banner naming the command to run.
+
+Deliberately still HTTP 200. The API process and the database are both up, and
+a 503 would make the interface tell the patient it is offline, sending the next
+person to debug it back to the network. A stale schema is a different fact and
+gets its own field.
+
+There is also a fourth state. If the migration table itself cannot be read the
+answer is `"unknown"`, not `"ok"`, because the entire value of this endpoint is
+that it does not guess.
+
+### An unrelated thing the same investigation turned up
+
+Port 8000 on this machine is a different Django project. It answers 404 for
+every Tie Me Ghana route, so a direct `curl localhost:8000/api/health/` looks
+like the backend is broken when it is simply not the backend. Vite proxies to
+8001, which is why the app works while a direct probe does not. Worth knowing
+before it costs someone an hour: check which port Vite is proxying to, in
+`frontend/.env.local`, before concluding anything from a direct request.

@@ -1406,3 +1406,20 @@ body {
   font-size: 0.85rem;
   color: #8a2b1c;
 }
+
+/* A stale database schema. Loud on purpose: the alternative is finding out
+   from a 500 mid consultation about a column nobody has heard of. */
+.shell__schema {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #b8860b;
+  border-radius: 0.3rem;
+  background: #fdf6e3;
+  color: #6b4e00;
+  font-weight: 600;
+}
+
+.shell__schema code {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}

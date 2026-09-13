@@ -1527,3 +1527,40 @@ reference, so this is a storage nuisance rather than a disclosure, but it is
 not something to leave undocumented before a real deployment. Authentication
 for the doctor facing half belongs with the deployment work, alongside rate
 limiting, and is tracked in `BACKLOG.md` rather than pretended away here.
+
+
+## ADR 045: The health endpoint reports the schema, not just reachability
+
+**Context.** A migration written and not applied has now broken the running app
+three times: ADR 010, the missing `clips_clipalias` table, and
+`caption_provider` on prescription items. Each time the symptom was a 500 about
+a column nobody had heard of, the interface told the user to check their
+connection, and the test suite was green throughout.
+
+The three properties that produce it are each defensible alone. `runserver`
+warns at startup, which is the one moment before the migration exists. pytest
+builds its database from scratch, so a missing column in a developer's database
+is invisible to the suite by construction. And a failed request can only
+honestly be reported to the user as a connection problem, which sends whoever
+debugs it to the network.
+
+**Decision.** `/api/health/` reports `migrations` as a field of its own:
+`"ok"`, `"pending"` with the list of unapplied names, or `"unknown"` when the
+migration table cannot be read. The app shows a visible banner for `"pending"`
+naming the command to run.
+
+**Why not a 503.** The API process and the database are both up. Returning 503
+would make the interface say "Offline, cached content only", which is not what
+happened and would send the next person to debug it straight back to the
+network, which is the exact wrong turn this record exists to prevent. A stale
+schema is a distinct fact and gets a distinct field.
+
+**Why not a test.** The condition is not a property of the repository, it is a
+property of one developer's database, so there is nothing for a test in the
+repository to assert. A test can only check that the endpoint reports the state
+correctly, which is what the four tests in `core/tests.py` do.
+
+**Why `"unknown"` exists.** Reporting `"ok"` when the migration table could not
+be read would be a guess, and the value of a health endpoint is entirely that
+it does not guess. This is the same reasoning as ADR 011: a component that
+cannot verify something must say so rather than assume the good case.

@@ -36,6 +36,12 @@ export default function App() {
 
   const [connection, setConnection] = useState("checking");
 
+  // Migrations written but not applied to this database, reported by the
+  // health endpoint. Surfaced here because the alternative is finding out from
+  // a 500 mid consultation, about a column nobody has heard of, while the test
+  // suite stays green because pytest builds its database from scratch.
+  const [pendingMigrations, setPendingMigrations] = useState(null);
+
   // Read once on mount. A patient who reloads mid consultation keeps their
   // path, and a visit older than the safety window is treated as finished.
   const [visit, setVisit] = useState(() => loadVisit());
@@ -65,8 +71,13 @@ export default function App() {
     let cancelled = false;
 
     fetchHealth()
-      .then(() => {
-        if (!cancelled) setConnection("connected");
+      .then((health) => {
+        if (cancelled) return;
+
+        setConnection("connected");
+        if (health?.migrations === "pending") {
+          setPendingMigrations(health.pending_migrations ?? []);
+        }
       })
       .catch(() => {
         if (!cancelled) setConnection("offline");
@@ -202,6 +213,18 @@ export default function App() {
           </>
         ) : null}
       </div>
+
+      {/* Development only in practice, but shown rather than logged: a
+          console warning is a warning nobody reads. */}
+      {pendingMigrations ? (
+        <p className="shell__schema" role="alert" data-testid="pending-migrations">
+          This database is missing {pendingMigrations.length} migration
+          {pendingMigrations.length === 1 ? "" : "s"}. Parts of the app will
+          fail with a database error until you run{" "}
+          <code>python manage.py migrate</code>.
+          {pendingMigrations.length ? ` Pending: ${pendingMigrations.join(", ")}.` : ""}
+        </p>
+      ) : null}
 
       {emergency ? (
         <EmergencyTriage

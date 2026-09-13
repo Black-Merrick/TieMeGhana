@@ -47,7 +47,7 @@ beforeEach(() => {
     "fetch",
     vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ status: "ok", database: "ok" }),
+      json: async () => ({ status: "ok", database: "ok", migrations: "ok" }),
     }),
   );
 });
@@ -463,5 +463,47 @@ describe("the prescription builder, FR 6.1", () => {
 
     expect(screen.queryByTestId("prescription-builder")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
+  });
+});
+
+describe("a database missing its migrations", () => {
+  it("says so instead of leaving it to a 500 mid consultation", async () => {
+    // The failure this exists for: a migration written but not applied. The
+    // endpoint that touches the new column returns a 500 about a column nobody
+    // has heard of, runserver printed its warning before the migration existed
+    // and does not repeat it on reload, and the tests stay green because
+    // pytest builds its database from scratch every run.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "ok",
+          database: "ok",
+          migrations: "pending",
+          pending_migrations: ["prescriptions.0002_prescriptionitem_caption_provider"],
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-migrations")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("pending-migrations")).toHaveTextContent(
+      "manage.py migrate",
+    );
+  });
+
+  it("stays quiet when the schema is up to date", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("connection-status")).toHaveTextContent(
+        "Connected",
+      );
+    });
+    expect(screen.queryByTestId("pending-migrations")).not.toBeInTheDocument();
   });
 });

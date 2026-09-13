@@ -12,7 +12,9 @@ def test_health_reports_ok_when_database_is_reachable(api_client):
     response = api_client.get(reverse("health"))
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["database"] == "ok"
 
 
 @pytest.mark.django_db
@@ -29,6 +31,67 @@ def test_health_reports_degraded_when_database_is_unreachable(api_client, monkey
 
     assert response.status_code == 503
     assert response.json()["status"] == "degraded"
+
+
+@pytest.mark.django_db
+class TestHealthReportsPendingMigrations:
+    """
+    A migration written but not applied is the failure this catches.
+
+    It has cost the same lost hour three times: the endpoint that touches the
+    new column returns a 500 about a column nobody has heard of, `runserver`
+    printed its warning before the migration existed and does not repeat it on
+    reload, and the test suite stays green throughout because pytest builds its
+    database from scratch every run.
+    """
+
+    def test_a_migrated_database_reports_ok(self, api_client):
+        # pytest applies every migration when it builds the test database, so
+        # this is the state the suite always runs in.
+        assert api_client.get(reverse("health")).json()["migrations"] == "ok"
+
+    def test_an_unapplied_migration_is_reported(self, api_client, monkeypatch):
+        from core import views
+
+        monkeypatch.setattr(
+            views, "_pending_migrations", lambda: ["prescriptions.0002_something"]
+        )
+
+        body = api_client.get(reverse("health")).json()
+
+        assert body["migrations"] == "pending"
+        assert body["pending_migrations"] == ["prescriptions.0002_something"]
+
+    def test_a_stale_schema_is_not_reported_as_being_offline(
+        self, api_client, monkeypatch
+    ):
+        # Deliberately still 200. The API and the database are both up, and a
+        # 503 would make the interface tell the patient it is offline, sending
+        # whoever is debugging to look at the network instead of the schema.
+        from core import views
+
+        monkeypatch.setattr(views, "_pending_migrations", lambda: ["clips.0007"])
+
+        response = api_client.get(reverse("health"))
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+    def test_an_unreadable_migration_table_is_not_reported_as_ok(
+        self, api_client, monkeypatch
+    ):
+        # Saying "ok" here would be a guess, and the whole value of this
+        # endpoint is that it does not guess.
+        from django.db import DatabaseError
+
+        from core import views
+
+        def fail():
+            raise DatabaseError("cannot read django_migrations")
+
+        monkeypatch.setattr(views, "_pending_migrations", fail)
+
+        assert api_client.get(reverse("health")).json()["migrations"] == "unknown"
 
 
 class TestProxiedAdminOrigins:
