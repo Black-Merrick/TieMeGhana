@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
 import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
+import { fetchPlaylist } from "../api/prescriptions.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
@@ -17,8 +18,23 @@ vi.mock("../api/clips.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../api/prescriptions.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchPlaylist: vi.fn() };
+});
+
 beforeEach(() => {
   localStorage.clear();
+  // Every test starts on the app's own route. A leaked prescription path would
+  // replace the whole consultation screen and fail in a way that looks
+  // unrelated to whichever test left it behind.
+  window.history.pushState({}, "", "/");
+  fetchPlaylist.mockResolvedValue({
+    reference: "ref",
+    items: [],
+    is_fully_signable: true,
+    unsignable_positions: [],
+  });
   fetchClipByGloss.mockResolvedValue({
     gloss: "CAN_YOU_READ_AND_WRITE",
     kind: "prompt",
@@ -365,5 +381,87 @@ describe("emergency triage is reachable, FR 5", () => {
     await userEvent.click(screen.getByTestId("enter-emergency"));
 
     expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
+  });
+});
+
+describe("a scanned prescription link, FR 6.3 and FR 6.4", () => {
+  it("opens the prescription and nothing else", async () => {
+    // This is the patient's own phone at home, not a hospital device. It must
+    // not be shown a consultation shell, a literacy question, or any route
+    // back into a visit.
+    window.history.pushState({}, "", "/p/abc123XYZ_-def");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-playback")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("new-patient")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("connection-status")).not.toBeInTheDocument();
+  });
+
+  it("opens the prescription even mid consultation on the same device", async () => {
+    // The reference in the URL decides, not what happens to be in
+    // localStorage. A patient scanning at home may be on a phone that once
+    // ran a consultation.
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    window.history.pushState({}, "", "/p/abc123XYZ_-def");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-playback")).toBeInTheDocument();
+    });
+  });
+
+  it("does not check the hospital connection on the patient's phone", async () => {
+    // FR 6.2 means this screen is expected to work offline. Telling the
+    // patient the hospital system is unreachable would be alarming and
+    // irrelevant.
+    window.history.pushState({}, "", "/p/abc123XYZ_-def");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-playback")).toBeInTheDocument();
+    });
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("/health"),
+      expect.anything(),
+    );
+  });
+});
+
+describe("the prescription builder, FR 6.1", () => {
+  it("is offered once a visit is under way", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-prescription"));
+
+    expect(screen.getByTestId("prescription-builder")).toBeInTheDocument();
+  });
+
+  it("is not offered before there is a patient", async () => {
+    // Unlike emergency mode. A prescription is the last thing that happens in
+    // a consultation, so there is always a visit by the time it is wanted, and
+    // offering it first would put a doctor's form in front of a patient who
+    // has not been asked anything yet.
+    render(<App />);
+
+    expect(screen.queryByTestId("enter-prescription")).not.toBeInTheDocument();
+  });
+
+  it("returns to the consultation when cancelled", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-prescription"));
+    await userEvent.click(screen.getByTestId("leave-prescription"));
+
+    expect(screen.queryByTestId("prescription-builder")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
   });
 });

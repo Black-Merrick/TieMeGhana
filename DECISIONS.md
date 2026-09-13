@@ -1448,3 +1448,82 @@ The nine region ids are glosses the rest of the app resolves body location
 clips by, so they are fixed. Renaming one to suit the drawing would stop a sign
 resolving with no error anywhere, which is the shape of bug ADR 010, 037 and
 039 all were.
+
+
+## ADR 043: A prescription stores words, and resolves its signs on every read
+
+**Context.** FR 6.1 asks for the final instructions to be "saved as an ordered
+playlist of GhSL clips and Twi captions". Read literally, that means storing
+which clips play, in order, at the moment the prescription is issued.
+
+**Decision.** The prescription stores the words: medicine, dosage, frequency.
+The clips are resolved from the library on every read, through the same
+resolver and the same safety gate the consultation screen uses.
+
+**Why.** Because the clip library changes underneath an issued prescription,
+and it changes in both directions.
+
+A sign gets filmed, and a prescription issued last week improves without anyone
+touching it. That is the pleasant direction. The other one is why this is an
+ADR: a consultant reviews a clip, decides the sign is wrong, and withdraws it.
+Every prescription that froze that clip id keeps playing the withdrawn sign, on
+phones, at home, with nobody to correct it. There is no recall mechanism for a
+QR code someone already scanned.
+
+Resolving on read means withdrawal takes effect everywhere at once. It also
+means the safety gate runs every time rather than once, so a prescription whose
+dosage sign was withdrawn stops being shown rather than being shown wrong.
+
+**What is frozen, and why the asymmetry.** The Twi caption is translated once,
+at issue time, and stored. Captions do not carry the same risk, they do not
+change, and translating on read would spend metered Khaya credit every time a
+patient opened their own prescription, which ADR 015 exists to prevent, and
+would make offline replay impossible. The stored caption records which provider
+produced it, per ADR 011, because the stub returns its input unchanged and
+English text under a `lang="tw"` attribute must not pass as a translation. That
+gap was real and was caught by an end to end check against the dev server, not
+by the tests.
+
+**Consequence.** Offline replay is the one place the guarantee is weakened. A
+patient with no signal replays from the service worker cache, so a withdrawn
+sign can still play until the phone next reaches the network. The playlist is
+cached `NetworkFirst` rather than `CacheFirst` to keep that window as short as
+connectivity allows. It cannot be closed entirely without giving up FR 6.2, and
+between the two, a patient who can replay their prescription offline is worth
+more than one protected from a sign that was withdrawn this week.
+
+## ADR 044: The prescription reference is the capability, and identifies nobody
+
+**Context.** FR 6.3 wants a QR code linking to the playlist "through a de
+identified reference", and FR 6.4 requires that the private transcript is
+neither in the playlist nor resolvable from the code. The natural question is
+what stops a stranger who finds the QR code from reading a patient's records.
+
+**Decision.** The reference is 16 bytes from `secrets`, url safe, and it is the
+only key. The endpoint it reaches requires no account. FR 6.4 is enforced by
+what the payload is made of: `Prescription` has no field for a patient, a
+visit, or a consultation, and the response serializer names every field it will
+ever emit.
+
+**Why not require an account.** It would defeat the requirement. The point of
+FR 6.2 is a Deaf patient replaying their own instructions at home, weeks later,
+on their own phone. An account is one more thing to have lost, and it would
+protect nothing, because the payload identifies nobody: a stranger who scans a
+found QR code learns that somebody, somewhere, was told to take paracetamol.
+
+**Why absence rather than permission.** A permission check is a line of code
+that can be wrong. There is no request that returns a transcript from a
+prescription reference, because there is no field to put one in and no endpoint
+that would resolve one, so there is nothing to misconfigure. Guarantees made of
+absences are the strongest kind and the easiest to lose quietly, which is why
+three tests pin this rather than none: the payload's exact field list, the
+model's absent field names, and a check that the reference reaches nothing
+broader than one playlist.
+
+**Known limitation, stated rather than hidden.** Issuing is also
+unauthenticated, consistent with ADR 036. Anyone who can reach the API can
+create prescription rows. They are only readable by their own unguessable
+reference, so this is a storage nuisance rather than a disclosure, but it is
+not something to leave undocumented before a real deployment. Authentication
+for the doctor facing half belongs with the deployment work, alongside rate
+limiting, and is tracked in `BACKLOG.md` rather than pretended away here.

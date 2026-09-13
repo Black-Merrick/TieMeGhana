@@ -1161,3 +1161,248 @@ body {
 .pain__mouth {
   stroke: #2a3b34;
 }
+
+/* Prescription playback, FR 6.1 to 6.4. */
+.shell__prescribe {
+  font: inherit;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--colour-primary);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--colour-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prescription {
+  margin-top: 1.5rem;
+}
+
+.prescription__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.prescription__title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--colour-primary);
+}
+
+.prescription__hint {
+  color: var(--colour-muted);
+  margin: 0.25rem 0 1.5rem;
+}
+
+.prescription__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.prescription__item {
+  border: 1px solid #c8d2ce;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  background: var(--colour-surface);
+}
+
+.prescription__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.prescription__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--colour-muted);
+}
+
+.prescription__field input {
+  font: inherit;
+  font-weight: 400;
+  color: inherit;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid #c8d2ce;
+  border-radius: 0.4rem;
+}
+
+.prescription__remove {
+  font: inherit;
+  margin-top: 0.75rem;
+  min-height: 2.25rem;
+  padding: 0 0.7rem;
+  border: 1px solid #c8d2ce;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--colour-muted);
+  cursor: pointer;
+}
+
+.prescription__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.prescription__add {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px dashed var(--colour-primary);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--colour-primary);
+  cursor: pointer;
+}
+
+.prescription__issue {
+  font: inherit;
+  font-weight: 700;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: var(--colour-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.prescription__issue:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* An item that cannot be signed is a clinical problem, not a styling detail,
+   so it is given the weight of one. */
+.prescription__warning {
+  border-left: 4px solid var(--colour-offline);
+  background: #fdf3f1;
+  color: #8a2b1c;
+  padding: 0.75rem 1rem;
+  border-radius: 0.3rem;
+  font-weight: 600;
+}
+
+.prescription__ok {
+  color: var(--colour-primary);
+  font-weight: 600;
+}
+
+.prescription__offline {
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+}
+
+/* The QR code, FR 6.3. */
+.qr {
+  margin: 0 0 1.5rem;
+  text-align: center;
+}
+
+.qr__image {
+  display: block;
+  margin: 0 auto;
+  /* White ground kept whatever the theme, because a scanner needs the
+     contrast the code was generated with. */
+  background: #fff;
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+  max-width: 100%;
+  height: auto;
+}
+
+.qr__url {
+  display: block;
+  margin-top: 0.5rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--colour-muted);
+  word-break: break-all;
+}
+
+.qr__fallback {
+  color: var(--colour-muted);
+}
+
+/* The playlist, shared by the doctor's confirmation and the patient's replay. */
+.playlist {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.playlist__item {
+  border: 1px solid #c8d2ce;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  background: var(--colour-surface);
+}
+
+.playlist__medicine {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+/* Dose and frequency on their own lines. A patient checking whether they have
+   already taken today's dose should not have to read a sentence to find the
+   number. */
+.playlist__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.playlist__facts dt {
+  color: var(--colour-muted);
+  font-size: 0.8rem;
+  align-self: center;
+}
+
+.playlist__facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.playlist__video {
+  margin-bottom: 0.5rem;
+}
+
+.playlist__refused {
+  border-left: 4px solid var(--colour-offline);
+  background: #fdf3f1;
+  color: #8a2b1c;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.3rem;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.playlist__caption {
+  margin: 0;
+  color: var(--colour-muted);
+}
+
+/* ADR 011. A caption the stub produced is English text under a lang="tw"
+   attribute, so it must never pass as a translation. */
+.playlist__untranslated {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #8a2b1c;
+}

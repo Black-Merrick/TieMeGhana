@@ -156,14 +156,14 @@ A test asserts its absence for the same reason.
 | 5.4 | No typing required anywhere in this mode | `done` |
 | 5.5 | Every selection spoken aloud in Twi or English, consistent with FR 3.4 | `done` |
 
-## P1.2, GhSL Prescription Playback, sprint 8
+## P1.2, GhSL Prescription Playback, sprint 8, `done`
 
 | FR | Requirement | Status |
 | --- | --- | --- |
-| 6.1 | Final instructions saved as an ordered playlist of GhSL clips and Twi captions | `todo` |
-| 6.2 | Playlist cached on the patient's phone for offline replay | `todo` |
-| 6.3 | QR code links to the playlist through a de identified reference, medicine name, dosage, and clip sequence only | `todo` |
-| 6.4 | The private transcript is never in the playlist and is not resolvable from the QR code | `todo` |
+| 6.1 | Final instructions saved as an ordered playlist of GhSL clips and Twi captions | `done` |
+| 6.2 | Playlist cached on the patient's phone for offline replay | `done` |
+| 6.3 | QR code links to the playlist through a de identified reference, medicine name, dosage, and clip sequence only | `done` |
+| 6.4 | The private transcript is never in the playlist and is not resolvable from the QR code | `done` |
 
 FR 6.4 is enforced by what the reference contains, not by a permission check.
 The QR payload has no field that could carry transcript data and no endpoint
@@ -240,3 +240,5 @@ solves, so they are tracked explicitly.
 | **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
 | Alphabet clips for fingerspelling, one per letter | FR 1.6 cannot fall back without a complete alphabet, so a partial one leaves words unavailable rather than spelled | open |
+| **Quantity and frequency clips**, `one` to `ten`, `once`, `twice`, `daily`, `morning`, `night` | The critical path for FR 6. Every prescription contains a dose and a frequency, the safety gate treats both as blocking per ADR 033, so until these exist every prescription is correctly refused in sign and has to be explained out loud | open |
+| Authentication and rate limiting on prescription issuing | ADR 044 names this as a known limitation. Issuing is unauthenticated like the rest of the API, so anyone reaching it can create rows. Not a disclosure, since each is readable only by its own unguessable reference, but deployment work | open |

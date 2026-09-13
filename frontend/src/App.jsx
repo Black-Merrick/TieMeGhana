@@ -5,6 +5,9 @@ import DoctorConsultation from "./components/DoctorConsultation.jsx";
 import EmergencyTriage from "./components/EmergencyTriage.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
+import PrescriptionBuilder from "./components/PrescriptionBuilder.jsx";
+import PrescriptionPlayback from "./components/PrescriptionPlayback.jsx";
+import { referenceFromPath } from "./api/prescriptions.js";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import { clearTranscript } from "./transcript/transcript.js";
 import {
@@ -24,6 +27,13 @@ import {
  * literacy answer selected, per FR 2.2.
  */
 export default function App() {
+  // A scanned QR code, FR 6.3. Read once, before anything else: this is the
+  // patient's own phone at home, not a hospital device, and it must not be
+  // shown a consultation shell, a literacy question, or any way into a visit.
+  // Read from the path rather than held in state because nothing in the app
+  // navigates to it; a scan is always a fresh page load.
+  const [prescriptionReference] = useState(() => referenceFromPath());
+
   const [connection, setConnection] = useState("checking");
 
   // Read once on mount. A patient who reloads mid consultation keeps their
@@ -36,11 +46,22 @@ export default function App() {
   // the wrong order. See ADR 040.
   const [emergency, setEmergency] = useState(false);
 
+  // The prescription builder, FR 6.1. Inside the visit, unlike emergency mode:
+  // it is the last thing that happens in a consultation, so there is always a
+  // visit by the time it is wanted.
+  const [prescribing, setPrescribing] = useState(false);
+
   // The listener's language still applies in an emergency, and there may be no
   // visit yet to have set it.
   const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
 
   useEffect(() => {
+    // The health check is for the hospital device. A patient opening their
+    // prescription may well be offline, which is the point of FR 6.2, and
+    // telling them the hospital system is unreachable would be alarming and
+    // irrelevant.
+    if (prescriptionReference) return undefined;
+
     let cancelled = false;
 
     fetchHealth()
@@ -54,7 +75,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [prescriptionReference]);
 
   /**
    * Finish this visit so the next patient is asked fresh.
@@ -66,6 +87,7 @@ export default function App() {
   const startNewPatient = () => {
     endVisit();
     setEmergency(false);
+    setPrescribing(false);
 
     // The transcript goes with the visit. This device is handed from one
     // patient to the next, and these consultations are about pregnancy,
@@ -90,6 +112,18 @@ export default function App() {
   const changeOutputLanguage = (language) => {
     setVisit(saveOutputLanguage(language) ?? loadVisit());
   };
+
+  // Nothing else renders. No shell, no bar, no route back into the app: a link
+  // anyone holding the phone can open shows a prescription and stops there.
+  // FR 6.4.
+  if (prescriptionReference) {
+    return (
+      <main className="shell">
+        <h1 className="shell__title">Tie Me Ghana</h1>
+        <PrescriptionPlayback reference={prescriptionReference} />
+      </main>
+    );
+  }
 
   return (
     <main className="shell">
@@ -146,6 +180,17 @@ export default function App() {
               ))}
             </fieldset>
 
+            {prescribing ? null : (
+              <button
+                type="button"
+                className="shell__prescribe"
+                onClick={() => setPrescribing(true)}
+                data-testid="enter-prescription"
+              >
+                Prescription
+              </button>
+            )}
+
             <button
               type="button"
               className="shell__new-patient"
@@ -163,6 +208,8 @@ export default function App() {
           outputLanguage={outputLanguage}
           onLeave={() => setEmergency(false)}
         />
+      ) : prescribing && visit ? (
+        <PrescriptionBuilder onLeave={() => setPrescribing(false)} />
       ) : visit ? (
         <PatientPath path={visit.literacyPath} outputLanguage={outputLanguage} />
       ) : (

@@ -72,6 +72,28 @@ export default defineConfig(({ mode }) => {
                 cacheableResponse: { statuses: [0, 200] },
               },
             },
+            {
+              // The playlist itself, FR 6.2. Without this the clips are cached
+              // but the list naming them is not, so an offline patient has
+              // every video on the phone and no way to reach them.
+              //
+              // NetworkFirst, not CacheFirst: a sign a consultant withdraws
+              // has to stop playing, per ADR 043, and CacheFirst would keep
+              // serving the old playlist indefinitely. This way an online
+              // patient always gets the current rendering and an offline one
+              // gets the last one they saw. Offline replay does mean a
+              // withdrawn sign can still play until the phone next has signal;
+              // that is the unavoidable cost of the requirement, and the whole
+              // reason the sequence is resolved server side on every read.
+              urlPattern: /\/api\/prescriptions\/[^/]+\/$/,
+              handler: "NetworkFirst",
+              options: {
+                cacheName: "prescription-playlists",
+                networkTimeoutSeconds: 5,
+                expiration: { maxEntries: 20 },
+                cacheableResponse: { statuses: [200] },
+              },
+            },
           ],
         },
       }),

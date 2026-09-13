@@ -81,6 +81,12 @@ def test_the_api_surface_is_the_one_we_expect():
         "clip-detail",
         "clip-list",
         "health",
+        # Prescription playback, FR 6.1 to 6.4. Both are reachable without an
+        # account: the unguessable reference is the capability. Neither can
+        # carry patient data, which is asserted in prescriptions/tests.py
+        # against the payload and the model rather than only here.
+        "prescription-issue",
+        "prescription-playlist",
         "sign-sequence",
         "speak",
     ]

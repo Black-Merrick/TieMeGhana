@@ -1762,3 +1762,107 @@ branch would otherwise ship unexercised.
 No alert clips are filmed yet, so the screen still shows icons. Dropping
 `cannot_breathe.webm` and `pregnancy.webm` into `backend/footage/` and importing
 them switches both cards to video with no code change.
+
+
+## Sprint 8, GhSL Prescription Playback
+
+FR 6.1 to 6.4, the last unbuilt feature sprint. A doctor writes the take home
+instructions, the patient scans a QR code, and the instructions replay in sign
+language on their own phone, offline, for as long as they are taking the
+medicine.
+
+### What was built
+
+| Piece | File | Note |
+| --- | --- | --- |
+| Model | `backend/prescriptions/models.py` | Words, not clip ids. No field that identifies anyone |
+| Issue and replay | `backend/prescriptions/services.py` | Translate once at issue, resolve signs on every read |
+| Endpoints | `backend/prescriptions/views.py` | `POST /api/prescriptions/`, `GET /api/prescriptions/<reference>/` |
+| Builder | `frontend/src/components/PrescriptionBuilder.jsx` | Three fields per medicine, not one free text box |
+| QR code | `frontend/src/components/PrescriptionQr.jsx` | Error correction level H, link printed underneath |
+| The playlist | `frontend/src/components/PrescriptionPlaylist.jsx` | Shared by the doctor's confirmation and the patient's replay |
+| Replay | `frontend/src/components/PrescriptionPlayback.jsx` | Reached by deep link, renders nothing else |
+| Offline | `frontend/vite.config.js` | `NetworkFirst` on the playlist, clips pulled into cache at issue time |
+
+### Commands
+
+```bash
+cd backend && . .venv/bin/activate && python -m pytest -q     # 232 passed
+cd frontend && npx vitest run                                 # 314 passed
+cd frontend && npm run lint && npm run build
+```
+
+`npm install qrcode` is new. The build was run rather than only the tests,
+because a library that works under jsdom and fails to bundle for a browser is a
+failure the test suite cannot see. 296 kB, 94 kB gzipped, and the new service
+worker rule was confirmed present in `dist/sw.js`.
+
+### The decision that shaped the sprint
+
+FR 6.1 reads as though a prescription should store which clips play, in order.
+It stores the words instead and resolves the clips on every read, ADR 043. The
+reason is not the pleasant direction, where a newly filmed sign quietly improves
+an old prescription. It is the other one: a consultant reviews a clip, finds the
+sign wrong, and withdraws it. There is no way to recall a QR code somebody
+already scanned, so a frozen clip id would keep playing a withdrawn sign on a
+phone at home with nobody to correct it. Resolving on read means withdrawal
+takes effect everywhere at once, and the safety gate runs every time rather
+than once.
+
+Both directions are tested, and the withdrawal one is the test that matters.
+
+### What the first real prescription did
+
+Issued against the dev server, two medicines, and both were refused:
+
+```
+1. Paracetamol  blocking=['one', 'twice']  unavailable=['paracetamol', 'tablet', 'day']
+2. Zinc         blocking=['one', 'once']   unavailable=['zinc', 'spoon', 'day']
+is_fully_signable: False   unsignable: [1, 2]
+```
+
+This is correct, and it is worth writing down because it looks like a failure.
+Every prescription contains a quantity and a frequency, ADR 033 treats both as
+blocking rather than droppable, and none of those clips are filmed. A
+prescription rendered without its dosage is the difference between one tablet
+and four, so the whole instruction is withheld and the doctor is told, in words,
+which medicines need explaining out loud before the patient leaves.
+
+It does mean FR 6 is unusable in sign until the number and frequency clips
+exist. That is now the top footage priority in `BACKLOG.md`, ahead of the
+alphabet: roughly fifteen clips, `one` to `ten`, `once`, `twice`, `daily`,
+`morning`, `night`, would make prescriptions render.
+
+### A gap the end to end check found and the tests did not
+
+The dev server returned a caption labelled `caption_language: "tw"` whose text
+was plainly English, because the stub provider returns its input unchanged.
+That is precisely the failure ADR 011 was written for, and the consultation
+screen has guarded against it since sprint 2. The prescription payload had no
+provider field at all, so a caption the stub produced would have been shown to
+the patient under a `lang="tw"` attribute with nothing to distinguish it from a
+real translation.
+
+Fixed by storing `caption_provider` on the item and showing the same notice the
+caption screen shows. Stored rather than read back from settings, because a
+prescription is opened weeks later and what matters is which provider produced
+the caption that is actually saved, not which one is configured now.
+
+The lesson is about coverage of a different kind than line coverage. Every test
+built its own fixture, and every fixture was written by someone who knew the
+field list, so no test could notice a field that was never there. The end to
+end call had no fixture to be consistent with. Worth repeating for each sprint:
+one real request, read with your eyes, against the running server.
+
+### FR 6.4, and why it is made of absences
+
+The private transcript is unreachable from a QR code because there is nowhere to
+put one. `Prescription` has no patient, visit, or consultation field, and the
+serializer names every field it will ever emit. Three tests pin that: the
+payload's exact key list, the model's absent field names, and a check that the
+reference reaches nothing broader than one playlist.
+
+A guarantee made of absences is the strongest kind and the easiest to lose
+without noticing, which is the same reasoning as the route walking test from
+sprint 6 and the API surface test that has now caught two sprints in a row of
+new endpoints being added without being declared.
