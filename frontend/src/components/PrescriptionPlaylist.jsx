@@ -14,10 +14,25 @@ export default function PrescriptionPlaylist({ playlist }) {
     <ol className="playlist" data-testid="prescription-playlist">
       {playlist.items.map((item) => (
         <li className="playlist__item" key={item.position}>
+          {/* The photograph first, because it is what identifies the medicine
+              for a patient who does not read print: they match it to the box in
+              their hand. */}
+          {item.image_url ? (
+            <img
+              className="playlist__photo"
+              src={item.image_url}
+              alt={`Photograph of ${item.label}`}
+              data-testid={`playlist-photo-${item.position}`}
+            />
+          ) : null}
+
           {/* Medicine, dose and frequency on their own lines. A patient
               checking whether they have already taken today's dose should not
-              have to read a sentence to find the number. */}
-          <h3 className="playlist__medicine">{item.medicine}</h3>
+              have to read a sentence to find the number.
+
+              `label` rather than `medicine`, so an item identified only by its
+              photograph still has a heading rather than an empty one. */}
+          <h3 className="playlist__medicine">{item.label}</h3>
           <dl className="playlist__facts">
             <dt>How much</dt>
             <dd data-testid={`playlist-dosage-${item.position}`}>{item.dosage}</dd>

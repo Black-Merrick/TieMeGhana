@@ -13,10 +13,34 @@ import { apiRequest } from "./client.js";
  * GhSL has to be visible while the patient is still in the room.
  */
 export function issuePrescription(items) {
-  return apiRequest("/prescriptions/", {
-    method: "POST",
-    body: JSON.stringify({ items }),
+  // Multipart when any medicine carries a photograph, JSON otherwise.
+  //
+  // Two shapes rather than always multipart, because JSON is what a scripted
+  // caller and every test without an image sends, and a nested list of objects
+  // survives it intact. Multipart has no nesting, so the fields are flattened
+  // into `items[0]dosage`, which is the shape the serializer's list is built
+  // from on the other side.
+  const withPhotos = items.some((item) => item.image);
+  if (!withPhotos) {
+    return apiRequest("/prescriptions/", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  const form = new FormData();
+  items.forEach((item, index) => {
+    form.append(`items[${index}]dosage`, item.dosage);
+    form.append(`items[${index}]frequency`, item.frequency);
+
+    if (item.medicine) form.append(`items[${index}]medicine`, item.medicine);
+    if (item.image) form.append(`items[${index}]image`, item.image);
   });
+
+  // No Content-Type set. The browser has to write its own, because the
+  // multipart boundary is generated with the body and a hand set header makes
+  // the request unparseable while looking perfectly valid from here.
+  return apiRequest("/prescriptions/", { method: "POST", body: form });
 }
 
 /** Resolve a scanned reference to its playlist, FR 6.2 and FR 6.3. */

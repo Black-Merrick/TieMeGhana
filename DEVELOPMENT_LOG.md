@@ -2051,3 +2051,83 @@ frequency of `1` resolves correctly once the number clips exist, but signs as a
 bare number with no unit, and the caption reads "para, 2, 1". The app cannot
 tell a terse entry from a wrong one, so it belongs in the guidance the doctors
 get rather than in a validator.
+
+
+## Identifying a medicine by photograph
+
+The doctor photographs the medicine, the name becomes optional, and only the
+dose and frequency are typed. The saved video and the QR playlist then run
+picture, instruction, picture, instruction. Recorded as ADR 048.
+
+### What was built
+
+| Piece | File |
+| --- | --- |
+| Validate, strip and shrink an upload | `backend/prescriptions/images.py` |
+| Optional name, image field, instruction without the name | `prescriptions/models.py` |
+| Photograph held as a frame in a stitched run | `StillFrame` and `stitch` in `clips/stitching.py` |
+| Camera capture per medicine | `frontend/src/components/PrescriptionBuilder.jsx` |
+| Picture above the dose, on screen and on paper | `PrescriptionPlaylist.jsx`, the print slip |
+
+### Verified end to end, not only in tests
+
+Issued against the dev server with a real 2400x1600 photograph and the filmed
+clips:
+
+| Check | Result |
+| --- | --- |
+| Stored image | 1200x800, EXIF empty, 60628 bytes down to 5912 |
+| Stitched video | 6.76s, being 3.0s of photograph plus the two sign clips |
+| Frame at 0.4s | RGB(219, 89, 39), the photograph |
+| Frame at 5.0s | dark, the signer |
+
+The frame sampling is the part worth keeping. "The video contains the image"
+is not something the test suite can assert, because fixture clips are
+placeholder bytes that ffmpeg refuses, so the only way to know the still is
+actually in the file at the right position is to pull frames out of it and look
+at their colour.
+
+### The privacy problem this created, and what was done about it
+
+Every field in the prescription payload had been structurally incapable of
+identifying a patient, which is the whole of what FR 6.4 and ADR 044 rest on.
+An image is not incapable of it: a dispensing label in a hospital routinely
+carries the patient's printed name, and a doctor photographing a labelled box
+would put that name into a payload handed to anyone who scans the QR code.
+
+No permission check can fix that, so three things were done instead. The
+interface warns at the moment the camera opens, because it cannot be undone
+afterwards. Every upload is re-encoded from its pixels, which strips the EXIF a
+phone writes, including the GPS coordinates of the hospital it was taken in,
+and a test asserts the saved file has no EXIF at all. And ADR 048 states
+plainly that the guarantee is now weaker than ADR 044 describes: the payload is
+capable of carrying identifying content and does not, provided the camera is
+pointed at the right thing.
+
+### Two traps worth naming
+
+`Image.verify()` leaves the object unusable for reading pixels afterwards, so
+the obvious code, which verifies and then loads the same object, fails with an
+exception that reads like a corrupt file. It is verified on a separate handle.
+
+EXIF orientation has to be applied before the metadata is dropped. A phone
+writes "this photograph is rotated" into EXIF rather than into the pixels, so
+stripping first and rotating never leaves an upright photograph on its side.
+
+`bulk_create` was replaced with a loop of `save()` calls. It does reach
+`FileField.pre_save` and would have written the images, but that is a subtlety
+to rely on rather than a guarantee to read, and a prescription has a handful of
+items. The transaction still covers the whole loop.
+
+### The health check earned its keep
+
+The first end to end attempt returned a 500. `/api/health/` answered the
+question without any searching:
+
+```
+{"status":"ok","database":"ok","migrations":"pending",
+ "pending_migrations":["prescriptions.0003_prescriptionitem_image_and_more"]}
+```
+
+That is the fourth time an unapplied migration has broken the running app, and
+the first time finding out took one request instead of an hour. ADR 045.

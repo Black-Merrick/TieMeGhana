@@ -89,7 +89,24 @@ class PrescriptionItem(models.Model):
     position = models.PositiveSmallIntegerField(
         help_text="Order on the list. The playlist plays in this order."
     )
-    medicine = models.CharField(max_length=120)
+    # Optional, because the photograph can identify the medicine instead, and
+    # for a patient who does not read print it identifies it better: they can
+    # match a picture to the box in their hand, where a drug name has no sign
+    # and has to be fingerspelled letter by letter.
+    #
+    # One of the two is always present. The serializer enforces that, because
+    # an item with neither identifies nothing at all.
+    medicine = models.CharField(max_length=120, blank=True)
+
+    image = models.ImageField(
+        upload_to="medicines/",
+        blank=True,
+        help_text=(
+            "A photograph of the medicine, shown to the patient before its "
+            "dose. Re-encoded on upload to strip camera metadata, which on a "
+            "phone includes where the photograph was taken."
+        ),
+    )
     dosage = models.CharField(
         max_length=120, help_text='How much, for example "one tablet".'
     )
@@ -140,15 +157,29 @@ class PrescriptionItem(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.medicine}, {self.dosage}, {self.frequency}"
+        return f"{self.label}, {self.dosage}, {self.frequency}"
+
+    @property
+    def label(self) -> str:
+        """What to call this item in writing, when there is no drug name."""
+        return self.medicine or f"Medicine {self.position}"
 
     @property
     def instruction(self) -> str:
         """
-        The three fields as one sentence, for signing and captioning.
+        The words to be signed and captioned.
 
         Joined here rather than at each call site so that the sentence the
         patient sees signed is provably the same sentence the safety gate
         checked. Two call sites building it separately is how the two drift.
+
+        The drug name is left out when there is a photograph, and that is the
+        point of the photograph: the picture says which medicine, the signs say
+        what to do with it. Including the name as well would mean fingerspelling
+        eleven letters the patient has already been shown, and would pull an
+        unfilmable word into a sentence the safety gate would then refuse.
         """
+        if self.image and not self.medicine:
+            return f"{self.dosage}, {self.frequency}"
+
         return f"{self.medicine}, {self.dosage}, {self.frequency}"

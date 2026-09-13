@@ -1668,3 +1668,60 @@ requirement rather than the requirement, and it failed the moment the buttons
 gained labels. It now asserts that the only typeable element on the screen is
 the doctor's own box. A test that breaks when something unrelated changes was
 testing the wrong thing.
+
+
+## ADR 048: A medicine is identified by a photograph, not by its name
+
+**Context.** A prescription named each medicine in text, and that name was
+signed along with the dose. For the patient this app exists for, that is the
+weakest part of the whole flow. A drug name has no sign, so it is fingerspelled
+letter by letter: eleven signs for "paracetamol", slow to watch, easy to lose
+track of, and dependent on the patient knowing the alphabet. And it is written
+in a language the guided path already assumes they may not read.
+
+**Decision.** The doctor photographs the medicine. The photograph identifies
+it, the name becomes optional, and only the dose and the frequency are typed.
+The saved video and the QR playlist then run picture, instruction, picture,
+instruction: the patient sees which box, then what to do with it.
+
+**Why it is better than the name.** The patient is holding the box. Matching a
+photograph to the thing in your hand needs no language, no alphabet and no
+reading, and it is the one identification task that gets easier rather than
+harder for someone who cannot read print. It also takes the drug name out of
+the signed sentence entirely, which removes the commonest reason the safety
+gate had to refuse a prescription.
+
+**What is still typed, and why.** The dose and the frequency. A picture cannot
+say "one tablet twice a day", and those are the two facts ADR 033 treats as
+blocking precisely because losing them changes the treatment.
+
+**The privacy consequence, which is the part that needed care.** Until now
+every field in the prescription payload was structurally incapable of
+identifying a patient, which is what FR 6.4 and ADR 044 rest on. An image is
+not: a dispensing label in a hospital routinely carries the patient's printed
+name, and a doctor photographing a labelled box would put that name into a
+payload handed to anyone who scans the QR code.
+
+Three things follow from that, and none of them can be a permission check:
+
+- The interface says so at the moment the camera opens, because it cannot be
+  undone afterwards. "Photograph the medicine itself, not a pharmacy label."
+- Every upload is re-encoded from its pixels rather than stored as it arrived.
+  A phone writes EXIF, and on a hospital device that includes the GPS
+  coordinates of the hospital, the phone's make and model, and the exact time.
+  None of that belongs in this payload. A test asserts the saved file has no
+  EXIF at all.
+- It is written down here as a real change in posture rather than left as an
+  implementation detail. The payload is no longer incapable of carrying
+  identifying content; it is capable of it and does not, provided the camera is
+  pointed at the right thing. That is a weaker guarantee than the one ADR 044
+  describes, and pretending otherwise would be the kind of overclaim ADR 011
+  exists to prevent.
+
+**Consequence.** Uploads are resized to a 1200 pixel long edge and re-encoded
+as JPEG, which took a test photograph from 60 kB to 6 kB: the patient downloads
+it over a hospital connection to look at a picture of a box, so NFR 5 applies
+to it as much as to the clips. Stitching gained a `StillFrame`, held for three
+seconds, and the still's duration is part of the cache key, because changing
+how long a photograph is shown has to produce a new file rather than serve the
+old one.

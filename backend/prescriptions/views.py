@@ -1,7 +1,8 @@
 """Prescription endpoints, SRS FR 6.1 to FR 6.4."""
 
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from prescriptions.models import Prescription
@@ -10,6 +11,10 @@ from prescriptions.services import build_playlist, issue_prescription
 
 
 @api_view(["POST"])
+# Multipart as well as JSON, because a prescription can now carry a photograph
+# of each medicine. JSON is kept for the case with no images, which is what the
+# tests and any scripted use send.
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def issue(request):
     """
     Issue a prescription and return its playlist, FR 6.1.

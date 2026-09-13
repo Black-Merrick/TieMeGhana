@@ -2551,6 +2551,17 @@ body {
     font-size: 11pt;
   }
 
+  /* The photograph on paper. Small, because it sits in a table cell beside
+     the dose, and printed at a fixed size so it does not depend on the
+     page width. */
+  .slip__photo {
+    display: block;
+    width: 18mm;
+    height: 18mm;
+    object-fit: cover;
+    margin-bottom: 1mm;
+  }
+
   .slip__table th,
   .slip__table td {
     border: 1px solid #000;
@@ -3287,4 +3298,102 @@ body {
   .modal__actions > * {
     width: 100%;
   }
+}
+
+/* Photographing a medicine, FR 6.1. The picture identifies the drug for a
+   patient who does not read print, and it removes the weakest link in a signed
+   prescription: a drug name has no sign and has to be fingerspelled. */
+.photo {
+  margin-bottom: 0.9rem;
+}
+
+.photo__pick {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px dashed var(--colour-primary);
+  border-radius: var(--radius);
+  background: var(--colour-mint-pale);
+  cursor: pointer;
+}
+
+/* The input is present and focusable but not drawn: the label around it is the
+   control, and a styled file input is not a thing browsers allow. */
+.photo__pick input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.photo__pick:focus-within {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 2px;
+}
+
+.photo__icon {
+  flex: 0 0 auto;
+  color: var(--colour-primary);
+}
+
+.photo__icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: block;
+}
+
+.photo__hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}
+
+.photo__taken {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.photo__preview {
+  width: 6rem;
+  height: 6rem;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid var(--colour-line);
+}
+
+.photo__clear {
+  font: inherit;
+  font-size: 0.85rem;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.45rem;
+  background: var(--colour-surface);
+  color: var(--colour-offline);
+  cursor: pointer;
+}
+
+/* Said at the point the camera opens, because it cannot be undone afterwards.
+   A dispensing label often carries the patient's own name, and this image
+   travels with the QR code. */
+.photo__warning {
+  margin: 0.6rem 0 0;
+  font-size: 0.82rem;
+  color: #8a5a12;
+}
+
+/* The photograph on the patient's own screen. Large, because recognising the
+   box is the whole job it does. */
+.playlist__photo {
+  display: block;
+  width: 100%;
+  max-width: 14rem;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid var(--colour-line);
+  margin-bottom: 0.75rem;
 }

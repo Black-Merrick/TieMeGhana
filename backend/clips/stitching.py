@@ -17,6 +17,7 @@ import hashlib
 import logging
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from django.conf import settings
@@ -43,6 +44,21 @@ ENCODE_TIMEOUT_SECONDS = 120
 def ffmpeg_available() -> bool:
     """Whether ffmpeg is on the path, so callers can fall back rather than fail."""
     return shutil.which("ffmpeg") is not None
+
+
+@dataclass(frozen=True)
+class StillFrame:
+    """
+    A photograph held on screen for a few seconds, as part of a stitched run.
+
+    Used by prescriptions: the picture of the medicine plays first, then the
+    signs for its dose. A patient who cannot read a drug name matches the
+    photograph to the box in their hand, which is a better identifier for them
+    than eleven fingerspelled letters.
+    """
+
+    path: Path
+    seconds: float
 
 
 def stitch_key(clip_paths: list[str]) -> str:
@@ -128,17 +144,22 @@ def _encode(sources: list[Path], destination: Path) -> bool:
     return True
 
 
-def _ffmpeg_command(sources: list[Path], destination: Path) -> list[str]:
+def _ffmpeg_command(sources: list, destination: Path) -> list[str]:
     """
     Build the concatenation command.
 
     Each input is scaled, padded and resampled to a common format before the
     concat filter sees it, because clips filmed on different devices otherwise
     make concat fail or stretch. Padding rather than cropping, so a signer's
-    hands are never cut out of frame.
+    hands are never cut out of frame, and so a photograph of a medicine box
+    keeps its shape whichever way the phone was held.
 
     Audio is dropped entirely. These are sign clips with no meaningful sound,
     and dropping it removes the commonest reason concatenation fails.
+
+    `sources` holds paths and `StillFrame`s. A still becomes a looped input cut
+    to its own length, which is how ffmpeg turns one image into a run of
+    frames; without the loop it contributes a single frame and vanishes.
     """
     filters = []
     for position in range(len(sources)):
@@ -155,7 +176,17 @@ def _ffmpeg_command(sources: list[Path], destination: Path) -> list[str]:
 
     command = ["ffmpeg", "-y", "-nostdin"]
     for source in sources:
-        command += ["-i", str(source)]
+        if isinstance(source, StillFrame):
+            command += [
+                "-loop",
+                "1",
+                "-t",
+                f"{source.seconds:g}",
+                "-i",
+                str(source.path),
+            ]
+        else:
+            command += ["-i", str(source)]
 
     command += [
         "-filter_complex",
@@ -177,6 +208,43 @@ def _ffmpeg_command(sources: list[Path], destination: Path) -> list[str]:
         str(destination),
     ]
     return command
+
+
+def stitch(sources: list, key_material: list[str]) -> str | None:
+    """
+    Concatenate a mixed run of stills and clips into one file.
+
+    Shared by the caption pipeline and by prescriptions, so both get the same
+    encode, the same cache and the same failure behaviour: None on any problem,
+    which every caller treats as a reason to fall back rather than as an error.
+
+    `key_material` is what the cache is addressed by. Passed in rather than
+    derived from the paths alone, because a still's duration is part of what
+    the file contains: changing how long a photograph is held has to produce a
+    different file rather than serve the old one.
+    """
+    if len(sources) < 2:
+        # A single input is already one continuous video, and re-encoding it
+        # would cost time for no gain.
+        return None
+
+    key = stitch_key(key_material)
+    destination = _stitched_directory() / f"{key}.mp4"
+
+    if destination.exists():
+        return _stitched_url(destination.name)
+
+    if not ffmpeg_available():
+        logger.info(
+            "ffmpeg is not installed, so sequences play as a clip playlist "
+            "rather than one stitched video. Install ffmpeg to enable it."
+        )
+        return None
+
+    if not _encode(sources, destination):
+        return None
+
+    return _stitched_url(destination.name)
 
 
 def _stitched_directory() -> Path:

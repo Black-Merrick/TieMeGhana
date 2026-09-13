@@ -1,6 +1,10 @@
 Django==5.2.7
 djangorestframework==3.16.1
 django-cors-headers==4.9.0
+# Needed by ImageField, and by the EXIF stripping in prescriptions/images.py:
+# a photo taken on a phone carries the GPS coordinates of where it was taken,
+# which for a hospital device is the hospital.
+Pillow==11.3.0
 psycopg[binary]==3.2.10
 gunicorn==23.0.0
 requests==2.32.5

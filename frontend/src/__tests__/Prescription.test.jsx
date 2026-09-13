@@ -65,6 +65,10 @@ function playlist({ safe = true, reference = "abc123XYZ_-def456ghi" } = {}) {
       {
         position: 1,
         medicine: "Paracetamol",
+        // What to call the item when there is no drug name, so nothing shows
+        // an empty heading.
+        label: "Paracetamol",
+        image_url: null,
         dosage: "one tablet",
         frequency: "twice a day",
         instruction: "Paracetamol, one tablet, twice a day",
@@ -110,8 +114,18 @@ describe("writing a prescription, FR 6.1", () => {
 
     await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
     expect(issuePrescription).toHaveBeenCalledWith([
-      { medicine: "Paracetamol", dosage: "one tablet", frequency: "twice a day" },
-      { medicine: "Zinc", dosage: "one spoon", frequency: "once a day" },
+      {
+        medicine: "Paracetamol",
+        dosage: "one tablet",
+        frequency: "twice a day",
+        image: null,
+      },
+      {
+        medicine: "Zinc",
+        dosage: "one spoon",
+        frequency: "once a day",
+        image: null,
+      },
     ]);
   });
 
@@ -491,6 +505,149 @@ describe("saving to the patient's phone, FR 6.2 and ADR 046", () => {
       expect(screen.getByTestId("save-prescription")).toHaveTextContent(
         "Add to Home screen",
       );
+    });
+  });
+});
+
+describe("photographing the medicine, FR 6.1", () => {
+  function jpeg(name = "drug.jpg") {
+    return new File([new Uint8Array([0xff, 0xd8, 0xff])], name, {
+      type: "image/jpeg",
+    });
+  }
+
+  beforeEach(() => {
+    // jsdom has no object URLs, and the preview is made from one.
+    vi.stubGlobal("URL", {
+      ...globalThis.URL,
+      createObjectURL: () => "blob:photo",
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("sends the photograph with the medicine", async () => {
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
+    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
+    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
+    expect(issuePrescription.mock.calls[0][0][0]).toMatchObject({
+      medicine: "",
+      dosage: "one tablet",
+      frequency: "twice a day",
+    });
+    expect(issuePrescription.mock.calls[0][0][0].image).toBeInstanceOf(File);
+  });
+
+  it("accepts a photograph with no drug name", async () => {
+    // The point of the feature. A patient who cannot read a drug name matches
+    // the picture to the box in their hand.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
+    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
+    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
+    expect(screen.queryByTestId("prescription-problem")).not.toBeInTheDocument();
+  });
+
+  it("refuses an item with neither a photograph nor a name", async () => {
+    // It would identify nothing: the patient gets a dose with no way to tell
+    // which medicine it belongs to.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
+    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    expect(screen.getByTestId("prescription-problem")).toHaveTextContent(
+      /photo or a name/i,
+    );
+    expect(issuePrescription).not.toHaveBeenCalled();
+  });
+
+  it("still needs the dose, photograph or not", async () => {
+    // The picture says which medicine. It cannot say how much.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    expect(screen.getByTestId("prescription-problem")).toHaveTextContent(
+      /dosage/i,
+    );
+  });
+
+  it("warns against photographing a pharmacy label", async () => {
+    // It cannot be undone afterwards: the image goes home with the QR code,
+    // and a dispensing label often carries the patient's own name, which is
+    // the one thing FR 6.4 promises the payload does not.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    expect(screen.getByText(/not a pharmacy label/i)).toBeInTheDocument();
+  });
+
+  it("lets a photograph be taken again", async () => {
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
+    expect(screen.getByTestId("medicine-photo-0")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("clear-photo-0"));
+
+    expect(screen.queryByTestId("medicine-photo-0")).not.toBeInTheDocument();
+    expect(screen.getByTestId("photo-input-0")).toBeInTheDocument();
+    // The preview URL is released rather than left for the lifetime of the
+    // document.
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:photo");
+  });
+
+  it("shows the photograph to the patient, above the dose", async () => {
+    fetchPlaylist.mockResolvedValue({
+      ...playlist(),
+      items: [
+        {
+          ...playlist().items[0],
+          medicine: "",
+          label: "Medicine 1",
+          image_url: "/media/medicines/drug.jpg",
+        },
+      ],
+    });
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("playlist-photo-1")).toBeInTheDocument();
+    });
+
+    const photo = screen.getByTestId("playlist-photo-1");
+    const dose = screen.getByTestId("playlist-dosage-1");
+    expect(photo.compareDocumentPosition(dose)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("gives an unnamed medicine a heading rather than an empty one", async () => {
+    fetchPlaylist.mockResolvedValue({
+      ...playlist(),
+      items: [
+        {
+          ...playlist().items[0],
+          medicine: "",
+          label: "Medicine 1",
+          image_url: "/media/medicines/drug.jpg",
+        },
+      ],
+    });
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Medicine 1")).toBeInTheDocument();
     });
   });
 });

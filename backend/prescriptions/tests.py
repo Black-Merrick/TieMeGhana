@@ -8,6 +8,39 @@ from prescriptions.models import Prescription, PrescriptionItem, new_reference
 pytestmark = pytest.mark.django_db
 
 
+def photo(size=(600, 400), with_gps=False):
+    """
+    A JPEG upload, optionally carrying the metadata a phone would write.
+
+    Built rather than read from a fixture file so the EXIF test can state what
+    it is stripping instead of trusting a checked in binary to still contain
+    it.
+    """
+    import io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    image = Image.new("RGB", size, (200, 120, 60))
+    buffer = io.BytesIO()
+
+    if with_gps:
+        exif = Image.Exif()
+        # Make, model and capture time, which is the metadata a phone writes
+        # alongside the GPS block. The assertion is that the saved file has no
+        # EXIF at all, so it covers the coordinates without this fixture having
+        # to hand build a valid GPS IFD.
+        exif[271] = "TestPhone"
+        exif[272] = "Model X"
+        exif[306] = "2026:09:13 18:40:00"
+        image.save(buffer, format="JPEG", exif=exif)
+    else:
+        image.save(buffer, format="JPEG")
+
+    buffer.seek(0)
+    return SimpleUploadedFile("drug.jpg", buffer.read(), content_type="image/jpeg")
+
+
 def one_item(**overrides):
     return {
         "medicine": "Paracetamol",
@@ -318,11 +351,11 @@ class TestSavingToThePhonesGallery:
 
         asked = {}
 
-        def fake_stitch(sequence):
-            asked["segments"] = [segment.token for segment in sequence.segments]
+        def fake_stitch(sources, material):
+            asked["material"] = material
             return "/media/stitched/abc.mp4"
 
-        monkeypatch.setattr(services, "stitched_video_url", fake_stitch)
+        monkeypatch.setattr(services, "stitch", fake_stitch)
         for gloss in ("PARACETAMOL", "ONE", "TABLET", "TWICE", "DAY", "ZINC"):
             make_clip(gloss)
 
@@ -337,9 +370,10 @@ class TestSavingToThePhonesGallery:
         assert body["is_fully_signable"] is True
         assert body["video_url"] == "/media/stitched/abc.mp4"
         # Both medicines, in order, in one file.
-        assert asked["segments"].count("paracetamol") == 1
-        assert asked["segments"].count("zinc") == 1
-        assert asked["segments"].index("paracetamol") < asked["segments"].index("zinc")
+        joined = " ".join(asked["material"])
+        assert "paracetamol" in joined
+        assert "zinc" in joined
+        assert joined.index("paracetamol") < joined.index("zinc")
 
     def test_the_same_prescription_asks_for_the_same_file(self, api_client, make_clip):
         # The stitching cache is addressed by the clips it contains, so a
@@ -372,6 +406,202 @@ class TestSavingToThePhonesGallery:
 
         for forbidden in ("paracetamol", "patient", "name"):
             assert forbidden not in body["video_url"].lower()
+
+
+class TestPhotographingTheMedicine:
+    """
+    FR 6.1, the medicine identified by a picture rather than by its name.
+
+    A patient who cannot read a drug name can match a photograph to the box in
+    their hand, which makes the picture the better identifier for exactly the
+    people this app is for. It also removes the weakest link in a signed
+    prescription: a drug name has no sign and has to be fingerspelled letter by
+    letter.
+    """
+
+    def test_an_item_can_carry_a_photograph_instead_of_a_name(self, api_client):
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        )
+
+        assert response.status_code == 201, response.json()
+        item = response.json()["items"][0]
+        assert item["image_url"].endswith(".jpg")
+        assert item["medicine"] == ""
+
+    def test_an_item_with_neither_a_name_nor_a_photograph_is_refused(self, api_client):
+        # It would identify nothing. The patient would be shown a dose with no
+        # way to tell which medicine it belongs to.
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {"items": [{"dosage": "one tablet", "frequency": "twice a day"}]},
+            format="json",
+        )
+
+        assert response.status_code == 400
+
+    def test_the_drug_name_is_left_out_of_the_signed_sentence(self, api_client):
+        # The point of the photograph. Including the name as well would mean
+        # fingerspelling letters the patient has already been shown, and would
+        # pull an unfilmable word into a sentence the safety gate would refuse.
+        api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        )
+
+        item = PrescriptionItem.objects.get()
+        assert item.instruction == "one tablet, twice a day"
+
+    def test_a_named_item_still_signs_its_name(self, api_client):
+        issue(api_client)
+
+        item = PrescriptionItem.objects.get()
+        assert item.instruction.startswith("Paracetamol")
+
+    def test_an_unnamed_item_is_still_called_something(self, api_client):
+        # The printed slip and the patient's screen both need a heading, and an
+        # empty one reads as a rendering fault rather than as a deliberate
+        # absence.
+        body = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        ).json()
+
+        assert body["items"][0]["label"] == "Medicine 1"
+
+    def test_camera_metadata_is_not_kept(self, api_client):
+        # A phone writes the GPS coordinates of where a photograph was taken
+        # into its EXIF, and on a hospital device that is the hospital. This
+        # payload is handed to anyone who scans the QR code, so the image is
+        # re-encoded from its pixels rather than stored as it arrived.
+        from PIL import Image
+
+        api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(with_gps=True),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        )
+
+        saved = Image.open(PrescriptionItem.objects.get().image.path)
+        assert not saved.getexif()
+
+    def test_a_large_photograph_is_shrunk(self, api_client):
+        # A phone camera produces something a patient would then download over
+        # a hospital connection to look at a picture of a box.
+        from PIL import Image
+
+        from prescriptions.images import MAX_EDGE
+
+        api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(size=(3000, 2000)),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        )
+
+        saved = Image.open(PrescriptionItem.objects.get().image.path)
+        assert max(saved.size) <= MAX_EDGE
+
+    def test_a_file_that_is_not_an_image_is_refused(self, api_client):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": SimpleUploadedFile(
+                    "notes.pdf", b"%PDF-1.4 not an image", content_type="image/jpeg"
+                ),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        )
+
+        assert response.status_code == 400
+
+    def test_two_photographs_are_not_treated_as_duplicates(self, api_client):
+        # The duplicate check compares names. Two photographs cannot be told
+        # apart without looking at them, and refusing one because another also
+        # has no name would block a prescription entered entirely by picture.
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+                "items[1]image": photo(),
+                "items[1]dosage": "two spoons",
+                "items[1]frequency": "once a day",
+            },
+            format="multipart",
+        )
+
+        assert response.status_code == 201, response.json()
+        assert len(response.json()["items"]) == 2
+
+    def test_the_photograph_plays_before_the_dose(
+        self, api_client, make_clip, monkeypatch
+    ):
+        # Picture, then instruction. The patient sees which box, then what to
+        # do with it, and nothing has to be read.
+        from prescriptions import services
+
+        asked = {}
+
+        def fake_stitch(sources, material):
+            asked["material"] = material
+            return "/media/stitched/abc.mp4"
+
+        monkeypatch.setattr(services, "stitch", fake_stitch)
+        for gloss in ("ONE", "TABLET", "TWICE", "DAY"):
+            make_clip(gloss)
+
+        reference = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items[0]image": photo(),
+                "items[0]dosage": "one tablet",
+                "items[0]frequency": "twice a day",
+            },
+            format="multipart",
+        ).json()["reference"]
+
+        api_client.get(reverse("prescription-playlist", args=[reference]))
+
+        kinds = [entry.split(":")[0] for entry in asked["material"]]
+        assert kinds[0] == "still"
+        assert set(kinds[1:]) == {"clip"}
+
+    def test_holding_the_photograph_longer_produces_a_different_file(self):
+        # The duration is part of what the file contains, so it has to be part
+        # of what the cache is addressed by, or changing it would serve the
+        # previous encode forever.
+        from clips.stitching import stitch_key
+
+        assert stitch_key(["still:/a.jpg:3"]) != stitch_key(["still:/a.jpg:5"])
 
 
 class TestTheReference:
@@ -429,6 +659,13 @@ class TestFr64ThePrivateTranscriptIsUnreachable:
         assert set(body["items"][0]) == {
             "position",
             "medicine",
+            # What to call the item when the doctor gave no name, so no screen
+            # ever shows an empty heading.
+            "label",
+            # A path under /media to a photograph of the medicine. Re-encoded
+            # on upload, so it carries none of the camera metadata a phone
+            # would have written into it.
+            "image_url",
             "dosage",
             "frequency",
             "instruction",

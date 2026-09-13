@@ -11,11 +11,13 @@ long as they are taking the medicine.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from django.conf import settings
 from django.db import transaction
 
 from clips.services import SignSequence, resolve_sign_sequences
-from clips.stitching import stitched_video_url
+from clips.stitching import StillFrame, stitch
 from core.language import Language, LanguageError, get_language_provider
 from prescriptions.models import Prescription, PrescriptionItem
 
@@ -30,6 +32,8 @@ class PlaylistItem:
 
     position: int
     medicine: str
+    label: str
+    image_url: str | None
     dosage: str
     frequency: str
     instruction: str
@@ -76,6 +80,11 @@ class Playlist:
         hospital: it plays in whatever video player the phone came with, years
         later, with no network and nothing installed.
 
+        Each medicine contributes its photograph, held for a few seconds, and
+        then the signs for its dose: picture, instruction, picture, instruction.
+        That order is the point of the photograph. The patient sees which box,
+        then what to do with it, and nothing has to be read.
+
         None unless every item can be signed safely. A single file cannot say
         that one medicine is missing from it, so a prescription with a refused
         item would be saved to the gallery looking complete, which is the exact
@@ -86,17 +95,31 @@ class Playlist:
         if not self.items or not self.is_fully_signable:
             return None
 
-        # One sequence spanning every medicine, in playlist order, so the
-        # existing content addressed stitching cache covers it unchanged: the
-        # same prescription asks for the same file and it is encoded once.
-        whole = SignSequence(
-            source_text=" ".join(item.instruction for item in self.items),
-            segments=tuple(
-                segment for item in self.items for segment in item.sequence.segments
-            ),
-        )
+        sources = []
+        # What the cache is addressed by. A still's duration belongs in it as
+        # well as its path: changing how long a photograph is held has to
+        # produce a different file rather than serve the previous one.
+        material = []
 
-        return stitched_video_url(whole)
+        for item in self.items:
+            still = _still_frame(item.image_url)
+            if still is not None:
+                sources.append(still)
+                material.append(f"still:{still.path}:{still.seconds:g}")
+
+            for segment in item.sequence.segments:
+                for clip in segment.clips:
+                    path = _media_path(clip.video_url)
+                    if path is None:
+                        # A clip the resolver offered but the filesystem does
+                        # not have. Nothing to stitch, and a file missing one
+                        # medicine's signs must not be saved as complete.
+                        return None
+
+                    sources.append(path)
+                    material.append(f"clip:{path}")
+
+        return stitch(sources, material)
 
 
 def _translate_instruction(instruction: str) -> tuple[str, str, str]:
@@ -143,10 +166,17 @@ def issue_prescription(items: list[dict]) -> Prescription:
         row = PrescriptionItem(
             prescription=prescription,
             position=position,
-            medicine=item["medicine"],
+            medicine=item.get("medicine", ""),
             dosage=item["dosage"],
             frequency=item["frequency"],
         )
+
+        # Saved through the field so the file lands in MEDIA_ROOT under its own
+        # name. Already validated, stripped of metadata and resized by
+        # `clean_medicine_image` before it reaches here.
+        image = item.get("image")
+        if image:
+            row.image = image
         (
             row.caption,
             row.caption_language,
@@ -154,7 +184,14 @@ def issue_prescription(items: list[dict]) -> Prescription:
         ) = _translate_instruction(row.instruction)
         rows.append(row)
 
-    PrescriptionItem.objects.bulk_create(rows)
+    # Saved one at a time rather than with bulk_create. bulk_create does reach
+    # FileField.pre_save and would write the images, but that is a subtlety to
+    # rely on rather than a guarantee to read, and a prescription has a handful
+    # of items. The whole loop is inside one transaction either way, so a
+    # partial list still cannot be left behind.
+    for row in rows:
+        row.save()
+
     return prescription
 
 
@@ -179,6 +216,8 @@ def build_playlist(prescription: Prescription) -> Playlist:
             PlaylistItem(
                 position=item.position,
                 medicine=item.medicine,
+                label=item.label,
+                image_url=item.image.url if item.image else None,
                 dosage=item.dosage,
                 frequency=item.frequency,
                 instruction=item.instruction,
@@ -190,3 +229,27 @@ def build_playlist(prescription: Prescription) -> Playlist:
             for item, sequence in zip(items, sequences, strict=True)
         ),
     )
+
+
+# How long a photograph of a medicine is held on screen.
+#
+# Long enough to look from the screen to the box in your hand and back, short
+# enough that a prescription of five medicines is not a minute of stills. The
+# same value is part of the stitching cache key, so changing it produces new
+# files rather than serving the old ones.
+STILL_SECONDS = 3.0
+
+
+def _media_path(media_url: str | None) -> Path | None:
+    """Turn a /media/... URL into the file behind it."""
+    if not media_url or not media_url.startswith(settings.MEDIA_URL):
+        return None
+
+    path = Path(settings.MEDIA_ROOT) / media_url[len(settings.MEDIA_URL) :]
+    return path if path.exists() else None
+
+
+def _still_frame(image_url: str | None) -> StillFrame | None:
+    """The photograph for one medicine, as a held frame, when there is one."""
+    path = _media_path(image_url)
+    return None if path is None else StillFrame(path=path, seconds=STILL_SECONDS)

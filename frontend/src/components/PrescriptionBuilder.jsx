@@ -15,7 +15,15 @@ import PrescriptionQr from "./PrescriptionQr.jsx";
  * opaque sentence.
  */
 
-const blankItem = () => ({ medicine: "", dosage: "", frequency: "" });
+const blankItem = () => ({
+  medicine: "",
+  dosage: "",
+  frequency: "",
+  // The File itself, plus a preview URL made from it. Kept together so
+  // clearing the photograph cannot leave a thumbnail of it behind.
+  image: null,
+  preview: null,
+});
 
 export default function PrescriptionBuilder({ onLeave }) {
   const [items, setItems] = useState([blankItem()]);
@@ -34,24 +42,57 @@ export default function PrescriptionBuilder({ onLeave }) {
   const addItem = () => setItems((previous) => [...previous, blankItem()]);
 
   const removeItem = (index) =>
-    setItems((previous) => previous.filter((_, at) => at !== index));
+    setItems((previous) => {
+      // The preview URL is released rather than left to the browser, which
+      // holds an object URL for the lifetime of the document.
+      const going = previous[index];
+      if (going?.preview) URL.revokeObjectURL(going.preview);
+      return previous.filter((_, at) => at !== index);
+    });
+
+  const setImage = (index, file) => {
+    setItems((previous) =>
+      previous.map((item, at) => {
+        if (at !== index) return item;
+
+        if (item.preview) URL.revokeObjectURL(item.preview);
+        return {
+          ...item,
+          image: file,
+          preview: file ? URL.createObjectURL(file) : null,
+        };
+      }),
+    );
+    setProblem(null);
+  };
 
   const issue = async () => {
     const filled = items.map((item) => ({
       medicine: item.medicine.trim(),
       dosage: item.dosage.trim(),
       frequency: item.frequency.trim(),
+      image: item.image,
     }));
 
     // Checked here as well as on the server, because the useful message is the
     // one that arrives before the request. A blank field is the likeliest
     // mistake, and a 400 from the API cannot say which row it was.
+    const unidentified = filled.findIndex(
+      (item) => !item.medicine && !item.image,
+    );
+    if (unidentified !== -1) {
+      setProblem(
+        `Medicine ${unidentified + 1} needs a photo or a name, so the patient can tell which one it is.`,
+      );
+      return;
+    }
+
     const incomplete = filled.findIndex(
-      (item) => !item.medicine || !item.dosage || !item.frequency,
+      (item) => !item.dosage || !item.frequency,
     );
     if (incomplete !== -1) {
       setProblem(
-        `Medicine ${incomplete + 1} needs a name, a dosage and how often to take it.`,
+        `Medicine ${incomplete + 1} needs a dosage and how often to take it.`,
       );
       return;
     }
@@ -126,7 +167,20 @@ export default function PrescriptionBuilder({ onLeave }) {
             <tbody>
               {playlist.items.map((item) => (
                 <tr key={item.position}>
-                  <td>{item.medicine}</td>
+                  <td>
+                    {/* Printed as well as shown. For a medicine identified
+                        only by its photograph this is the only thing on the
+                        paper that says which one it is, so the slip would
+                        otherwise carry a dose belonging to nothing. */}
+                    {item.image_url ? (
+                      <img
+                        className="slip__photo"
+                        src={item.image_url}
+                        alt=""
+                      />
+                    ) : null}
+                    {item.label}
+                  </td>
                   <td>{item.dosage}</td>
                   <td>{item.frequency}</td>
                 </tr>
@@ -197,14 +251,72 @@ export default function PrescriptionBuilder({ onLeave }) {
       <ol className="prescription__items">
         {items.map((item, index) => (
           <li className="prescription__item" key={index}>
+            {/* The photograph, first, because it is the better identifier for
+                a patient who does not read print: they match it to the box in
+                their hand, where a drug name has no sign and has to be
+                fingerspelled letter by letter. */}
+            <div className="photo">
+              {item.preview ? (
+                <div className="photo__taken">
+                  <img
+                    className="photo__preview"
+                    src={item.preview}
+                    alt={`Photograph of medicine ${index + 1}`}
+                    data-testid={`medicine-photo-${index}`}
+                  />
+                  <button
+                    type="button"
+                    className="photo__clear"
+                    onClick={() => setImage(index, null)}
+                    data-testid={`clear-photo-${index}`}
+                  >
+                    Remove photo
+                  </button>
+                </div>
+              ) : (
+                <label className="photo__pick">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    // Opens the rear camera straight away on a phone, rather
+                    // than a file browser. The doctor is holding the box.
+                    capture="environment"
+                    onChange={(event) =>
+                      setImage(index, event.target.files?.[0] ?? null)
+                    }
+                    data-testid={`photo-input-${index}`}
+                  />
+                  <span className="photo__icon" aria-hidden="true">
+                    <CameraIcon />
+                  </span>
+                  <span>
+                    <strong>Photograph the medicine</strong>
+                    <span className="photo__hint">
+                      The patient sees this picture, then the dose in sign
+                      language. With a photo the name is optional.
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              {/* Said at the point the camera opens, because it cannot be
+                  undone afterwards: the image travels with the QR code, and a
+                  dispensing label often carries the patient's own name. */}
+              <p className="photo__warning">
+                Photograph the medicine itself, not a pharmacy label. A label
+                may carry the patient&apos;s name, and this picture goes home
+                with the QR code.
+              </p>
+            </div>
+
             <div className="prescription__fields">
               <label className="prescription__field">
-                <span>Medicine</span>
+                <span>Medicine {item.image ? "(optional)" : ""}</span>
                 <input
                   type="text"
                   value={item.medicine}
                   onChange={(event) => update(index, "medicine", event.target.value)}
-                  placeholder="Paracetamol"
+                  placeholder={item.image ? "Not needed with a photo" : "Paracetamol"}
                   data-testid={`medicine-${index}`}
                 />
               </label>
@@ -270,5 +382,28 @@ export default function PrescriptionBuilder({ onLeave }) {
         </p>
       ) : null}
     </section>
+  );
+}
+
+/* Inline so the control cannot lose its mark on a slow connection. */
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M3 8.5A2 2 0 0 1 5 6.5h1.8l1.2-2h8l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="12"
+        cy="13"
+        r="3.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+    </svg>
   );
 }

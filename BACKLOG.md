@@ -307,10 +307,16 @@ screen rather than unblocking a broken one.
 
 ### What is deliberately not on this list
 
-A clip per medicine name. See the alphabet above: fingerspelling covers the
-whole class, and a per drug library would need extending every time a formulary
-changes, with the failure mode landing on whichever patient is holding the
-device.
+A clip per medicine name. Two reasons, and the second now matters more than the
+first. Fingerspelling covers the whole class, so a per drug library would need
+extending every time a formulary changes, with the failure mode landing on
+whichever patient is holding the device. And since ADR 048 the medicine is
+identified by a photograph the doctor takes, so its name is not signed at all:
+the picture says which box and the signs say what to do with it.
+
+That also lowers what the alphabet is needed for. It is still the fallback for
+any content word with no sign, which is FR 1.6 and applies across the whole
+app, but a prescription no longer depends on it.
 
 ### A note on entering a dose
 
