@@ -51,7 +51,7 @@ function sequence({ safe = true, ...overrides } = {}) {
     back_translation: safe ? ["PARACETAMOL"] : [],
     is_safe_to_show: safe,
     needs_confirmation: false,
-    stitched_video_url: null,
+    stitched_video_url: safe ? "/media/stitched/item.mp4" : null,
     ...overrides,
   };
 }
@@ -59,6 +59,8 @@ function sequence({ safe = true, ...overrides } = {}) {
 function playlist({ safe = true, reference = "abc123XYZ_-def456ghi" } = {}) {
   return {
     reference,
+    // One file for the whole prescription, only when everything can be signed.
+    video_url: safe ? "/media/stitched/whole.mp4" : null,
     items: [
       {
         position: 1,
@@ -277,8 +279,13 @@ describe("replaying a prescription, FR 6.2", () => {
     await fillOneMedicine();
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
+    // The count, not the wording: what matters is that a failure is reported
+    // as a partial save rather than as success. Matched loosely so adding a
+    // clip to the fixture does not break the assertion it is not about.
     await waitFor(() => {
-      expect(screen.getByTestId("offline-status")).toHaveTextContent("Saved 0 of 1");
+      expect(screen.getByTestId("offline-status")).toHaveTextContent(
+        /Saved 0 of \d+ sign clips/,
+      );
     });
   });
 
@@ -372,5 +379,118 @@ describe("reading a reference out of the path", () => {
     for (const path of ["/p/../../etc/passwd", "/p/a%2Fb", "/p/a b", "/p/<script>"]) {
       expect(referenceFromPath(path)).toBeNull();
     }
+  });
+});
+
+describe("printing for the patient, FR 6.1", () => {
+  it("prints the medicines as words, not only the code", async () => {
+    // On paper there are no videos, so the words carry the whole
+    // prescription. A printed page showing only a QR code is useless to the
+    // pharmacist and to a patient whose phone has a flat battery.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => expect(screen.getByTestId("qr-image")).toBeInTheDocument());
+
+    const slip = document.querySelector(".print-only");
+    expect(slip).not.toBeNull();
+    expect(slip.textContent).toContain("Paracetamol");
+    expect(slip.textContent).toContain("one tablet");
+    expect(slip.textContent).toContain("twice a day");
+  });
+
+  it("prints the instruction to explain a refused medicine in person", async () => {
+    // The one line on the page someone has to act on, so it must survive the
+    // print stylesheet rather than being hidden with the rest of the chrome.
+    issuePrescription.mockResolvedValue(playlist({ safe: false }));
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("not-fully-signable")).toBeInTheDocument();
+    });
+    expect(document.querySelector(".print-only").textContent).toContain(
+      "explained in person",
+    );
+  });
+
+  it("asks the browser to print", async () => {
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("print-prescription")).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByTestId("print-prescription"));
+
+    expect(print).toHaveBeenCalled();
+  });
+});
+
+describe("saving to the patient's phone, FR 6.2 and ADR 046", () => {
+  it("offers one file for the whole prescription", async () => {
+    // A file in the gallery outlives the browser cache, the app, and the
+    // hospital. It plays in whatever video player the phone came with.
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-whole")).toBeInTheDocument();
+    });
+
+    const link = screen.getByTestId("save-whole");
+    expect(link).toHaveAttribute("href", "/media/stitched/whole.mp4");
+    // Named for what it is. The reference means nothing to the patient.
+    expect(link).toHaveAttribute("download", "my-prescription.mp4");
+  });
+
+  it("offers no single file when one medicine was refused", async () => {
+    // A single file cannot say that a medicine is missing from it, so it would
+    // sit in the gallery looking complete. ADR 033 applied to a download.
+    fetchPlaylist.mockResolvedValue({
+      ...playlist({ safe: false }),
+      items: [
+        playlist().items[0],
+        { ...playlist({ safe: false }).items[0], position: 2, medicine: "Zinc" },
+      ],
+      video_url: null,
+      is_fully_signable: false,
+      unsignable_positions: [2],
+    });
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-item-1")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("save-whole")).not.toBeInTheDocument();
+    // The refused one has nothing to save, visibly.
+    expect(screen.queryByTestId("save-item-2")).not.toBeInTheDocument();
+  });
+
+  it("says there is nothing to save rather than offering an empty download", async () => {
+    fetchPlaylist.mockResolvedValue(playlist({ safe: false }));
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("nothing-to-save")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("save-whole")).not.toBeInTheDocument();
+  });
+
+  it("tells the patient how to find the page again", async () => {
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-prescription")).toHaveTextContent(
+        "Add to Home screen",
+      );
+    });
   });
 });

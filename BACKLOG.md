@@ -162,6 +162,12 @@ A test asserts its absence for the same reason.
 | --- | --- | --- |
 | 6.1 | Final instructions saved as an ordered playlist of GhSL clips and Twi captions | `done` |
 | 6.2 | Playlist cached on the patient's phone for offline replay | `done` |
+
+Satisfied three ways, weakest to strongest, per ADR 046: the service worker
+caches the clips and the playlist, the patient can save one mp4 of the whole
+prescription to the phone's gallery, and the doctor can print a slip carrying
+the QR code and the medicines as words.
+
 | 6.3 | QR code links to the playlist through a de identified reference, medicine name, dosage, and clip sequence only | `done` |
 | 6.4 | The private transcript is never in the playlist and is not resolvable from the QR code | `done` |
 

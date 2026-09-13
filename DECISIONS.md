@@ -1564,3 +1564,53 @@ correctly, which is what the four tests in `core/tests.py` do.
 be read would be a guess, and the value of a health endpoint is entirely that
 it does not guess. This is the same reasoning as ADR 011: a component that
 cannot verify something must say so rather than assume the good case.
+
+
+## ADR 046: The patient keeps a video file, not only a cached page
+
+**Context.** FR 6.2 asks for the playlist to be "cached on the patient's phone
+for offline replay", and the service worker does that: the clips and the
+playlist response are both cached, so the page replays with no connection.
+
+That covers less than it sounds like. A browser evicts its cache to free
+space. Clearing browsing data takes it. A patient who cannot find the page
+again months later has lost it even though the bytes are still there. And none
+of it survives changing phone. The requirement is about a patient being able to
+watch their instructions at home, not about a cache existing.
+
+**Decision.** Two further ways to keep it, offered in order of durability.
+
+A video file. The whole prescription is stitched into one mp4 the patient
+downloads to their phone's gallery, through the same content addressed
+stitching cache the consultation screen already uses. It plays in whatever
+video player the phone came with, with nothing installed, no network, and no
+browser involved.
+
+Paper. The doctor prints a slip carrying the QR code *and* the medicines as
+words. Paper survives a flat battery, a phone with no working camera, and a
+patient who is handed the slip by a relative, and the pharmacist can read the
+dosages straight off it.
+
+**Why the printed slip carries the words.** A printed page showing only a QR
+code is a receipt for a prescription rather than a prescription. The print
+stylesheet therefore hides the videos, the buttons and the connection
+indicator, and prints a table of medicine, dose and frequency. The refusal
+warning prints too: it is the one line on the page somebody has to act on.
+
+**The rule on the single file.** There is no whole prescription video unless
+every item can be signed safely. A single file cannot say that one medicine is
+missing from it, so a prescription with a refused item would sit in the gallery
+looking complete, which is precisely the harm ADR 033 refuses whole sentences
+to avoid. When that happens the patient saves the signable items individually
+and the refused one visibly has nothing to save, which is a gap they can see
+rather than one they cannot.
+
+**Consequence.** The saved file has no captions. Burning text into the video
+with ffmpeg is possible and is not done: the caption is Twi text whose accuracy
+depends on the translation provider, and burning an unverified caption
+permanently into a file the patient keeps is worse than a file with none. The
+captions stay on the page, where they can be corrected.
+
+The "Add to Home screen" hint is plain text rather than a browser install
+prompt. That prompt exists on some browsers and fires on some visits, and a
+button that sometimes does nothing is worse than a sentence that always works.

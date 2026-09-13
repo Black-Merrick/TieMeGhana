@@ -1927,3 +1927,82 @@ like the backend is broken when it is simply not the backend. Vite proxies to
 8001, which is why the app works while a direct probe does not. Worth knowing
 before it costs someone an hour: check which port Vite is proxying to, in
 `frontend/.env.local`, before concluding anything from a direct request.
+
+
+## Giving the prescription to the patient: paper, and a file they keep
+
+Two questions after the QR code worked: how does the doctor print it, and how
+does the patient end up with the videos on his own phone to watch.
+
+### What was added
+
+| Piece | File |
+| --- | --- |
+| One video for the whole prescription | `Playlist.video_url` in `backend/prescriptions/services.py` |
+| Save to the phone's gallery | `frontend/src/components/SavePrescription.jsx` |
+| Printed slip and print stylesheet | `PrescriptionBuilder.jsx` and the `@media print` block in `index.css` |
+
+### Why a file and not just the cache
+
+The service worker was already caching the clips and the playlist, which is
+what FR 6.2 literally asks for, and it is weaker than it sounds. A browser
+evicts its cache under storage pressure, clearing browsing data takes it, and a
+patient who cannot find the page again has lost it whether the bytes are there
+or not.
+
+So the whole prescription is stitched into one mp4 that downloads to the
+gallery. It plays in the phone's own video player, with no browser, no network
+and nothing installed. ADR 046.
+
+It reuses the existing stitching cache unchanged, because the cache is
+addressed by the clips a file contains: a prescription asking for the same
+clips in the same order gets the same file, encoded once.
+
+### Verified with real footage
+
+The tests skip the stitching assertion, because fixture clips are placeholder
+bytes rather than real video and ffmpeg correctly refuses them. So it was
+checked against the dev server using the seven clips that are actually filmed:
+
+```
+POST /api/prescriptions/   ->  201, is_fully_signable: true
+whole prescription:  /media/stitched/2f8ccc0d….mp4    13.96s   548 KB
+  item 1 Appear:     /media/stitched/1551a76e….mp4     8.08s
+  item 2 Feeling:    /media/stitched/f512aea8….mp4     5.88s
+```
+
+8.08 + 5.88 = 13.96. The whole prescription file is exactly the two items back
+to back with nothing dropped, and it serves as `video/mp4` through the Vite
+proxy, which is what makes the download land in the gallery rather than opening
+a player tab.
+
+### The rule that makes the single file safe
+
+There is no whole prescription video unless every item can be signed. A single
+file has no way to say that a medicine is missing from it, so a prescription
+with a refused item would sit in the patient's gallery looking complete. That
+is the same harm ADR 033 refuses whole sentences to avoid, arriving by a
+different route, and it is worth noticing that a download is a place the safety
+gate has to reach. When one item is refused, the signable items can still be
+saved one at a time and the refused one visibly has nothing to save.
+
+### The printed slip
+
+The print stylesheet hides the videos, the buttons, the connection indicator
+and the language picker, and prints a table of medicine, dose and frequency
+under the QR code. A page showing only a QR code is a receipt for a
+prescription, not a prescription: the pharmacist reads the words, and so does
+anyone helping at home when the phone is flat.
+
+Two details worth keeping. The QR code is printed at a fixed 45mm rather than a
+proportion of the page, because it has to survive being photographed off paper.
+And `break-inside: avoid` on the rows, because a medicine split across a page
+break is how a dose gets read off the wrong row.
+
+### What is deliberately not done
+
+The saved file has no burned in captions. ffmpeg can draw text, and doing it
+would mean burning a Twi caption whose accuracy depends on the translation
+provider permanently into a file the patient keeps. A file with no caption is
+better than a file with a wrong one that cannot be corrected. The captions stay
+on the page.

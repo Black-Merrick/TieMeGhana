@@ -292,6 +292,88 @@ class TestTheDosageIsNeverSilentlyDropped:
         assert "twice" in sequence["blocking_tokens"]
 
 
+class TestSavingToThePhonesGallery:
+    """
+    ADR 046. One video file the patient keeps, rather than a cache they lose.
+
+    A file in the gallery outlives the browser cache, the app, and the
+    hospital. These tests hold the rule that decides when one may exist.
+    """
+
+    def test_no_whole_prescription_video_when_an_item_is_refused(self, api_client):
+        # The important direction. A single file cannot say that one medicine
+        # is missing from it, so it would sit in the gallery looking complete.
+        body = issue(api_client)
+
+        assert body["is_fully_signable"] is False
+        assert body["video_url"] is None
+
+    def test_a_fully_signable_prescription_offers_one_file(
+        self, api_client, make_clip, monkeypatch
+    ):
+        # Stitching itself is covered in clips/tests.py. What matters here is
+        # that a prescription asks for one file spanning every medicine, in
+        # playlist order.
+        from prescriptions import services
+
+        asked = {}
+
+        def fake_stitch(sequence):
+            asked["segments"] = [segment.token for segment in sequence.segments]
+            return "/media/stitched/abc.mp4"
+
+        monkeypatch.setattr(services, "stitched_video_url", fake_stitch)
+        for gloss in ("PARACETAMOL", "ONE", "TABLET", "TWICE", "DAY", "ZINC"):
+            make_clip(gloss)
+
+        body = issue(
+            api_client,
+            [
+                one_item(),
+                one_item(medicine="Zinc", dosage="one tablet", frequency="twice a day"),
+            ],
+        )
+
+        assert body["is_fully_signable"] is True
+        assert body["video_url"] == "/media/stitched/abc.mp4"
+        # Both medicines, in order, in one file.
+        assert asked["segments"].count("paracetamol") == 1
+        assert asked["segments"].count("zinc") == 1
+        assert asked["segments"].index("paracetamol") < asked["segments"].index("zinc")
+
+    def test_the_same_prescription_asks_for_the_same_file(self, api_client, make_clip):
+        # The stitching cache is addressed by the clips it contains, so a
+        # prescription reopened on the patient's phone must not re-encode.
+        for gloss in ("PARACETAMOL", "ONE", "TABLET", "TWICE", "DAY"):
+            make_clip(gloss)
+        reference = issue(api_client)["reference"]
+
+        first, second = (
+            api_client.get(reverse("prescription-playlist", args=[reference])).json()[
+                "video_url"
+            ]
+            for _ in range(2)
+        )
+
+        assert first == second
+
+    def test_the_file_url_carries_no_patient_data(self, api_client, make_clip):
+        # It is a filename derived from the clips it contains, which is what
+        # makes it shareable and cacheable. FR 6.4 applies to it too.
+        for gloss in ("PARACETAMOL", "ONE", "TABLET", "TWICE", "DAY"):
+            make_clip(gloss)
+        body = issue(api_client)
+
+        if body["video_url"] is None:
+            pytest.skip(
+                "nothing was stitched: either ffmpeg is unavailable, or the "
+                "test clips are placeholder bytes rather than real video"
+            )
+
+        for forbidden in ("paracetamol", "patient", "name"):
+            assert forbidden not in body["video_url"].lower()
+
+
 class TestTheReference:
     """FR 6.3, the QR code carries a de identified reference and nothing else."""
 
@@ -340,6 +422,9 @@ class TestFr64ThePrivateTranscriptIsUnreachable:
             "items",
             "is_fully_signable",
             "unsignable_positions",
+            # One file for the whole prescription, ADR 046. A path under
+            # /media, carrying no patient data of any kind.
+            "video_url",
         }
         assert set(body["items"][0]) == {
             "position",

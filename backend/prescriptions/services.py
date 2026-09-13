@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from django.db import transaction
 
 from clips.services import SignSequence, resolve_sign_sequences
+from clips.stitching import stitched_video_url
 from core.language import Language, LanguageError, get_language_provider
 from prescriptions.models import Prescription, PrescriptionItem
 
@@ -64,6 +65,38 @@ class Playlist:
         return tuple(
             item.position for item in self.items if not item.sequence.is_safe_to_show
         )
+
+    @property
+    def video_url(self) -> str | None:
+        """
+        The whole prescription as one downloadable video file.
+
+        This is what a patient saves to their phone's gallery, per ADR 046. A
+        file in the gallery outlives the browser cache, the app, and the
+        hospital: it plays in whatever video player the phone came with, years
+        later, with no network and nothing installed.
+
+        None unless every item can be signed safely. A single file cannot say
+        that one medicine is missing from it, so a prescription with a refused
+        item would be saved to the gallery looking complete, which is the exact
+        harm ADR 033 refuses sentences to avoid. When it is None the patient
+        saves the items individually instead, and the refused one visibly has
+        nothing to save.
+        """
+        if not self.items or not self.is_fully_signable:
+            return None
+
+        # One sequence spanning every medicine, in playlist order, so the
+        # existing content addressed stitching cache covers it unchanged: the
+        # same prescription asks for the same file and it is encoded once.
+        whole = SignSequence(
+            source_text=" ".join(item.instruction for item in self.items),
+            segments=tuple(
+                segment for item in self.items for segment in item.sequence.segments
+            ),
+        )
+
+        return stitched_video_url(whole)
 
 
 def _translate_instruction(instruction: str) -> tuple[str, str, str]:

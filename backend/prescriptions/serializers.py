@@ -78,6 +78,10 @@ class PlaylistSerializer(serializers.Serializer):
 
     reference = serializers.CharField()
     items = PlaylistItemSerializer(many=True)
+    # The whole prescription as one file the patient saves to their phone's
+    # gallery, ADR 046. Null unless every item can be signed safely, because a
+    # single file cannot say that one medicine is missing from it.
+    video_url = serializers.CharField(allow_null=True)
     # Told to the doctor at issue time and to the patient on replay. An item
     # that cannot be signed safely needs explaining another way, and neither
     # party can arrange that if the interface stays quiet about it.

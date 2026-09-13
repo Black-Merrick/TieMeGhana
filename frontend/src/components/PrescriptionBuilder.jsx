@@ -89,12 +89,57 @@ export default function PrescriptionBuilder({ onLeave }) {
           </button>
         </div>
 
-        <p className="prescription__hint">
+        <p className="prescription__hint prescription__hint--screen">
           The patient scans this with their own phone. It works afterwards
           without a connection.
         </p>
 
+        {/* Paper is the most reliable thing in the room. It survives a flat
+            battery, a phone with no camera, and a patient who is handed the
+            slip by a relative, and the pharmacist can read the medicines off
+            it directly. The printed sheet carries the code and the words: it
+            is not a receipt for the QR code, it is the prescription. */}
+        <button
+          type="button"
+          className="prescription__print"
+          onClick={() => window.print()}
+          data-testid="print-prescription"
+        >
+          Print for the patient
+        </button>
+
         <PrescriptionQr url={playlistUrl(playlist.reference)} />
+
+        {/* Printed only. On screen the medicines are already below, in the
+            playlist, with their videos. On paper there are no videos, so the
+            words have to carry the whole prescription by themselves. */}
+        <div className="print-only" aria-hidden="true">
+          <h3 className="slip__title">Your medicines</h3>
+          <table className="slip__table">
+            <thead>
+              <tr>
+                <th>Medicine</th>
+                <th>How much</th>
+                <th>How often</th>
+              </tr>
+            </thead>
+            <tbody>
+              {playlist.items.map((item) => (
+                <tr key={item.position}>
+                  <td>{item.medicine}</td>
+                  <td>{item.dosage}</td>
+                  <td>{item.frequency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="slip__note">
+            Scan the code above to watch these in sign language.
+            {playlist.is_fully_signable
+              ? ""
+              : ` Medicine ${playlist.unsignable_positions.join(", ")} cannot be shown in sign language and must be explained in person.`}
+          </p>
+        </div>
 
         {/* Said plainly, and before the doctor walks away. An item that cannot
             be signed is not a rendering detail: someone has to explain that

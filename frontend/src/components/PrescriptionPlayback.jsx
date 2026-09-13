@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { cachePlaylistClips, fetchPlaylist } from "../api/prescriptions.js";
 import PrescriptionPlaylist from "./PrescriptionPlaylist.jsx";
+import SavePrescription from "./SavePrescription.jsx";
 
 /**
  * What a scanned QR code opens, SRS FR 6.2 and FR 6.3.
@@ -87,6 +88,8 @@ export default function PrescriptionPlayback({ reference }) {
       ) : null}
 
       <PrescriptionPlaylist playlist={playlist} />
+
+      <SavePrescription playlist={playlist} />
     </section>
   );
 }
