@@ -25,16 +25,6 @@ const ICONS = {
       <path d="M18 46l28-28" strokeWidth="5" strokeLinecap="round" />
     </svg>
   ),
-  asthma: (
-    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <path
-        d="M32 14v16M32 30c0 11-6 16-12 16s-7-6-7-12 2-13 8-15M32 30c0 11 6 16 12 16s7-6 7-12-2-13-8-15"
-        fill="none"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
   pregnancy: (
     <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <circle cx="30" cy="14" r="7" />
@@ -91,10 +81,14 @@ export default function CriticalAlerts({ alerts, onChoose, chosenId = null, disa
           aria-pressed={chosenId === alert.id}
           data-testid={`alert-${alert.id}`}
         >
-          <span className="alerts__icon">{ICONS[alert.icon]}</span>
+          {/* The clip is the card once the sign is filmed, per FR 5.3. It
+              plays silent and on a loop, with its own controls suppressed:
+              the card is the tap target, and a video's controls inside a
+              button swallow the tap.
 
-          {/* The GhSL clip when it exists, per FR 5.3. Silent and looping, so
-              the card itself stays the tap target. */}
+              The drawn icon is the fallback, not a decoration beside it. An
+              alert with no footage is still offered, per ADR 040, and on those
+              cards the icon is the only thing the patient has to read. */}
           {alert.is_playable ? (
             <span className="alerts__clip">
               <SignSequencePlayer
@@ -103,7 +97,9 @@ export default function CriticalAlerts({ alerts, onChoose, chosenId = null, disa
                 loop
               />
             </span>
-          ) : null}
+          ) : (
+            <span className="alerts__icon">{ICONS[alert.icon]}</span>
+          )}
 
           {/* Read by the clinician. The patient has the icon and, once filmed,
               the sign video. */}

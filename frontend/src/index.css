@@ -987,7 +987,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   min-height: 9rem;
-  padding: 1rem 0.75rem;
+  padding: 0.5rem 0.5rem 0.75rem;
   border: 3px solid var(--colour-offline);
   border-radius: 0.75rem;
   background: #fdf3f1;
@@ -1014,9 +1014,23 @@ body {
   stroke: #fff;
 }
 
+/* Once the sign is filmed the clip is the card, per FR 5.3, rather than a
+   thumbnail beside an icon. The patient is meant to read the sign, and a sign
+   the size of a postage stamp cannot be read. */
 .alerts__clip {
   display: block;
   width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #000;
+}
+
+.alerts__clip video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
 }
 
 .alerts__label {
@@ -1026,6 +1040,10 @@ body {
 /* The body map, FR 5.2. A drawing rather than a list, so tapping the stomach
    feels like pointing. Section 4.5. */
 .body {
+  margin: 0;
+}
+
+.body__figure {
   width: 100%;
   max-width: 15rem;
   height: auto;
@@ -1033,29 +1051,72 @@ body {
   margin: 0 auto;
 }
 
-.body__part > * {
+/* The untouched figure. One shape, so it reads as a body rather than as nine
+   tiles waiting to be coloured in. */
+.body__fill {
   fill: #dce6e1;
-  stroke: var(--colour-primary);
-  stroke-width: 2;
+}
+
+.body__outline {
+  fill: none;
+  stroke: #2a3b34;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  /* The contour and the marks sit above the regions, so they would otherwise
+     swallow taps meant for the body underneath. */
+  pointer-events: none;
+}
+
+.body__detail path {
+  fill: none;
+  stroke: #2a3b34;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+.body__detail {
+  pointer-events: none;
+}
+
+/* Transparent rather than fill:none, which would leave the region with no hit
+   area at all and make the map look interactive while ignoring every tap. */
+.body__part polygon {
+  fill: transparent;
+  stroke: rgba(42, 59, 52, 0.16);
+  stroke-width: 1;
   cursor: pointer;
   transition: fill 0.12s ease;
 }
 
-.body__part:hover > *,
-.body__part:focus-visible > * {
-  fill: #c3d6cd;
+.body__part:hover polygon {
+  fill: rgba(28, 90, 66, 0.22);
 }
 
-.body__part:focus-visible {
-  outline: 3px solid var(--colour-accent);
-  outline-offset: 2px;
+/* A focus ring cannot be used here: the regions are clipped to the body, so an
+   outline drawn outside the contour is cut away. Focus is shown by filling the
+   region instead, which is visible for the same reason a hover is. */
+.body__part:focus-visible polygon {
+  fill: rgba(28, 90, 66, 0.3);
+  stroke: var(--colour-accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 5 3;
 }
 
-/* Chosen region marked by fill and a heavier stroke, so it reads without
-   relying on colour. */
-.body__part--chosen > * {
+/* The chosen region is marked by a solid fill and a heavier edge, so it does
+   not depend on colour alone. */
+.body__part--chosen polygon {
   fill: var(--colour-primary);
-  stroke-width: 4;
+  stroke: #2a3b34;
+  stroke-width: 2;
+}
+
+.body__chosen {
+  min-height: 1.5rem;
+  margin-top: 0.5rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--colour-primary);
 }
 
 /* The pain scale, FR 5.1. Faces rather than numbers, since a number needs a

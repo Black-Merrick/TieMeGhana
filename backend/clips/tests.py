@@ -443,7 +443,15 @@ class TestCriticalAlerts:
 
         assert all(row["is_playable"] is False for row in rows)
         assert all(row["clip"] is None for row in rows)
-        assert len(rows) == 3
+        assert len(rows) == len(CRITICAL_ALERT_GLOSSES)
+
+    def test_asthma_is_not_offered(self, api_client):
+        # Removed at the team's direction, ADR 041. Asserted rather than just
+        # deleted, because FR 5.3 still names it on paper: without this, a
+        # future reader reconciling code against the SRS would add it back.
+        ids = [row["id"] for row in api_client.get(reverse("clip-alerts")).json()]
+
+        assert "ASTHMA" not in ids
 
     def test_breathing_comes_first(self, api_client):
         # A responder scans this list under pressure, so the alert that stops a
@@ -482,10 +490,10 @@ class TestCriticalAlerts:
         # so the alert stays but its clip does not.
         from clips.models import ClipKind
 
-        make_clip("ASTHMA", kind=ClipKind.ALERT, approved=False)
+        make_clip("PREGNANCY", kind=ClipKind.ALERT, approved=False)
 
         rows = api_client.get(reverse("clip-alerts")).json()
-        alert = next(row for row in rows if row["id"] == "ASTHMA")
+        alert = next(row for row in rows if row["id"] == "PREGNANCY")
 
         assert alert["is_playable"] is False
         assert alert["clip"] is None

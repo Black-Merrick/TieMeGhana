@@ -7,8 +7,9 @@ first responder unfamiliar with the app has to be able to use it within
 seconds. A short list of one-tap alerts is the only thing that survives that
 constraint.
 
-FR 5.3 names the three. They are kept in the order a responder would scan
-them: the one that stops a patient breathing first.
+FR 5.3 names three. Asthma was removed at the team's direction, leaving two:
+see ADR 041. They are kept in the order a responder would scan them, the one
+that stops a patient breathing first.
 """
 
 # Gloss, the English label the clinician reads, and a stable key the frontend
@@ -17,7 +18,6 @@ them: the one that stops a patient breathing first.
 # renaming a sign to change a picture.
 CRITICAL_ALERTS = [
     ("CANNOT_BREATHE", "Cannot breathe", "breathing"),
-    ("ASTHMA", "Asthma", "asthma"),
     ("PREGNANCY", "Pregnant", "pregnancy"),
 ]
 

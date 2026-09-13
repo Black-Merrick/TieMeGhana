@@ -96,7 +96,7 @@ WORDS = BODY_PARTS + SYMPTOMS + CLINICAL + EVERYDAY
 # FR 5.3 names these three explicitly. They are ALERT rather than WORD because
 # the patient selects them directly in Emergency Visual Triage Mode, so they
 # are never looked up by tokenizing a caption.
-ALERTS = ["ASTHMA", "PREGNANCY", "CANNOT_BREATHE"]
+ALERTS = ["PREGNANCY", "CANNOT_BREATHE"]
 
 # Questions and instructions the app gives in its own voice, delivered as sign
 # video only. FR 2.1 requires the literacy check to carry no text at all, so

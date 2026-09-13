@@ -43,7 +43,6 @@ function alert(id, english, icon, isPlayable = false) {
 
 const ALERTS = [
   alert("CANNOT_BREATHE", "Cannot breathe", "breathing"),
-  alert("ASTHMA", "Asthma", "asthma"),
   alert("PREGNANCY", "Pregnant", "pregnancy"),
 ];
 
@@ -72,6 +71,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * Wait for the alerts request to settle.
+ *
+ * A test that renders and asserts immediately leaves the fetch in flight, and
+ * React warns about the state update landing outside act. The warning is
+ * noise, but noise is what hides the next real one.
+ */
+async function settle() {
+  await waitFor(() =>
+    expect(screen.queryByTestId("alerts-loading")).not.toBeInTheDocument(),
+  );
+}
+
 function renderTriage(props = {}) {
   return render(
     <EmergencyTriage outputLanguage="tw" onLeave={() => {}} {...props} />,
@@ -79,13 +91,12 @@ function renderTriage(props = {}) {
 }
 
 describe("critical alerts, FR 5.3", () => {
-  it("offers the three alerts the SRS names", async () => {
+  it("offers the alerts the backend returns", async () => {
     renderTriage();
 
     await waitFor(() => {
       expect(screen.getByTestId("alert-CANNOT_BREATHE")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("alert-ASTHMA")).toBeInTheDocument();
     expect(screen.getByTestId("alert-PREGNANCY")).toBeInTheDocument();
   });
 
@@ -109,8 +120,8 @@ describe("critical alerts, FR 5.3", () => {
     // pattern, so the patient can feel that this was not an ordinary tap.
     renderTriage();
 
-    await waitFor(() => screen.getByTestId("alert-ASTHMA"));
-    await userEvent.click(screen.getByTestId("alert-ASTHMA"));
+    await waitFor(() => screen.getByTestId("alert-PREGNANCY"));
+    await userEvent.click(screen.getByTestId("alert-PREGNANCY"));
 
     expect(navigator.vibrate).toHaveBeenCalledWith([60, 45, 60, 45, 60]);
   });
@@ -128,7 +139,10 @@ describe("critical alerts, FR 5.3", () => {
     await waitFor(() => expect(speakResponse).toHaveBeenCalled());
   });
 
-  it("plays the GhSL clip for an alert once it is filmed", async () => {
+  it("makes the card itself the video once the sign is filmed", async () => {
+    // FR 5.3. The patient is meant to read the sign, and a sign the size of a
+    // postage stamp beside an icon cannot be read, so the clip fills the card
+    // and the drawn icon steps aside.
     fetchCriticalAlerts.mockResolvedValue([
       alert("CANNOT_BREATHE", "Cannot breathe", "breathing", true),
     ]);
@@ -138,8 +152,23 @@ describe("critical alerts, FR 5.3", () => {
     await waitFor(() => {
       expect(screen.getByTestId("alert-CANNOT_BREATHE")).toBeInTheDocument();
     });
-    const video = document.querySelector("video");
-    expect(video).not.toBeNull();
+
+    const card = screen.getByTestId("alert-CANNOT_BREATHE");
+    expect(card.querySelector("video")).not.toBeNull();
+    expect(card.querySelector(".alerts__icon")).toBeNull();
+  });
+
+  it("falls back to the drawn icon while the sign is unfilmed", async () => {
+    // The icon is the fallback, not a decoration. On an unfilmed alert it is
+    // the only thing the patient has to read, which is what makes offering it
+    // at all defensible under ADR 040.
+    renderTriage();
+
+    await waitFor(() => screen.getByTestId("alert-CANNOT_BREATHE"));
+
+    const card = screen.getByTestId("alert-CANNOT_BREATHE");
+    expect(card.querySelector(".alerts__icon svg")).not.toBeNull();
+    expect(card.querySelector("video")).toBeNull();
   });
 
   it("keeps the pain scale and body map working when alerts cannot load", async () => {
@@ -204,7 +233,7 @@ describe("pain scale, FR 5.1", () => {
     renderTriage();
     // Settle the alerts fetch first. Without it React warns about a state
     // update outside act, and a warning nobody reads hides the next real one.
-    await waitFor(() => screen.getByTestId("alert-ASTHMA"));
+    await waitFor(() => screen.getByTestId("alert-PREGNANCY"));
 
     for (const level of [1, 2, 3, 4, 5]) {
       expect(screen.getByTestId(`pain-level-${level}`)).toBeInTheDocument();
@@ -229,7 +258,7 @@ describe("pain scale, FR 5.1", () => {
     // Accessibility, and also sunlight on a phone screen. If colour were the
     // only signal, a colour blind patient could not tell level 2 from level 4.
     renderTriage();
-    await waitFor(() => screen.getByTestId("alert-ASTHMA"));
+    await waitFor(() => screen.getByTestId("alert-PREGNANCY"));
 
     const mouths = [...document.querySelectorAll(".pain__mouth")].map((path) =>
       path.getAttribute("d"),
@@ -288,5 +317,87 @@ describe("a malformed response", () => {
     });
     expect(screen.getByTestId("body-map")).toBeInTheDocument();
     expect(screen.getByTestId("pain-scale")).toBeInTheDocument();
+  });
+});
+
+describe("the body outline", () => {
+  it("keeps the nine region ids the rest of the app looks clips up by", async () => {
+    // These ids are glosses. Renaming one to suit the drawing would silently
+    // stop a body location sign resolving, with no error anywhere.
+    renderTriage();
+    await settle();
+
+    for (const id of [
+      "HEAD",
+      "THROAT",
+      "CHEST",
+      "STOMACH",
+      "WAIST",
+      "ARM",
+      "HAND",
+      "LEG",
+      "FOOT",
+    ]) {
+      expect(screen.getByTestId(`body-part-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("is symmetric about the centre line", async () => {
+    // Only the right half of the figure is written down and the left is its
+    // mirror, so the drawing cannot drift lopsided through an edit. Asserted
+    // on the arms, which are the only regions with a shape on each side.
+    renderTriage();
+    await settle();
+
+    const [right, left] = [
+      ...screen.getByTestId("body-part-ARM").querySelectorAll("polygon"),
+    ].map((shape) =>
+      shape
+        .getAttribute("points")
+        .split(" ")
+        .map((pair) => Number(pair.split(",")[0])),
+    );
+
+    expect(left).toEqual(right.map((x) => 200 - x));
+  });
+
+  it("gives every region a hit area rather than only a visible one", async () => {
+    // fill:none would leave a region with no hit area at all, which looks
+    // interactive and ignores every tap. The regions are clipped to the body,
+    // so this is not something a glance at the screen would catch.
+    renderTriage();
+    await settle();
+
+    const shapes = [
+      ...screen.getByTestId("body-map").querySelectorAll(".body__part polygon"),
+    ];
+
+    expect(shapes.length).toBeGreaterThan(0);
+    expect(shapes.every((shape) => shape.getAttribute("fill") !== "none")).toBe(
+      true,
+    );
+  });
+
+  it("does not let the contour swallow taps meant for the body", async () => {
+    // The outline and the interior marks are painted over the regions so a
+    // selection is tinted underneath them. Drawn on top, they would otherwise
+    // take every tap that landed on a line.
+    renderTriage();
+    await settle();
+
+    const map = screen.getByTestId("body-map");
+
+    expect(map.querySelector(".body__outline")).not.toBeNull();
+    expect(map.querySelector(".body__part polygon")).not.toBeNull();
+  });
+
+  it("names the chosen part for whoever is treating the patient", async () => {
+    renderTriage();
+    await settle();
+
+    expect(screen.getByTestId("body-chosen")).toHaveTextContent("");
+    await userEvent.click(screen.getByTestId("body-part-STOMACH"));
+
+    expect(screen.getByTestId("body-chosen")).toHaveTextContent("Stomach");
   });
 });

@@ -1693,3 +1693,72 @@ The general form, worth keeping: a `catch` handles the server failing, not the
 server answering wrongly, and those are different failures. Anything downstream
 that must survive an outage has to survive a bad payload too, or the
 degradation path only works for the failure you happened to imagine.
+
+
+## Sprint 7 revision: a real figure, two alerts, and the clip as the card
+
+Three changes after review of the built screen.
+
+### The figure
+
+The body map was rounded rectangles, one per region, and it read as a toy. The
+replacement is one continuous contour with the regions clipped to it, which is
+ADR 042. The contour lives in `frontend/src/components/bodySilhouette.js` as a
+table of anatomical points for the right half of the body, mirrored at module
+load and smoothed through a Catmull-Rom pass.
+
+Keeping it as a point table rather than a path string is deliberate. The table
+can be read as anatomy, top of skull to jaw to trapezius to deltoid and down,
+and a shoulder can be narrowed by changing one number. The equivalent edit to a
+bezier path means changing six control points and guessing which.
+
+### Verifying a drawing without seeing it
+
+The figure cannot be checked by reading the code, and the tests assert
+structure rather than shape. So the geometry was checked numerically: flatten
+the contour back to a polygon, then sample every square unit of the 200 by 480
+box and ask which region owns it, in paint order.
+
+| Check | Result |
+| --- | --- |
+| Body area owned by some region | 24376 of 24376, 100% |
+| Regions clipping to nothing | none |
+| Proportions | legs 31%, arms 19%, chest 13%, waist 12%, head 9% |
+| Contour self intersection | none, every scanline crosses an even number of times |
+
+The coverage number is the one worth having. A region that clips to nothing is
+invisible on screen and silently untappable, and neither the tests nor a glance
+at the figure would catch it. The scanline parity check catches the specific
+failure the arms risk: if an arm's inner edge crossed into the hip, the contour
+would self intersect and render with a hole.
+
+The proportions are the sanity check on whether it reads as a person at all.
+Eight head heights, shoulders about two and a half head widths.
+
+### Two alerts, not three
+
+Asthma removed at the team's direction, ADR 041. Worth noting how it was
+removed: `CRITICAL_ALERTS` in `clips/emergency.py` is the only place the set is
+written down, so the endpoint, the seed list and the frontend all followed from
+one edit, and the only other changes were deleting the unused icon and fixing
+the tests that named it.
+
+A test now asserts `ASTHMA` is absent. FR 5.3 still names it, so the code and
+the spec disagree on paper, and a deviation that is only visible as missing code
+gets read as an oversight and put back.
+
+### The clip is the card
+
+FR 5.3 asks for pre recorded GhSL video on the alerts. The card previously
+showed a drawn icon with a small video beneath it. Now the clip fills the card
+and the icon is the fallback for an unfilmed alert.
+
+The icon being a fallback rather than a decoration is what makes ADR 040
+defensible: on an unfilmed alert the icon is the only thing the patient has to
+read, which is the whole argument for offering the alert anyway. Both branches
+are tested, because today every alert takes the fallback branch and the video
+branch would otherwise ship unexercised.
+
+No alert clips are filmed yet, so the screen still shows icons. Dropping
+`cannot_breathe.webm` and `pregnancy.webm` into `backend/footage/` and importing
+them switches both cards to video with no code change.

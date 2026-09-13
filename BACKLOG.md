@@ -145,7 +145,14 @@ setting that could be misconfigured.
 | --- | --- | --- |
 | 5.1 | One tap pain scale icons | `done` |
 | 5.2 | Tappable body map for pain location | `done` |
-| 5.3 | Pre recorded GhSL videos for critical alerts, Asthma, Pregnancy, Cannot Breathe | `done` |
+| 5.3 | Pre recorded GhSL videos for critical alerts, Asthma, Pregnancy, Cannot Breathe | `done, reduced` |
+
+FR 5.3 names three alerts. Asthma was removed at the team's direction, leaving
+cannot breathe and pregnant. Recorded as ADR 041 and flagged here rather than
+quietly dropped, because the SRS still names it: a later reader reconciling the
+code against the spec would otherwise read the gap as a bug and add it back.
+A test asserts its absence for the same reason.
+
 | 5.4 | No typing required anywhere in this mode | `done` |
 | 5.5 | Every selection spoken aloud in Twi or English, consistent with FR 3.4 | `done` |
 
@@ -229,7 +236,7 @@ solves, so they are tracked explicitly.
 | Khaya AI API key from GhanaNLP | ~~Sprint 2~~ | **resolved 2026-09-12.** All three endpoints verified live. Free tier is metered, so `LANGUAGE_PROVIDER=stub` in dev per ADR 015 |
 | 30 to 50 filmed or sourced GhSL clips for a hospital intake scenario | **the critical path now.** 92 glosses are recorded and awaiting footage, 0 usable. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
 | GhSL fluent consultant review of the emergency alerts | Before any public demo. Covers both the three signs themselves and ADR 040, the judgment that an unfilmed alert is still worth offering | open |
-| Three GhSL clips for the critical alerts, `cannot_breathe`, `asthma`, `pregnancy` | Emergency Triage works without them, per ADR 040, on icons alone. The clips make it read to a patient who signs | open |
+| Two GhSL clips for the critical alerts, `cannot_breathe` and `pregnancy` | Emergency Triage works without them, per ADR 040, on the drawn icons alone. Once filmed, each clip becomes the card itself, which is what FR 5.3 asks for | open |
 | **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
 | Alphabet clips for fingerspelling, one per letter | FR 1.6 cannot fall back without a complete alphabet, so a partial one leaves words unavailable rather than spelled | open |

@@ -1373,3 +1373,78 @@ That last point had a real hole: a response that was not a list threw inside
 render and took the drawings down with the alerts. The payload shape is now
 checked rather than trusted, on the principle that the parts which need nothing
 from the server must survive anything the server does.
+
+
+## ADR 041: The critical alert set is cannot breathe and pregnant, not asthma
+
+**Context.** FR 5.3 names three one tap alerts for Emergency Visual Triage:
+cannot breathe, asthma, pregnant. The team reviewed the built screen and
+removed asthma.
+
+**Decision.** The alert set is the two remaining. `CRITICAL_ALERTS` in
+`clips/emergency.py` is the single place it is written down, so the endpoint,
+the seed list and the frontend all follow from one edit.
+
+**Why.** This is a product and clinical call rather than an engineering one, so
+the reasoning belongs to the team. What engineering can say about it: of the
+three, asthma is the only one that names a diagnosis rather than what the
+patient is experiencing or what would change their treatment. Cannot breathe
+already covers the presentation an asthmatic patient would be tapping for, and
+in an emergency a shorter list is scanned faster. Fewer, larger, less similar
+cards is the direction section 4.5 pushes anyway.
+
+**Consequence.** The SRS still names asthma, so the code and the spec now
+disagree on paper. That disagreement is recorded in three places rather than
+left to be rediscovered: this record, the FR 5.3 row in `BACKLOG.md` marked
+`done, reduced`, and a test asserting `ASTHMA` is not in the endpoint's output.
+The test is the one that matters. Without it, a future reader reconciling code
+against the spec reads the gap as an oversight and puts it back.
+
+The seeded `ASTHMA` clip row is left in any existing database. It is unfilmed
+and no longer reachable, and which rows hold reviewed footage is not something
+a code change should decide.
+
+## ADR 042: The body map is one contour with clipped regions
+
+**Context.** The first body map was assembled from one rounded rectangle per
+region: a circle for the head, a box for the chest, and so on. It was rejected
+on sight, and correctly. Section 4.5 asks for "an actual outline of a human
+body, so tapping the stomach or the head feels like pointing, not like
+operating a menu", and a figure made of boxes reads as a toy. A patient in pain
+should not have to work out that a rectangle means their chest.
+
+The obvious fix, drawing nine anatomically shaped pieces that tile into a body,
+trades one problem for a worse one: nine hand authored outlines that have to
+agree along every shared edge, where a millimetre of disagreement is a visible
+seam or a sliver of body that belongs to no region at all.
+
+**Decision.** One continuous contour for the whole figure, plus a clip path.
+Regions are then simple shapes, mostly horizontal bands, drawn clipped to that
+contour. A band across the chest comes out chest shaped. The arms and hands,
+which sit beside the trunk rather than above or below it, are drawn last with
+their inner edges copied from the contour's own table, so a later shape wins
+the overlap and the arm to ribs boundary is exactly the gap between them.
+
+The contour is stored as a table of anatomical points for the right half only,
+mirrored at module load. Two reasons: a shoulder can be moved by changing one
+number instead of six bezier control points, and the figure cannot drift
+lopsided through an edit.
+
+**Why not an image.** A photograph or a traced PNG would look better and could
+not be divided. Regions have to be geometry for the tap to land anywhere other
+than a bounding box, and the contour has to be a path for the clip to work.
+
+**Consequence.** Three things about this are not obvious to the next reader and
+are therefore commented at the point of use. Region fills must be
+`transparent` rather than `none`, because `none` leaves a region with no hit
+area at all, which looks interactive and ignores every tap. The contour and the
+interior marks are painted above the regions so a selection tints underneath
+them, which means both must opt out of pointer events or they swallow taps.
+And focus cannot be shown with an outline, because the regions are clipped and
+an outline drawn outside the contour is cut away, so focus fills the region
+instead.
+
+The nine region ids are glosses the rest of the app resolves body location
+clips by, so they are fixed. Renaming one to suit the drawing would stop a sign
+resolving with no error anywhere, which is the shape of bug ADR 010, 037 and
+039 all were.
