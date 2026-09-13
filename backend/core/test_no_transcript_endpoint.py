@@ -73,6 +73,9 @@ def test_the_api_surface_is_the_one_we_expect():
 
     assert names == [
         "caption",
+        # Emergency Visual Triage, FR 5.3. Reads a fixed alert list, writes
+        # nothing, and carries no patient data.
+        "clip-alerts",
         "clip-body-locations",
         "clip-by-gloss",
         "clip-detail",

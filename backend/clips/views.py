@@ -4,6 +4,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from clips.body_locations import BODY_LOCATIONS
+from clips.emergency import CRITICAL_ALERTS
 from clips.models import SignClip
 from clips.serializers import (
     SignClipSerializer,
@@ -28,6 +29,41 @@ class SignClipViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Only clips that are both approved and filmed are ever exposed.
         return SignClip.objects.resolvable()
+
+    @action(detail=False, url_path="alerts")
+    def alerts(self, request):
+        """
+        The critical alerts for Emergency Visual Triage, FR 5.3.
+
+        Every alert is returned whether its GhSL clip is filmed or not, and
+        each reports whether the clip can be played. Unlike the body location
+        grid in ADR 022, an unfilmed alert is still offered: it carries an icon
+        and a label, and in an emergency an icon a patient half recognises
+        beats no way to say "cannot breathe" at all. See ADR 040.
+        """
+        filmed = {
+            clip.gloss: clip
+            for clip in SignClip.objects.resolvable().filter(
+                gloss__in=[gloss for gloss, _, _ in CRITICAL_ALERTS]
+            )
+        }
+
+        return Response(
+            [
+                {
+                    "id": gloss,
+                    "english_text": label,
+                    "icon": icon,
+                    "is_playable": gloss in filmed,
+                    "clip": (
+                        SignClipSerializer(filmed[gloss]).data
+                        if gloss in filmed
+                        else None
+                    ),
+                }
+                for gloss, label, icon in CRITICAL_ALERTS
+            ]
+        )
 
     @action(detail=False, url_path="body-locations")
     def body_locations(self, request):

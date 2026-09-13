@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
+import EmergencyTriage from "./components/EmergencyTriage.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import { clearTranscript } from "./transcript/transcript.js";
 import {
+  DEFAULT_OUTPUT_LANGUAGE,
   LiteracyPath,
   OutputLanguage,
   endVisit,
@@ -27,6 +29,16 @@ export default function App() {
   // Read once on mount. A patient who reloads mid consultation keeps their
   // path, and a visit older than the safety window is treated as finished.
   const [visit, setVisit] = useState(() => loadVisit());
+
+  // Emergency Visual Triage sits outside the visit, deliberately. FR 5 is for
+  // a patient who may have arrived unconscious after an accident, and asking
+  // whether they read before letting them say they cannot breathe would be
+  // the wrong order. See ADR 040.
+  const [emergency, setEmergency] = useState(false);
+
+  // The listener's language still applies in an emergency, and there may be no
+  // visit yet to have set it.
+  const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +65,7 @@ export default function App() {
    */
   const startNewPatient = () => {
     endVisit();
+    setEmergency(false);
 
     // The transcript goes with the visit. This device is handed from one
     // patient to the next, and these consultations are about pregnancy,
@@ -94,6 +107,20 @@ export default function App() {
           {CONNECTION_LABELS[connection]}
         </p>
 
+        {/* Always on screen, with no visit required. A responder should not
+            have to find a menu, and FR 5 exists for the case where there is no
+            time to set anything up. */}
+        {emergency ? null : (
+          <button
+            type="button"
+            className="shell__emergency"
+            onClick={() => setEmergency(true)}
+            data-testid="enter-emergency"
+          >
+            Emergency
+          </button>
+        )}
+
         {visit ? (
           <>
             {/* Section 4.1, the path indicator is never buried in settings. */}
@@ -131,11 +158,13 @@ export default function App() {
         ) : null}
       </div>
 
-      {visit ? (
-        <PatientPath
-          path={visit.literacyPath}
-          outputLanguage={visit.outputLanguage}
+      {emergency ? (
+        <EmergencyTriage
+          outputLanguage={outputLanguage}
+          onLeave={() => setEmergency(false)}
         />
+      ) : visit ? (
+        <PatientPath path={visit.literacyPath} outputLanguage={outputLanguage} />
       ) : (
         <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
       )}

@@ -1324,3 +1324,52 @@ it can never use is worse than one that refuses it. Two earlier decisions have
 the same shape, ADR 010 on multi word glosses never matching and ADR 037 on
 contractions hiding a negation, and all three were invisible until someone used
 the thing.
+
+
+## ADR 040: A critical alert is offered even when its sign clip is unfilmed
+
+**Context.** Emergency Visual Triage, FR 5.1 to 5.5, is the mode for a patient
+who arrives after an accident with no interpreter and no time. FR 5.3 names
+three one tap alerts: cannot breathe, asthma, pregnant. ADR 022 already settled
+the general rule for anything the patient chooses from, and it is strict: an
+option whose GhSL clip is not both approved and filmed is withheld entirely,
+because an option the patient cannot read is an option they might tap by
+accident, and a wrong answer is worse than a missing one.
+
+Applied literally to FR 5.3, that rule removes the cannot breathe button from a
+hospital that has not finished filming.
+
+**Decision.** Critical alerts are the exception. All three are always offered,
+filmed or not. Each carries an inline drawn icon, and the GhSL clip appears
+inside the card once it exists. Body locations and answer grids keep the ADR 022
+rule unchanged.
+
+**Why.** The reasoning behind ADR 022 is a comparison of harms, and in an
+emergency the comparison inverts. Elsewhere, a mis tapped option produces a
+wrong answer in a conversation that can be repaired by the next question. Here,
+the alternative to a half recognised icon is no way at all to say "cannot
+breathe", and there is no next question. The icons are also not arbitrary
+pictures: a struck through lungs symbol is closer to universally read than any
+other control in the app, and the clinician reads the English label beside it
+regardless.
+
+This is a clinical judgment about relative harm, not an engineering one, and it
+belongs in front of the GhSL consultant along with the safety word lists in
+`clips/safety.py`.
+
+**Consequence.** The alerts endpoint returns every alert with an `is_playable`
+flag rather than filtering, which is the opposite of `body_locations`. The two
+endpoints returning deliberately different shapes is a thing a future reader
+will trip over, so the difference is commented at both ends and tested from
+both sides.
+
+Two further consequences of the mode sitting outside the visit. Emergency mode
+is reachable before the literacy check has been answered, because asking a
+patient whether they read before letting them say they cannot breathe is the
+wrong order; leaving it returns them to whatever they were part way through.
+And the pain scale and body map are drawings, needing no footage and nothing
+from the server, so an alerts outage degrades the mode instead of ending it.
+That last point had a real hole: a response that was not a list threw inside
+render and took the drawings down with the alerts. The payload shape is now
+checked rather than trusted, on the principle that the parts which need nothing
+from the server must survive anything the server does.

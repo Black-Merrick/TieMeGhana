@@ -1619,3 +1619,77 @@ Each time, a field accepted a value the rest of the system could not use, and
 nothing complained. Validation at the edge would have caught all three, and it
 is worth preferring a refusal over silent acceptance anywhere a value has to be
 matched later.
+
+
+## Sprint 7, Emergency Visual Triage Mode
+
+FR 5.1 to 5.5. Built after the transcript rather than before it, for one
+reason: this is the only feature in the app that works with zero footage. The
+patient points at a drawing of a body and at a face on a pain scale, so nothing
+here waits on a camera. That makes it the safest thing to demo and the right
+thing to have finished while the clips are still being filmed.
+
+### What was built
+
+| Piece | File | Note |
+| --- | --- | --- |
+| The alert set | `backend/clips/emergency.py` | The three FR 5.3 names, ordered breathing first, since that is the one a responder scans for |
+| Alerts endpoint | `clips/views.py`, `alerts` action | Returns all three with `is_playable`, rather than filtering. ADR 040 |
+| Body map | `frontend/src/components/BodyMap.jsx` | An SVG outline, nine regions, keyboard operable |
+| Pain scale | `frontend/src/components/PainScale.jsx` | Five faces, severity in the mouth shape as well as the colour |
+| Critical alerts | `frontend/src/components/CriticalAlerts.jsx` | Icons drawn inline, clip shown once filmed |
+| The mode | `frontend/src/components/EmergencyTriage.jsx` | Speaks and records every tap |
+| Entry point | `frontend/src/App.jsx` | Always on screen, no visit required |
+
+### Commands
+
+```bash
+cd backend && . .venv/bin/activate && python -m pytest -q     # 204 passed
+cd frontend && npx vitest run                                 # 280 passed
+cd frontend && npm run lint
+```
+
+### Three decisions worth the words
+
+**Why the mode sits outside the visit.** Every other screen is reached through
+the literacy check, which is correct: what the patient can read determines what
+they are shown. An emergency inverts that. Asking a patient whether they read
+before letting them say they cannot breathe is the wrong order, so the
+Emergency button renders with no visit at all and leaving it returns the patient
+to whatever they were part way through.
+
+**Why the alerts break the ADR 022 rule.** ADR 022 withholds any option whose
+clip is unfilmed, because a mis tapped option is a wrong answer and a wrong
+answer is worse than a missing one. That comparison of harms inverts here: the
+alternative to a half recognised icon is no way at all to say "cannot breathe",
+and unlike every other screen there is no next question to repair it with. So
+the alerts endpoint returns everything and `body_locations` still filters. Two
+endpoints with deliberately opposite shapes is a thing a future reader trips
+over, so it is commented at both ends and tested from both sides. Recorded as
+ADR 040, and flagged as a clinical judgment for the consultant rather than
+something engineering settled.
+
+**Why FR 5.4 is tested structurally.** "No typing required anywhere in this
+mode" is easy to satisfy today and easy to undo in six months with a note
+field that seemed harmless. The test counts `input`, `textarea` and
+`contenteditable` nodes in the rendered mode and asserts zero, so undoing it
+fails a test that says why.
+
+### A bug the tests found by being wrong
+
+The App level tests left `fetchCriticalAlerts` unmocked, so the stubbed global
+`fetch` handed the component the health check's payload, `{status: "ok"}`.
+`alerts.map is not a function` threw inside render and white-screened the whole
+mode, including the pain scale and body map.
+
+The mock was at fault, but the crash was real, and it contradicted the reason
+this mode exists. Those two components are drawings that need nothing from the
+server, and an alerts outage was supposed to degrade the mode rather than end
+it. The `catch` branch was already there and correct; a malformed success
+resolved past it. The payload shape is now checked rather than trusted, with
+its own regression test.
+
+The general form, worth keeping: a `catch` handles the server failing, not the
+server answering wrongly, and those are different failures. Anything downstream
+that must survive an outage has to survive a bad payload too, or the
+degradation path only works for the failure you happened to imagine.

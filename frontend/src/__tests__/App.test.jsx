@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
-import { fetchBodyLocations } from "../api/clips.js";
+import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
@@ -13,6 +13,7 @@ vi.mock("../api/clips.js", async (importOriginal) => {
     ...actual,
     fetchClipByGloss: vi.fn(),
     fetchBodyLocations: vi.fn(),
+    fetchCriticalAlerts: vi.fn(),
   };
 });
 
@@ -25,6 +26,7 @@ beforeEach(() => {
     duration_ms: 3000,
   });
   fetchBodyLocations.mockResolvedValue([]);
+  fetchCriticalAlerts.mockResolvedValue([]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -318,5 +320,50 @@ describe("the exchange and the shared device", () => {
     await user.click(screen.getByTestId("new-patient"));
 
     expect(loadCurrentExchange()).toBeNull();
+  });
+});
+
+describe("emergency triage is reachable, FR 5", () => {
+  it("can be entered before the literacy question has been answered", async () => {
+    // The reason this sits outside the visit. FR 5 is for a patient who may
+    // have arrived after an accident, and asking whether they read before
+    // letting them say they cannot breathe would be the wrong order.
+    // See ADR 040.
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+
+    expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+    expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
+  });
+
+  it("can be entered in the middle of a consultation", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+
+    expect(screen.getByTestId("emergency-triage")).toBeInTheDocument();
+  });
+
+  it("returns to where the patient was when emergency mode is left", async () => {
+    // A patient who taps Emergency by mistake, or whose emergency is dealt
+    // with, must not lose the consultation they were part way through.
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+    await userEvent.click(screen.getByTestId("leave-emergency"));
+
+    expect(screen.queryByTestId("emergency-triage")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/message for the patient/i)).toBeInTheDocument();
+  });
+
+  it("hides the entry button while already in emergency mode", async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+
+    expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
   });
 });

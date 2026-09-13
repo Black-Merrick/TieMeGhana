@@ -24,6 +24,17 @@ export function fetchBodyLocations() {
 }
 
 /**
+ * Fetch the critical alerts for Emergency Visual Triage, FR 5.3.
+ *
+ * Every alert is returned whether its GhSL clip is filmed or not, because an
+ * icon a patient half recognises beats having no way to say "cannot breathe".
+ * See ADR 040.
+ */
+export function fetchCriticalAlerts() {
+  return apiRequest("/clips/alerts/");
+}
+
+/**
  * Fetch one reviewed clip by its gloss.
  *
  * Rejects when the clip is missing, unfilmed, or unapproved, all of which the

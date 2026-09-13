@@ -13,6 +13,7 @@ from django.db import IntegrityError
 from django.urls import reverse
 
 from clips.body_locations import BODY_LOCATION_GLOSSES
+from clips.emergency import CRITICAL_ALERT_GLOSSES
 from clips.models import ClipKind, SignClip
 from clips.services import resolve_sign_sequence, tokenize
 
@@ -417,3 +418,78 @@ class TestBodyLocations:
     def test_the_set_costs_one_query(self, api_client, django_assert_max_num_queries):
         with django_assert_max_num_queries(1):
             api_client.get(reverse("clip-body-locations"))
+
+
+@pytest.mark.django_db
+class TestCriticalAlerts:
+    """
+    FR 5.3, the one-tap alerts in Emergency Visual Triage.
+
+    The rule here is the opposite of the body location grid in ADR 022, and
+    deliberately so. See ADR 040.
+    """
+
+    def test_returns_every_alert_whether_filmed_or_not(self, api_client):
+        response = api_client.get(reverse("clip-alerts"))
+
+        assert response.status_code == 200
+        assert len(response.json()) == len(CRITICAL_ALERT_GLOSSES)
+
+    def test_an_unfilmed_alert_is_still_offered(self, api_client):
+        # Unlike the body location grid, which is withheld when incomplete. An
+        # icon a patient half recognises beats having no way to say "cannot
+        # breathe" at all.
+        rows = api_client.get(reverse("clip-alerts")).json()
+
+        assert all(row["is_playable"] is False for row in rows)
+        assert all(row["clip"] is None for row in rows)
+        assert len(rows) == 3
+
+    def test_breathing_comes_first(self, api_client):
+        # A responder scans this list under pressure, so the alert that stops a
+        # patient breathing is the one they should reach first.
+        order = [row["id"] for row in api_client.get(reverse("clip-alerts")).json()]
+
+        assert order[0] == "CANNOT_BREATHE"
+
+    def test_each_alert_carries_an_icon_key(self, api_client):
+        # The icon is what a patient recognises when the GhSL clip is missing,
+        # so it is part of the contract rather than a frontend detail.
+        rows = api_client.get(reverse("clip-alerts")).json()
+
+        assert all(row["icon"] for row in rows)
+
+    def test_the_icon_key_is_not_the_gloss(self, api_client):
+        # An icon is a drawing decision and a gloss is a clinical identifier.
+        # Coupling them would mean renaming a sign to change a picture.
+        rows = api_client.get(reverse("clip-alerts")).json()
+
+        assert all(row["icon"] != row["id"] for row in rows)
+
+    def test_a_filmed_alert_carries_its_clip(self, api_client, make_clip):
+        from clips.models import ClipKind
+
+        make_clip("CANNOT_BREATHE", kind=ClipKind.ALERT, duration_ms=1500)
+
+        rows = api_client.get(reverse("clip-alerts")).json()
+        alert = next(row for row in rows if row["id"] == "CANNOT_BREATHE")
+
+        assert alert["is_playable"] is True
+        assert alert["clip"]["video_url"].endswith(".webm")
+
+    def test_an_unreviewed_alert_clip_is_not_played(self, api_client, make_clip):
+        # Offering the alert is safe. Playing an unreviewed sign for it is not,
+        # so the alert stays but its clip does not.
+        from clips.models import ClipKind
+
+        make_clip("ASTHMA", kind=ClipKind.ALERT, approved=False)
+
+        rows = api_client.get(reverse("clip-alerts")).json()
+        alert = next(row for row in rows if row["id"] == "ASTHMA")
+
+        assert alert["is_playable"] is False
+        assert alert["clip"] is None
+
+    def test_the_set_costs_one_query(self, api_client, django_assert_max_num_queries):
+        with django_assert_max_num_queries(1):
+            api_client.get(reverse("clip-alerts"))
