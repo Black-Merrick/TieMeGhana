@@ -10,6 +10,12 @@ set -e
 
 python manage.py migrate --noinput
 
+# The admin is how a consultant approves clips, and an unapproved clip never
+# plays. `createsuperuser` wants a terminal, and Render's free tier has no
+# shell, so the account is made from the environment instead. Does nothing
+# when the variables are absent, which is the case locally and in CI.
+python manage.py ensure_superuser
+
 # The port is given by the host, not chosen by us. Render, Fly and Cloud Run
 # all inject $PORT and route to it, and a server bound to a fixed 8000 is a
 # server the platform cannot reach: the deploy succeeds, the health check times

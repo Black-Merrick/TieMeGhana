@@ -104,6 +104,9 @@ connection string as `DATABASE_URL`.
 | `R2_PUBLIC_HOST` | `pub-xxxxxxxx.r2.dev` | Host only, no scheme, no trailing slash |
 | `LANGUAGE_PROVIDER` | `stub` | See the note below before changing this |
 | `KHAYA_API_KEY` | your key | Only needed when the line above is `khaya` |
+| `DJANGO_SUPERUSER_USERNAME` | a name | The admin account, created on first start |
+| `DJANGO_SUPERUSER_PASSWORD` | a long password | Checked against Django's validators |
+| `DJANGO_SUPERUSER_EMAIL` | optional | |
 
 **The scheme matters in the two origin variables.** Django ignores a bare
 hostname there silently, so the setting looks configured and does nothing.
@@ -115,10 +118,26 @@ untranslated and spoken answers are silence, both labelled as such rather than
 passed off as working. That is ADR 011, and it is the honest state to demo in
 until you want to spend credit deliberately.
 
+**The admin account has to come from the environment.** It is how a GhSL
+consultant approves clips, and an unapproved clip never plays, so a deployment
+with no way into the admin has a clip library nobody can manage.
+`createsuperuser` wants a terminal and the free tier has no shell, so
+`ensure_superuser` reads these variables on start instead.
+
+It only ever creates. An account that already exists is left alone, so a
+password changed in the admin survives a redeploy. To reset a forgotten one,
+set `DJANGO_SUPERUSER_FORCE_RESET=1`, redeploy, then unset it: that is the only
+recovery route on a platform with no shell, and left set it resets the password
+every time.
+
+A password Django's validators refuse is reported in the deploy log and no
+account is made. The service still starts, because refusing to boot would take
+a working consultation screen down over a password.
+
 ### What happens on deploy
 
-`backend/entrypoint.sh` runs migrations, then starts gunicorn bound to `$PORT`.
-Nothing needs running by hand.
+`backend/entrypoint.sh` runs migrations, creates the admin account if it is
+missing, then starts gunicorn bound to `$PORT`. Nothing needs running by hand.
 
 Two things are handled for you, both of which fail confusingly when they are
 not. The port comes from the platform, because a server bound to a fixed 8000

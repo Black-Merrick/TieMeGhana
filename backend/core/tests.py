@@ -250,3 +250,133 @@ def _reloaded_settings():
     from config import settings as settings_module
 
     return importlib.reload(settings_module)
+
+
+@pytest.mark.django_db
+class TestTheAdminAccountCanBeCreatedWithoutAShell:
+    """
+    The admin is how a GhSL consultant approves clips, and an unapproved clip
+    never plays: `resolvable()` wants approval and footage both.
+
+    `createsuperuser` wants a terminal, and the free tier this deploys to has
+    no shell, so a deployment would otherwise have a clip library nobody can
+    manage. The account is made from the environment on start instead.
+    """
+
+    def _run(self, monkeypatch, **env):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+
+        out, err = StringIO(), StringIO()
+        call_command("ensure_superuser", stdout=out, stderr=err)
+        return out.getvalue() + err.getvalue()
+
+    def test_it_creates_the_account_from_the_environment(
+        self, monkeypatch, django_user_model
+    ):
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="a-long-enough-password-42",
+            DJANGO_SUPERUSER_EMAIL="c@example.com",
+        )
+
+        user = django_user_model.objects.get(username="consultant")
+        assert user.is_superuser and user.is_staff
+        assert user.email == "c@example.com"
+
+    def test_running_it_again_changes_nothing(self, monkeypatch, django_user_model):
+        # It runs on every start, so the second deploy must be a no-op.
+        env = {
+            "DJANGO_SUPERUSER_USERNAME": "consultant",
+            "DJANGO_SUPERUSER_PASSWORD": "a-long-enough-password-42",
+        }
+        self._run(monkeypatch, **env)
+        first = django_user_model.objects.get(username="consultant").password
+
+        output = self._run(monkeypatch, **env)
+
+        assert "already exists" in output
+        assert django_user_model.objects.get(username="consultant").password == first
+
+    def test_it_does_not_silently_reset_a_password(
+        self, monkeypatch, django_user_model
+    ):
+        # A password changed in the admin must survive a redeploy. One that
+        # changes without anyone asking is worse than one that has to be reset
+        # on purpose.
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="a-long-enough-password-42",
+        )
+        user = django_user_model.objects.get(username="consultant")
+        user.set_password("changed-in-the-admin-99")
+        user.save()
+
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="a-long-enough-password-42",
+        )
+
+        user.refresh_from_db()
+        assert user.check_password("changed-in-the-admin-99")
+
+    def test_a_forced_reset_is_the_recovery_route(self, monkeypatch, django_user_model):
+        # The only way back in on a platform with no shell.
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="a-long-enough-password-42",
+        )
+
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="a-different-long-password-77",
+            DJANGO_SUPERUSER_FORCE_RESET="1",
+        )
+
+        user = django_user_model.objects.get(username="consultant")
+        assert user.check_password("a-different-long-password-77")
+
+    def test_a_weak_password_is_refused_rather_than_accepted(
+        self, monkeypatch, django_user_model
+    ):
+        # What createsuperuser checks interactively and --noinput skips. The
+        # admin is reachable from the internet, and a deployment is exactly
+        # where a four character password would otherwise slip through.
+        output = self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="1234",
+        )
+
+        assert "refused" in output
+        assert not django_user_model.objects.filter(username="consultant").exists()
+
+    def test_a_refused_password_does_not_stop_the_service_starting(self, monkeypatch):
+        # The consultation screen still works without an admin account, and
+        # refusing to boot would take a working app down over a password.
+        self._run(
+            monkeypatch,
+            DJANGO_SUPERUSER_USERNAME="consultant",
+            DJANGO_SUPERUSER_PASSWORD="1234",
+        )
+
+    def test_it_does_nothing_when_it_is_not_configured(
+        self, monkeypatch, django_user_model
+    ):
+        # The ordinary case on a laptop and in CI.
+        monkeypatch.delenv("DJANGO_SUPERUSER_USERNAME", raising=False)
+        monkeypatch.delenv("DJANGO_SUPERUSER_PASSWORD", raising=False)
+
+        output = self._run(monkeypatch)
+
+        assert "no admin account was created" in output
+        assert not django_user_model.objects.exists()

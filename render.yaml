@@ -77,6 +77,16 @@ services:
       - key: LANGUAGE_PROVIDER
         value: stub
 
+      # The admin account, created on first start by ensure_superuser. There
+      # is no shell on the free plan to run createsuperuser in, and without an
+      # admin nobody can approve a clip, which means no clip ever plays.
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+
 databases:
   - name: tiemeghana-db
     plan: free
