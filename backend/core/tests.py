@@ -380,3 +380,46 @@ class TestTheAdminAccountCanBeCreatedWithoutAShell:
 
         assert "no admin account was created" in output
         assert not django_user_model.objects.exists()
+
+
+class TestABlankVariableMeansUnset:
+    """
+    A variable present but empty is treated as absent.
+
+    `.env` files and deployment dashboards are both full of keys with nothing
+    after the `=`, written by someone who meant "leave this alone". Read
+    literally, two of those settings fail silently and confusingly.
+    """
+
+    def test_blank_origins_fall_back_to_the_default(self, monkeypatch):
+        # Read literally this is "allow no origins", so every request from the
+        # frontend is refused as cross site with nothing naming the setting.
+        monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "")
+
+        settings = _reloaded_settings()
+
+        assert settings.CORS_ALLOWED_ORIGINS
+        assert "http://localhost:5173" in settings.CORS_ALLOWED_ORIGINS
+
+    def test_configured_origins_still_win(self, monkeypatch):
+        monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://example.netlify.app")
+
+        assert _reloaded_settings().CORS_ALLOWED_ORIGINS == [
+            "https://example.netlify.app"
+        ]
+
+    def test_blank_footage_dir_falls_back_to_the_footage_folder(self, monkeypatch):
+        # Path("") is Path("."), so the import would scan the backend directory
+        # instead, find nothing, and report success.
+        monkeypatch.setenv("FOOTAGE_DIR", "")
+
+        settings = _reloaded_settings()
+
+        assert settings.FOOTAGE_DIR.name == "footage"
+
+    def test_blank_database_url_falls_back_to_sqlite(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "")
+
+        engine = _reloaded_settings().DATABASES["default"]["ENGINE"]
+
+        assert engine.endswith("sqlite3")

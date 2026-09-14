@@ -223,7 +223,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Where filmed GhSL footage is dropped before being imported. Configurable
 # because in a deployment it is likely a mounted volume rather than a folder
 # beside the code.
-FOOTAGE_DIR = Path(os.environ.get("FOOTAGE_DIR", BASE_DIR / "footage"))
+# Where `import_clips` looks for footage to bring in.
+#
+# A blank value falls back rather than being used, because `Path("")` is
+# `Path(".")`: the import would quietly scan the backend directory instead of
+# the footage one, find nothing, and report success.
+FOOTAGE_DIR = Path(os.environ.get("FOOTAGE_DIR", "").strip() or BASE_DIR / "footage")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -259,12 +264,19 @@ _DEV_ORIGINS = (
 
 
 def env_origins(name: str, default: str) -> list[str]:
-    """Read a comma separated list of origins from the environment."""
-    return [
-        origin.strip()
-        for origin in os.environ.get(name, default).split(",")
-        if origin.strip()
-    ]
+    """
+    Read a comma separated list of origins from the environment.
+
+    A variable that is present but empty is treated as absent. `.env` files and
+    deployment dashboards are both full of keys with nothing after the `=`,
+    written by someone who meant "leave this alone", and without this line that
+    reads as "allow no origins at all": every request from the frontend is
+    refused as cross site, with nothing in the logs naming the setting that did
+    it.
+    """
+    configured = os.environ.get(name, "").strip() or default
+
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
 CORS_ALLOWED_ORIGINS = env_origins("CORS_ALLOWED_ORIGINS", _DEV_ORIGINS)
