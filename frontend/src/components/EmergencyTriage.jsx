@@ -8,7 +8,7 @@ import BodyMap from "./BodyMap.jsx";
 import CriticalAlerts from "./CriticalAlerts.jsx";
 import PainScale from "./PainScale.jsx";
 import SpeakingOverlay from "./SpeakingOverlay.jsx";
-import SpokenResponse from "./SpokenResponse.jsx";
+import SpokenResponse, { StubNotice } from "./SpokenResponse.jsx";
 
 /**
  * Emergency Visual Triage Mode, SRS FR 5.1 to FR 5.5.
@@ -100,10 +100,7 @@ export default function EmergencyTriage({ outputLanguage, onLeave }) {
       <div className="triage__header">
         <div>
           <h2 className="triage__title">Emergency</h2>
-          <p className="triage__hint">
-            Tap anything. Every tap is spoken aloud to the doctor. No typing
-            needed.
-          </p>
+          <p className="triage__hint">No typing needed.</p>
         </div>
         <div className="triage__said">
           {spoken.canReplay && !speaking ? (
@@ -128,14 +125,27 @@ export default function EmergencyTriage({ outputLanguage, onLeave }) {
         </div>
       </div>
 
-      {/* What was said, at the top rather than in a panel below the fold. The
+      {/* What was said, at the top rather than in a panel below the fold: the
           patient cannot hear whether anything reached the doctor, so the one
-          record of it must not be somewhere they have to scroll to find. */}
-      {spoken.status === "idle" ? null : (
-        <div className="triage__spoken">
-          <SpokenResponse status={spoken.status} result={spoken.result} />
-        </div>
-      )}
+          record of it must not be somewhere they have to scroll to find.
+
+          Always on screen, holding the instruction until there is something to
+          report. It used to appear only after a tap, which pushed the alerts
+          and the body map down the page at the exact moment the patient had a
+          finger on them. A strip that is always there cannot move anything. */}
+      <div className="triage__spoken">
+        {spoken.status === "idle" ? (
+          <p className="triage__ready" data-testid="triage-ready">
+            Tap anything. Every tap is spoken aloud to the doctor.
+          </p>
+        ) : (
+          <SpokenResponse
+            status={spoken.status}
+            result={spoken.result}
+            showProviderNotice={false}
+          />
+        )}
+      </div>
 
       {/* Two columns, same reason as the consultation: the device is turned
           between the patient and whoever is treating them. The body gets a
@@ -199,6 +209,12 @@ export default function EmergencyTriage({ outputLanguage, onLeave }) {
           </div>
         </div>
       </div>
+
+      {/* Once, at the foot of the page, rather than after every tap. It is a
+          development notice: true, and worth saying, but it says the same
+          thing each time and repeating it in the strip above would be the one
+          thing that changed the strip's height. */}
+      <StubNotice result={spoken.result} />
     </section>
   );
 }

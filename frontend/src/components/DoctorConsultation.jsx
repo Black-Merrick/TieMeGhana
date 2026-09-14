@@ -163,11 +163,11 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
  * this is meant to save them from.
  */
 const QUICK_REPLIES = [
-  { mark: "\u{1F44D}", text: "Yes", twi: "Aane" },
-  { mark: "\u{1F44E}", text: "No", twi: "Daabi" },
-  { mark: "\u{26A1}", text: "The pain is severe" },
-  { mark: "\u{1F48A}", text: "I have taken the medicine" },
-  { mark: "\u{1F501}", text: "Please show that again" },
+  { text: "Yes", twi: "Aane" },
+  { text: "No", twi: "Daabi" },
+  { text: "The pain is severe" },
+  { text: "I have taken the medicine" },
+  { text: "Please show that again" },
 ];
 
 function QuickReplies({ onChoose, busy }) {
@@ -182,7 +182,6 @@ function QuickReplies({ onChoose, busy }) {
           disabled={busy}
           data-testid={`quick-reply-${reply.text.toLowerCase().replace(/\s+/g, "-")}`}
         >
-          <span aria-hidden="true">{reply.mark}</span>
           {reply.text}
           {reply.twi ? (
             <span className="quick__twi" lang="tw">

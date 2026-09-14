@@ -2859,7 +2859,7 @@ body {
   font: inherit;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
   font-size: 0.88rem;
   font-weight: 600;
   min-height: 2.4rem;
@@ -3141,13 +3141,48 @@ body {
 /* What was said, at the top of the screen rather than in a panel below the
    fold: the patient cannot hear whether it reached the doctor, so the one
    record of it must not be somewhere they have to scroll to find. */
+/* Always on screen, and always the same height.
+
+   It used to appear only after a tap, which pushed the alerts and the body map
+   down the page at the exact moment the patient had a finger on them. A strip
+   that is always there, holding the instruction until there is something to
+   report, cannot move anything underneath it. */
 .triage__spoken {
+  display: flex;
+  align-items: center;
+  min-height: 3.4rem;
   margin-top: 1rem;
-  padding: 0.9rem 1.1rem;
+  padding: 0.7rem 1.1rem;
   border: 1px solid var(--colour-line);
   border-radius: var(--radius);
   background: var(--colour-surface);
   box-shadow: var(--shadow-card);
+}
+
+.triage__ready {
+  margin: 0;
+  color: var(--colour-muted);
+}
+
+/* The confirmation and the words on one line, so a longer answer widens the
+   strip rather than growing it. */
+.triage__spoken .spoken {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.9rem;
+  margin: 0;
+  width: 100%;
+}
+
+.triage__spoken .spoken > * {
+  margin: 0;
+}
+
+/* The one thing in the strip that can run to several lines is kept out of it
+   entirely; this is a guard in case another is added later. */
+.triage__spoken .spoken__text {
+  min-width: 0;
 }
 
 .triage__spoken .spoken {

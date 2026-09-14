@@ -7,7 +7,15 @@
  * which is exactly what section 4.2 asks for. The vibration side lives in
  * useSpokenResponse, per the vocabulary in section 6.
  */
-export default function SpokenResponse({ status, result }) {
+export default function SpokenResponse({
+  status,
+  result,
+  // The development service notice is three lines long and says the same thing
+  // after every tap. On a screen where the confirmation sits in a fixed strip,
+  // repeating it there would be the one thing that changes the strip's height,
+  // so the caller can move it somewhere it says itself once.
+  showProviderNotice = true,
+}) {
   if (status === "idle") return null;
 
   return (
@@ -56,16 +64,27 @@ export default function SpokenResponse({ status, result }) {
         </p>
       ) : null}
 
-      {/* ADR 011. Stub audio is silence, so presenting it as speech would be
-          the worst kind of overclaim: everyone would assume the doctor heard. */}
-      {result?.language_provider === "stub" ? (
-        <p className="result__warning" data-testid="spoken-stub-warning">
-          Development language service. That audio was{" "}
-          <strong>silence, not speech</strong>. Nobody heard the answer. Switch
-          to the Khaya provider for real Twi and English speech.
-        </p>
-      ) : null}
+      {showProviderNotice ? <StubNotice result={result} /> : null}
     </div>
+  );
+}
+
+/**
+ * ADR 011. Stub audio is silence, so presenting it as speech would be the worst
+ * kind of overclaim: everyone in the room would assume the doctor heard.
+ *
+ * Exported so a screen can place it once, away from a confirmation that
+ * appears after every tap.
+ */
+export function StubNotice({ result }) {
+  if (result?.language_provider !== "stub") return null;
+
+  return (
+    <p className="result__warning" data-testid="spoken-stub-warning">
+      Development language service. That audio was{" "}
+      <strong>silence, not speech</strong>. Nobody heard the answer. Switch to
+      the Khaya provider for real Twi and English speech.
+    </p>
   );
 }
 

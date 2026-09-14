@@ -604,3 +604,62 @@ describe("the two figures", () => {
     expect(document.querySelectorAll(".body__figure-wrap")).toHaveLength(2);
   });
 });
+
+describe("the page not moving under the patient", () => {
+  it("keeps the spoken strip on screen before anything is said", async () => {
+    // It used to appear only after a tap, which pushed the alerts and the body
+    // map down the page at the exact moment the patient had a finger on them.
+    renderTriage();
+    await settle();
+
+    expect(screen.getByTestId("triage-ready")).toBeInTheDocument();
+    expect(document.querySelector(".triage__spoken")).not.toBeNull();
+  });
+
+  it("replaces the instruction in place once something is said", async () => {
+    renderTriage();
+    await settle();
+
+    await userEvent.click(screen.getByTestId("pain-level-3"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spoken-response")).toBeInTheDocument();
+    });
+    // Same strip, different contents: the instruction is gone rather than
+    // pushed down by the confirmation.
+    expect(screen.queryByTestId("triage-ready")).not.toBeInTheDocument();
+    expect(document.querySelector(".triage__spoken")).toContainElement(
+      screen.getByTestId("spoken-response"),
+    );
+  });
+
+  it("keeps the development notice out of that strip", async () => {
+    // Three lines saying the same thing after every tap is the one thing that
+    // would change the strip's height. It says itself once, at the foot.
+    renderTriage();
+    await settle();
+
+    await userEvent.click(screen.getByTestId("pain-level-3"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spoken-stub-warning")).toBeInTheDocument();
+    });
+    expect(document.querySelector(".triage__spoken")).not.toContainElement(
+      screen.getByTestId("spoken-stub-warning"),
+    );
+  });
+
+  it("says it once however many answers are given", async () => {
+    renderTriage();
+    await settle();
+
+    await userEvent.click(screen.getByTestId("pain-level-3"));
+    await waitFor(() => screen.getByTestId("spoken-stub-warning"));
+    await userEvent.click(screen.getByTestId("body-part-CHEST"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("body-chosen")).toHaveTextContent("Chest");
+    });
+    expect(screen.getAllByTestId("spoken-stub-warning")).toHaveLength(1);
+  });
+});
