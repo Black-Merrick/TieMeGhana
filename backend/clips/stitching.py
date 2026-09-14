@@ -17,10 +17,13 @@ import hashlib
 import logging
 import shutil
 import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,39 @@ def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+@contextmanager
+def _local_copies(names: list[str]):
+    """
+    Put the media ffmpeg needs on a real filesystem, and take it away after.
+
+    ffmpeg reads files, and in deployment the media lives in object storage,
+    which has no paths. Everything is therefore copied into a temporary
+    directory for the length of one encode.
+
+    This is also why stitching works on the names files are stored under rather
+    than on the URLs they are served from. A URL only maps back to a path while
+    the two happen to share a layout, which stopped being true the moment the
+    media moved to a bucket, and a mapping that quietly returns the wrong path
+    is worse than one that cannot be written at all.
+    """
+    with tempfile.TemporaryDirectory(prefix="tmg-stitch-") as directory:
+        root = Path(directory)
+        copies = []
+
+        for position, name in enumerate(names):
+            # Numbered rather than named after the original, because two clips
+            # from different folders can share a basename and the second would
+            # overwrite the first.
+            local = root / f"{position:03d}{Path(name).suffix or '.bin'}"
+
+            with default_storage.open(name, "rb") as source, local.open("wb") as copy:
+                shutil.copyfileobj(source, copy)
+
+            copies.append(local)
+
+        yield copies
+
+
 @dataclass(frozen=True)
 class StillFrame:
     """
@@ -57,7 +93,10 @@ class StillFrame:
     than eleven fingerspelled letters.
     """
 
-    path: Path
+    # A storage name while it is being asked for, and a local path once it has
+    # been copied out for the encode. Two fields would be two chances to use
+    # the wrong one; the copy step rebuilds the frame with the local path.
+    name: str | Path
     seconds: float
 
 
@@ -83,65 +122,45 @@ def stitched_video_url(sequence) -> str | None:
     several clips instead of one video.
     """
     clips = [clip for segment in sequence.segments for clip in segment.clips]
-    if len(clips) < 2:
-        # A single clip is already one continuous video, and stitching it would
-        # re-encode it for no gain.
+    names = [clip.video_name for clip in clips if clip.video_name]
+
+    if len(names) != len(clips):
+        logger.warning("Cannot stitch, one or more clips have no stored file.")
         return None
 
-    sources = [_media_path(clip.video_url) for clip in clips]
-    if any(source is None or not source.exists() for source in sources):
-        logger.warning("Cannot stitch, one or more clip files are missing.")
-        return None
-
-    key = stitch_key([str(source) for source in sources])
-    destination = _stitched_directory() / f"{key}.mp4"
-
-    if destination.exists():
-        return _stitched_url(destination.name)
-
-    if not ffmpeg_available():
-        logger.info(
-            "ffmpeg is not installed, so sequences play as a clip playlist "
-            "rather than one stitched video. Install ffmpeg to enable it."
-        )
-        return None
-
-    if not _encode(sources, destination):
-        return None
-
-    return _stitched_url(destination.name)
+    return stitch(names, names)
 
 
-def _encode(sources: list[Path], destination: Path) -> bool:
+def _encode_to_bytes(sources: list) -> bytes | None:
     """
-    Run ffmpeg, writing to a temporary file first.
+    Run ffmpeg into a temporary file and return what it produced.
 
-    Written aside and moved into place only on success, because a failed or
-    interrupted encode would otherwise leave a truncated file under a cache key
-    that is then trusted forever.
+    Written to a temporary file rather than streamed, because ffmpeg seeks when
+    it finalises an mp4 and cannot write to a pipe with `+faststart`. Returned
+    as bytes so nothing partial can reach storage: a failed or interrupted
+    encode leaves nothing behind, where writing in place would leave a
+    truncated file under a cache key that is then trusted forever.
     """
-    working = destination.with_suffix(".partial.mp4")
+    with tempfile.TemporaryDirectory(prefix="tmg-encode-") as directory:
+        working = Path(directory) / "out.mp4"
 
-    try:
-        subprocess.run(
-            _ffmpeg_command(sources, working),
-            check=True,
-            capture_output=True,
-            timeout=ENCODE_TIMEOUT_SECONDS,
-        )
-    except subprocess.CalledProcessError as error:
-        logger.warning(
-            "Stitching failed: %s", error.stderr.decode(errors="replace")[-500:]
-        )
-        working.unlink(missing_ok=True)
-        return False
-    except subprocess.TimeoutExpired:
-        logger.warning("Stitching timed out after %ss.", ENCODE_TIMEOUT_SECONDS)
-        working.unlink(missing_ok=True)
-        return False
+        try:
+            subprocess.run(
+                _ffmpeg_command(sources, working),
+                check=True,
+                capture_output=True,
+                timeout=ENCODE_TIMEOUT_SECONDS,
+            )
+        except subprocess.CalledProcessError as error:
+            logger.warning(
+                "Stitching failed: %s", error.stderr.decode(errors="replace")[-500:]
+            )
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning("Stitching timed out after %ss.", ENCODE_TIMEOUT_SECONDS)
+            return None
 
-    working.replace(destination)
-    return True
+        return working.read_bytes()
 
 
 def _ffmpeg_command(sources: list, destination: Path) -> list[str]:
@@ -218,8 +237,12 @@ def stitch(sources: list, key_material: list[str]) -> str | None:
     encode, the same cache and the same failure behaviour: None on any problem,
     which every caller treats as a reason to fall back rather than as an error.
 
+    `sources` holds storage names and `StillFrame`s, not paths. Storage may be
+    a bucket with no filesystem behind it, so the files are copied locally for
+    the encode and the result is written back through the same storage.
+
     `key_material` is what the cache is addressed by. Passed in rather than
-    derived from the paths alone, because a still's duration is part of what
+    derived from the names alone, because a still's duration is part of what
     the file contains: changing how long a photograph is held has to produce a
     different file rather than serve the old one.
     """
@@ -228,11 +251,10 @@ def stitch(sources: list, key_material: list[str]) -> str | None:
         # would cost time for no gain.
         return None
 
-    key = stitch_key(key_material)
-    destination = _stitched_directory() / f"{key}.mp4"
+    name = f"{STITCHED_SUBDIRECTORY}/{stitch_key(key_material)}.mp4"
 
-    if destination.exists():
-        return _stitched_url(destination.name)
+    if default_storage.exists(name):
+        return default_storage.url(name)
 
     if not ffmpeg_available():
         logger.info(
@@ -241,32 +263,33 @@ def stitch(sources: list, key_material: list[str]) -> str | None:
         )
         return None
 
-    if not _encode(sources, destination):
+    # Stills carry their own path once copied locally, so they are rebuilt
+    # against the copies rather than the originals.
+    wanted = [
+        source.name if isinstance(source, StillFrame) else source for source in sources
+    ]
+
+    try:
+        with _local_copies(wanted) as copies:
+            rebuilt = [
+                (
+                    StillFrame(name=local, seconds=source.seconds)
+                    if isinstance(source, StillFrame)
+                    else local
+                )
+                for source, local in zip(sources, copies, strict=True)
+            ]
+
+            encoded = _encode_to_bytes(rebuilt)
+    except (FileNotFoundError, OSError) as error:
+        # A clip the database has and storage does not. Reported rather than
+        # raised: the player falls back to the clip playlist, so the patient
+        # still sees every sign.
+        logger.warning("Cannot stitch, media could not be read: %s", error)
         return None
 
-    return _stitched_url(destination.name)
-
-
-def _stitched_directory() -> Path:
-    directory = Path(settings.MEDIA_ROOT) / STITCHED_SUBDIRECTORY
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
-
-
-def _stitched_url(filename: str) -> str:
-    return f"{settings.MEDIA_URL}{STITCHED_SUBDIRECTORY}/{filename}"
-
-
-def _media_path(video_url: str) -> Path | None:
-    """
-    Map a clip's served URL back to the file on disk.
-
-    Anchored to MEDIA_URL rather than assuming a layout, so a URL from outside
-    our own media returns None and is refused instead of being read from an
-    arbitrary path.
-    """
-    if not video_url or not video_url.startswith(settings.MEDIA_URL):
+    if encoded is None:
         return None
 
-    relative = video_url[len(settings.MEDIA_URL) :]
-    return Path(settings.MEDIA_ROOT) / relative
+    default_storage.save(name, ContentFile(encoded))
+    return default_storage.url(name)

@@ -252,6 +252,7 @@ solves, so they are tracked explicitly.
 | Two GhSL clips for the critical alerts, `cannot_breathe` and `pregnancy` | Emergency Triage works without them, per ADR 040, on the drawn icons alone. Once filmed, each clip becomes the card itself, which is what FR 5.3 asks for | open |
 | **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant. **One specific question found while building ADR 049:** `morning` and `night` are blocking, `afternoon` and `evening` are not, and nothing about the four differs clinically. Should they be classified alike, and if so, blocking? | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
+| A Cloudflare R2 bucket, for any deployment | Free below 10 GB and free of egress charges. Media on a container filesystem is lost on every restart, so this is required rather than preferred. Wired up in ADR 050; the four values and where to click for them are in `SETUP_GUIDE.md` | open |
 | Authentication and rate limiting on prescription issuing | ADR 044 names this as a known limitation. Issuing is unauthenticated like the rest of the API, so anyone reaching it can create rows. Not a disclosure, since each is readable only by its own unguessable reference, but deployment work | open |
 
 ---

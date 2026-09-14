@@ -235,3 +235,78 @@ python manage.py import_clips footage/
 Imported footage is filmed but **not approved**, so it still cannot reach a
 patient. See [backend/footage/README.md](backend/footage/README.md) for the
 naming rules, the approval step, and why re-importing resets approval.
+
+
+## Media storage
+
+GhSL clips, medicine photographs and the stitched videos built from them are
+"media": files the app stores rather than ships. Where they live is chosen by
+environment variables, and the default is deliberate.
+
+**Locally, leave the `R2_*` variables blank.** Media goes to `backend/media/`
+on disk. A fresh clone needs no cloud account to run the app or the tests.
+
+**On a deployment, fill them in.** This is not a preference. A container's
+filesystem is replaced on every restart and every deploy, so a prescription
+issued on Monday would have lost its photographs by Tuesday, and the QR code a
+patient took home would resolve to broken images.
+
+Cloudflare R2 is the one wired up because it charges nothing for egress, and
+this application serves video.
+
+### Getting the four values
+
+1. Sign in at **dash.cloudflare.com** and open **R2** in the left sidebar. The
+   free tier needs a card on file but is not charged below 10 GB of storage.
+
+2. **Create a bucket.** Any name; `tiemeghana-media` is the obvious one. That
+   name is `R2_BUCKET`.
+
+3. **Find the account id.** It is in the dashboard URL, the long hex string
+   after `dash.cloudflare.com/`, and also shown on the R2 overview page as part
+   of the S3 API endpoint. That is `R2_ACCOUNT_ID`.
+
+4. **Create an API token.** R2 > **Manage API tokens** > **Create API token**,
+   permission **Object Read & Write**, scoped to the bucket from step 2. The
+   Access Key ID and the Secret Access Key are shown **once**: copy both now,
+   into `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`. Losing the secret means
+   making a new token, not recovering the old one.
+
+5. **Make the bucket readable.** Open the bucket, **Settings**, and either
+   enable the **r2.dev** public URL or connect a custom domain. Copy the
+   hostname without the scheme or a trailing slash into `R2_PUBLIC_HOST`, for
+   example `pub-1a2b3c4d.r2.dev`.
+
+   This step is easy to miss and fails in a confusing way: uploads succeed,
+   nothing errors, and every video and photograph 404s in the browser. Writing
+   goes to the authenticated endpoint, reading goes to this public host, and
+   they are different addresses.
+
+Then paste all five into `backend/.env`, which is gitignored. Never into
+`.env.example`, which is tracked: that file is the template, and a real key in
+it is a key published to anyone who clones the repository.
+
+### Checking it worked
+
+```bash
+cd backend && . .venv/bin/activate
+python manage.py shell -c "
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+name = default_storage.save('checks/hello.txt', ContentFile(b'hello'))
+print('stored as:', name)
+print('served at:', default_storage.url(name))
+default_storage.delete(name)
+"
+```
+
+A `https://pub-....r2.dev/checks/hello.txt` URL means it is wired up. A
+`/media/...` path means the variables were not picked up and it is still
+writing to local disk.
+
+### Moving the clips you have already imported
+
+Existing files in `backend/media/` are not copied automatically. Either drop
+the footage into `backend/footage/` and run `import_clips` again with R2
+configured, or upload `backend/media/` into the bucket with `rclone` or the
+dashboard, keeping the folder names as they are.

@@ -92,6 +92,10 @@ class ResolvedClip:
     gloss: str
     video_url: str
     duration_ms: int
+    # The name the file is stored under, which is not the URL it is served
+    # from. Stitching needs this: media may live in a bucket with no paths, so
+    # a URL only maps back to a file while the two happen to share a layout.
+    video_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -507,5 +511,6 @@ def _to_resolved_clip(clip: SignClip) -> ResolvedClip:
     return ResolvedClip(
         gloss=clip.gloss,
         video_url=clip.video.url,
+        video_name=clip.video.name,
         duration_ms=clip.duration_ms or 0,
     )

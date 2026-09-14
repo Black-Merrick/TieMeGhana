@@ -567,3 +567,105 @@ class TestNormalizingBeforeValidation:
         alias.full_clean()
 
         assert alias.term == "DOING"
+
+
+@pytest.mark.django_db
+class TestStitchingDoesNotAssumeADisk:
+    """
+    Stitching works on storage names, not on filesystem paths.
+
+    It used to map a clip's served URL back to a path under MEDIA_ROOT, which
+    is only correct while the two happen to share a layout. That stopped being
+    true the moment media could live in a bucket, and a mapping that quietly
+    returns the wrong path is worse than one that cannot be written at all: the
+    clips would simply not be found and every sentence would silently fall back
+    to playlist playback.
+    """
+
+    def test_a_resolved_clip_carries_the_name_it_is_stored_under(self, make_clip):
+        from clips.services import resolve_sign_sequence
+
+        make_clip("APPEAR")
+        sequence = resolve_sign_sequence("appear")
+        clip = sequence.segments[0].clips[0]
+
+        # The name is what storage knows it by, and the URL is where it is
+        # served from. On a bucket those are different hosts entirely.
+        assert clip.video_name
+        assert clip.video_name != clip.video_url
+
+    def test_stitching_reads_through_storage_rather_than_open(
+        self, make_clip, monkeypatch
+    ):
+        # Asserted on the calls rather than the output, because the output
+        # needs ffmpeg and real video. What matters is that the files are
+        # fetched through the storage API, which is what makes a bucket work.
+        from django.core.files.storage import default_storage
+
+        from clips import stitching
+
+        opened = []
+        real_open = default_storage.open
+
+        def watched(name, *args, **kwargs):
+            opened.append(name)
+            return real_open(name, *args, **kwargs)
+
+        monkeypatch.setattr(default_storage, "open", watched)
+        monkeypatch.setattr(stitching, "ffmpeg_available", lambda: True)
+        monkeypatch.setattr(stitching, "_encode_to_bytes", lambda sources: None)
+
+        clips = [make_clip("APPEAR"), make_clip("ABOUT")]
+        names = [clip.video.name for clip in clips]
+        stitching.stitch(names, names)
+
+        assert opened == names
+
+    def test_a_missing_file_falls_back_rather_than_raising(self, monkeypatch):
+        # A clip the database has and storage does not. The player falls back
+        # to the clip playlist, so the patient still sees every sign.
+        from clips import stitching
+
+        monkeypatch.setattr(stitching, "ffmpeg_available", lambda: True)
+
+        assert stitching.stitch(["nope/a.webm", "nope/b.webm"], ["a", "b"]) is None
+
+    def test_nothing_partial_reaches_storage_when_encoding_fails(
+        self, make_clip, monkeypatch
+    ):
+        # A truncated file saved under a cache key would be trusted forever,
+        # and every later request for that sentence would serve it.
+        from django.core.files.storage import default_storage
+
+        from clips import stitching
+
+        monkeypatch.setattr(stitching, "ffmpeg_available", lambda: True)
+        monkeypatch.setattr(stitching, "_encode_to_bytes", lambda sources: None)
+
+        clips = [make_clip("APPEAR"), make_clip("ABOUT")]
+        names = [clip.video.name for clip in clips]
+
+        assert stitching.stitch(names, names) is None
+        assert not default_storage.exists(
+            f"{stitching.STITCHED_SUBDIRECTORY}/{stitching.stitch_key(names)}.mp4"
+        )
+
+    def test_an_already_stitched_sentence_is_served_rather_than_re_encoded(
+        self, make_clip, monkeypatch
+    ):
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+
+        from clips import stitching
+
+        clips = [make_clip("APPEAR"), make_clip("ABOUT")]
+        names = [clip.video.name for clip in clips]
+        cached = f"{stitching.STITCHED_SUBDIRECTORY}/{stitching.stitch_key(names)}.mp4"
+        default_storage.save(cached, ContentFile(b"already encoded"))
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("a cached sentence must not be encoded again")
+
+        monkeypatch.setattr(stitching, "_encode_to_bytes", refuse)
+
+        assert stitching.stitch(names, names) == default_storage.url(cached)

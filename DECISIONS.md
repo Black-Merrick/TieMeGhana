@@ -1776,3 +1776,53 @@ found "for" missing, which comes from the duration phrase rather than from any
 table and would have been left off a list assembled by eye. Droppable words are
 excluded: the gate leaves "a" and "and" out of a signed sentence, so filming
 them would be work nothing ever plays.
+
+
+## ADR 050: Media lives in object storage, and stitching works on names
+
+**Context.** Uploaded and generated media, the GhSL clips, the medicine
+photographs from ADR 048 and the stitched videos from ADR 031 and ADR 046, all
+went to `FileSystemStorage` under `MEDIA_ROOT`. That is right for a laptop and
+wrong for every free host: a container's filesystem is replaced on each restart
+and each deploy. A prescription issued on Monday would have lost its
+photographs by Tuesday, and the QR code the patient took home would resolve to
+broken images with nothing to say why.
+
+**Decision.** Media goes to Cloudflare R2 when `R2_BUCKET` and `R2_ACCOUNT_ID`
+are set, and to local disk otherwise. R2 is S3 compatible, so this is the
+ordinary S3 backend pointed at an R2 endpoint, and R2 rather than S3 because it
+charges nothing for egress and this application serves video.
+
+The default is the local one on purpose. A fresh clone has to run, and the test
+suite has to pass, without an account with anybody.
+
+**The change this forced, which is the interesting half.** Stitching mapped a
+clip's served URL back to a path under `MEDIA_ROOT`. That is only correct while
+the URL and the filesystem share a layout, which stops being true the moment
+media lives in a bucket, and the failure would have been quiet: no file found,
+no error, every sentence silently falling back to playlist playback.
+
+So stitching now works on the **names files are stored under** rather than the
+URLs they are served from. `ResolvedClip` carries `video_name` alongside
+`video_url`, sources are copied out of storage into a temporary directory for
+the length of one encode, and the result is written back through the same
+storage. It behaves identically on a disk and on a bucket, and there is no
+longer any code that assumes the two are the same thing.
+
+**Two details worth keeping.** URLs are public and unsigned: a prescription QR
+code is scanned weeks later, and a signed URL that expires would turn into a
+broken page at exactly the moment the patient needs it. And the encode returns
+bytes rather than writing in place, so a failed or interrupted encode leaves
+nothing behind: a truncated file saved under a content addressed cache key
+would be trusted forever and served for that sentence every time after.
+
+**Consequence.** A half filled `.env`, a bucket name with no account id, falls
+back to disk rather than refusing to start. That is a normal state to be in
+halfway through setting it up, and an app that will not boot looks broken where
+one writing to the wrong place merely needs finishing.
+
+The setup has one step that fails confusingly and is therefore called out in
+`SETUP_GUIDE.md`: the bucket must be made publicly readable separately.
+Uploads succeed without it, nothing errors, and every video and photograph
+404s, because writing goes to the authenticated endpoint and reading goes to a
+different public host.

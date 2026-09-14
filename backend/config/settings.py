@@ -154,8 +154,55 @@ _staticfiles_backend = (
     if DEBUG
     else "whitenoise.storage.CompressedManifestStaticFilesStorage"
 )
+# Where uploaded and generated media lives: GhSL clips, medicine photographs,
+# and the stitched videos built from them.
+#
+# Local disk by default, so a fresh clone needs no cloud account to run. Object
+# storage when R2 is configured, and on a deployment that is not optional: a
+# container's filesystem is replaced on every restart and deploy, so a
+# prescription issued on Monday would have lost its photographs by Tuesday and
+# the QR code would resolve to broken images.
+#
+# Cloudflare R2 is S3 compatible, so this is the ordinary S3 backend pointed at
+# an R2 endpoint. It is the one chosen because it charges nothing for egress,
+# and this application serves video.
+_R2_BUCKET = os.environ.get("R2_BUCKET", "").strip()
+_R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "").strip()
+
+if _R2_BUCKET and _R2_ACCOUNT_ID:
+    _media_storage = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": _R2_BUCKET,
+            "endpoint_url": f"https://{_R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            "access_key": os.environ.get("R2_ACCESS_KEY_ID", ""),
+            "secret_key": os.environ.get("R2_SECRET_ACCESS_KEY", ""),
+            # R2 has one region and rejects the usual names.
+            "region_name": "auto",
+            # The public base URL for reading, which is a different host from
+            # the endpoint used for writing: the endpoint is authenticated and
+            # the public URL is not. Either the bucket's r2.dev address or a
+            # custom domain attached to it.
+            "custom_domain": os.environ.get("R2_PUBLIC_HOST", "").strip() or None,
+            # URLs are public and permanent rather than signed and expiring. A
+            # prescription QR code is scanned weeks later, and a link that
+            # expires would turn into a broken page at exactly the moment the
+            # patient needs it.
+            "querystring_auth": False,
+            # A clip never changes once reviewed: a corrected sign is published
+            # under a new filename, per the footage README.
+            "object_parameters": {"CacheControl": "public, max-age=2592000"},
+            # Two files with the same name are the same file here, because the
+            # stitching cache is addressed by content. Overwriting keeps that
+            # true rather than accumulating name_a1b2c3 duplicates.
+            "file_overwrite": True,
+        },
+    }
+else:
+    _media_storage = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": _media_storage,
     "staticfiles": {"BACKEND": _staticfiles_backend},
 }
 

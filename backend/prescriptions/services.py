@@ -11,9 +11,7 @@ long as they are taking the medicine.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from django.conf import settings
 from django.db import transaction
 
 from clips.services import SignSequence, resolve_sign_sequences
@@ -40,6 +38,10 @@ class PlaylistItem:
     caption: str
     caption_language: str
     caption_provider: str
+    # The name the photograph is stored under, as opposed to the URL it is
+    # served from. Stitching works on names, because media may live in a bucket
+    # with no paths behind it.
+    image_name: str
     sequence: SignSequence
 
     @property
@@ -59,20 +61,20 @@ class PlaylistItem:
         if not self.sequence.is_safe_to_show:
             return None
 
-        still = _still_frame(self.image_url)
+        still = _still_frame(self.image_name)
         clips = [
-            path
+            clip.video_name
             for segment in self.sequence.segments
             for clip in segment.clips
-            if (path := _media_path(clip.video_url)) is not None
+            if clip.video_name
         ]
 
         if not clips:
             return None
 
         sources = ([still] if still else []) + clips
-        material = ([f"still:{still.path}:{still.seconds:g}"] if still else []) + [
-            f"clip:{path}" for path in clips
+        material = ([f"still:{still.name}:{still.seconds:g}"] if still else []) + [
+            f"clip:{name}" for name in clips
         ]
 
         stitched = stitch(sources, material)
@@ -145,22 +147,21 @@ class Playlist:
         material = []
 
         for item in self.items:
-            still = _still_frame(item.image_url)
+            still = _still_frame(item.image_name)
             if still is not None:
                 sources.append(still)
-                material.append(f"still:{still.path}:{still.seconds:g}")
+                material.append(f"still:{still.name}:{still.seconds:g}")
 
             for segment in item.sequence.segments:
                 for clip in segment.clips:
-                    path = _media_path(clip.video_url)
-                    if path is None:
-                        # A clip the resolver offered but the filesystem does
-                        # not have. Nothing to stitch, and a file missing one
+                    if not clip.video_name:
+                        # A clip the resolver offered but storage does not
+                        # have. Nothing to stitch, and a file missing one
                         # medicine's signs must not be saved as complete.
                         return None
 
-                    sources.append(path)
-                    material.append(f"clip:{path}")
+                    sources.append(clip.video_name)
+                    material.append(f"clip:{clip.video_name}")
 
         return stitch(sources, material)
 
@@ -276,6 +277,7 @@ def build_playlist(prescription: Prescription) -> Playlist:
                 caption=item.caption,
                 caption_language=item.caption_language,
                 caption_provider=item.caption_provider,
+                image_name=item.image.name if item.image else "",
                 sequence=sequence,
             )
             for item, sequence in zip(items, sequences, strict=True)
@@ -292,16 +294,9 @@ def build_playlist(prescription: Prescription) -> Playlist:
 STILL_SECONDS = 3.0
 
 
-def _media_path(media_url: str | None) -> Path | None:
-    """Turn a /media/... URL into the file behind it."""
-    if not media_url or not media_url.startswith(settings.MEDIA_URL):
+def _still_frame(image_name: str | None) -> StillFrame | None:
+    """The photograph for one medicine, as a held frame, when there is one."""
+    if not image_name:
         return None
 
-    path = Path(settings.MEDIA_ROOT) / media_url[len(settings.MEDIA_URL) :]
-    return path if path.exists() else None
-
-
-def _still_frame(image_url: str | None) -> StillFrame | None:
-    """The photograph for one medicine, as a held frame, when there is one."""
-    path = _media_path(image_url)
-    return None if path is None else StillFrame(path=path, seconds=STILL_SECONDS)
+    return StillFrame(name=image_name, seconds=STILL_SECONDS)

@@ -170,3 +170,78 @@ class TestApiIsStateless:
         # failure above. The Django admin is unaffected: it is not DRF, and its
         # own forms are still CSRF protected.
         assert settings.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] == []
+
+
+class TestMediaStorageIsConfigurable:
+    """
+    Media goes to local disk in development and to a bucket in deployment.
+
+    The default matters as much as the option. A fresh clone must run without a
+    cloud account, and a deployment must not write to a container filesystem
+    that is replaced on the next restart: a prescription issued on Monday would
+    have lost its photographs by Tuesday, and the QR code the patient took home
+    would resolve to broken images.
+    """
+
+    def test_local_development_writes_to_disk(self, settings):
+        # No R2 variables, so nothing about running the app depends on an
+        # account with anybody.
+        assert (
+            settings.STORAGES["default"]["BACKEND"]
+            == "django.core.files.storage.FileSystemStorage"
+        )
+
+    def test_r2_is_used_when_it_is_configured(self, monkeypatch):
+        monkeypatch.setenv("R2_BUCKET", "tiemeghana-media")
+        monkeypatch.setenv("R2_ACCOUNT_ID", "abc123")
+        monkeypatch.setenv("R2_ACCESS_KEY_ID", "key")
+        monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
+        monkeypatch.setenv("R2_PUBLIC_HOST", "pub-abc123.r2.dev")
+
+        settings = _reloaded_settings()
+        storage = settings.STORAGES["default"]
+
+        assert storage["BACKEND"] == "storages.backends.s3.S3Storage"
+        assert (
+            storage["OPTIONS"]["endpoint_url"]
+            == "https://abc123.r2.cloudflarestorage.com"
+        )
+        assert storage["OPTIONS"]["custom_domain"] == "pub-abc123.r2.dev"
+
+    def test_media_urls_are_public_and_do_not_expire(self, monkeypatch):
+        # A prescription QR code is scanned weeks later. A signed URL that
+        # expires would turn into a broken page at exactly the moment the
+        # patient needs it.
+        monkeypatch.setenv("R2_BUCKET", "tiemeghana-media")
+        monkeypatch.setenv("R2_ACCOUNT_ID", "abc123")
+
+        options = _reloaded_settings().STORAGES["default"]["OPTIONS"]
+
+        assert options["querystring_auth"] is False
+
+    def test_half_configured_r2_falls_back_rather_than_failing(self, monkeypatch):
+        # A bucket name with no account id is a half filled .env, which is a
+        # normal thing to have mid setup. Falling back to disk keeps the app
+        # running; failing to start would make it look broken.
+        monkeypatch.setenv("R2_BUCKET", "tiemeghana-media")
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+
+        assert (
+            _reloaded_settings().STORAGES["default"]["BACKEND"]
+            == "django.core.files.storage.FileSystemStorage"
+        )
+
+
+def _reloaded_settings():
+    """
+    Re-import the settings module so environment changes are re-read.
+
+    Django reads settings once at startup, so monkeypatching the environment
+    afterwards changes nothing by itself. Importing the module fresh is what
+    exercises the branch these tests are about.
+    """
+    import importlib
+
+    from config import settings as settings_module
+
+    return importlib.reload(settings_module)
