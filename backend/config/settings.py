@@ -9,7 +9,7 @@ by an environment variable in anything other than local development.
 
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -118,6 +118,16 @@ def _database_config() -> dict:
     The fallback exists so a teammate can clone the repo and run the test suite
     without first standing up PostgreSQL, which matters when onboarding under
     hackathon time pressure.
+
+    The query string is carried through to the driver as connection options,
+    which is the part that is easy to drop. Hosted Postgres puts `sslmode` there
+    rather than in the host: Neon's own connection string ends
+    `?sslmode=require&channel_binding=require`. Discarding it does not fail, and
+    that is exactly the problem. libpq falls back to its default `sslmode` of
+    `prefer`, which uses TLS when the server offers it and plaintext when it
+    does not, so the connection looks fine while no longer *requiring*
+    encryption. This database carries prescriptions, and a silent downgrade to
+    plaintext is not something we can leave to a default.
     """
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
@@ -129,10 +139,14 @@ def _database_config() -> dict:
     return {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": parsed.path.lstrip("/"),
-        "USER": parsed.username or "",
-        "PASSWORD": parsed.password or "",
+        # Percent-decoded, because a generated password may contain characters
+        # that have to be escaped in a URL. Handing the escaped form to the
+        # driver is an authentication failure that reads like a wrong password.
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
         "HOST": parsed.hostname or "",
         "PORT": str(parsed.port or ""),
+        "OPTIONS": dict(parse_qsl(parsed.query)),
     }
 
 

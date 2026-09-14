@@ -423,3 +423,36 @@ class TestABlankVariableMeansUnset:
         engine = _reloaded_settings().DATABASES["default"]["ENGINE"]
 
         assert engine.endswith("sqlite3")
+
+    def test_sslmode_from_the_url_reaches_the_driver(self, monkeypatch):
+        # Hosted Postgres asks for TLS in the query string rather than in the
+        # host. Dropping it does not fail: libpq falls back to `prefer`, which
+        # accepts plaintext if the server offers it, so a database holding
+        # prescriptions quietly stops requiring encryption.
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://u:p@db.example.com/app?sslmode=require&channel_binding=require",
+        )
+
+        options = _reloaded_settings().DATABASES["default"]["OPTIONS"]
+
+        assert options["sslmode"] == "require"
+        assert options["channel_binding"] == "require"
+
+    def test_a_url_escaped_password_is_decoded(self, monkeypatch):
+        # A generated password may contain characters that have to be escaped
+        # in a URL. Handing the escaped form to the driver authenticates with
+        # the wrong password, which reads like a bad credential rather than a
+        # parsing bug.
+        monkeypatch.setenv(
+            "DATABASE_URL", "postgresql://user:p%40ss%2Fword@db.example.com/app"
+        )
+
+        config = _reloaded_settings().DATABASES["default"]
+
+        assert config["PASSWORD"] == "p@ss/word"
+
+    def test_a_url_without_a_query_string_gets_no_options(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.com/app")
+
+        assert _reloaded_settings().DATABASES["default"]["OPTIONS"] == {}
