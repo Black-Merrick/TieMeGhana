@@ -21,6 +21,15 @@ import secrets
 
 from django.db import models
 
+from prescriptions.dosing import (
+    AMOUNTS,
+    FREQUENCIES,
+    MEALS,
+    UNITS,
+    dosage_phrase,
+    frequency_phrase,
+)
+
 # 16 bytes, url safe, so roughly 22 characters. Long enough that guessing one
 # is not a thing that happens, short enough for a QR code to stay coarse
 # grained and scannable on a cheap phone camera in a hospital corridor.
@@ -107,6 +116,47 @@ class PrescriptionItem(models.Model):
             "phone includes where the photograph was taken."
         ),
     )
+    # How much, and how often, as structured choices rather than free text.
+    #
+    # The two CharFields below are kept, but they are now generated from these
+    # rather than typed. A prescription is a dose, a time, a relation to food
+    # and sometimes a length of course, and writing that structure down is what
+    # lets the app guarantee a signable sentence instead of hoping one was
+    # typed. See ADR 049.
+    amount = models.CharField(
+        max_length=8,
+        choices=[(key, word) for key, word in AMOUNTS.items()],
+        blank=True,
+    )
+    unit = models.CharField(
+        max_length=16,
+        choices=[(key, singular) for key, (singular, _) in UNITS.items()],
+        blank=True,
+    )
+    # Which times of day, as a list. Empty when the doctor gave a count
+    # instead: "twice a day" rather than "morning and evening".
+    times = models.JSONField(default=list, blank=True)
+    frequency_choice = models.CharField(
+        max_length=16,
+        choices=[(key, phrase) for key, phrase in FREQUENCIES.items()],
+        blank=True,
+    )
+    meal = models.CharField(
+        max_length=8,
+        choices=[(key, phrase) for key, phrase in MEALS.items()],
+        blank=True,
+        help_text="Left empty when it does not matter.",
+    )
+    days = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Length of the course, when there is one.",
+    )
+
+    # The generated wording. Stored rather than derived on read for two
+    # reasons: it is what the caption was translated from, so it has to be the
+    # same words later, and a prescription issued before this vocabulary
+    # existed still has its original free text here.
     dosage = models.CharField(
         max_length=120, help_text='How much, for example "one tablet".'
     )
@@ -155,6 +205,26 @@ class PrescriptionItem(models.Model):
                 name="unique_position_per_prescription",
             )
         ]
+
+    def write_instruction(self) -> None:
+        """
+        Put the structured dose into words.
+
+        Called before saving a newly entered item. Not called on read, so an
+        item issued before this vocabulary existed keeps the free text it was
+        written with rather than being rewritten into a shape it was never
+        entered in.
+        """
+        if not self.amount or not self.unit:
+            return
+
+        self.dosage = dosage_phrase(self.amount, self.unit)
+        self.frequency = frequency_phrase(
+            times=self.times,
+            frequency=self.frequency_choice,
+            meal=self.meal,
+            days=self.days,
+        )
 
     def __str__(self) -> str:
         return f"{self.label}, {self.dosage}, {self.frequency}"

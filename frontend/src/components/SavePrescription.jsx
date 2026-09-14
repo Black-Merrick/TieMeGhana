@@ -13,8 +13,11 @@
 export default function SavePrescription({ playlist }) {
   // Only items that can be signed have anything to save. A refused item has
   // no video by design, per ADR 033.
+  // `video_url` rather than the sequence's own stitched file: this is the one
+  // that begins with the photograph, and a saved medicine with no picture is a
+  // dose the patient cannot attach to a box.
   const savable = playlist.items.filter(
-    (item) => item.sequence.is_safe_to_show && item.sequence.stitched_video_url,
+    (item) => item.sequence.is_safe_to_show && item.video_url,
   );
 
   const whole = playlist.video_url ?? null;
@@ -53,11 +56,11 @@ export default function SavePrescription({ playlist }) {
               <li key={item.position}>
                 <a
                   className="save__download"
-                  href={item.sequence.stitched_video_url}
-                  download={`${item.medicine.toLowerCase().replace(/\s+/g, "-")}.mp4`}
+                  href={item.video_url}
+                  download={`${item.label.toLowerCase().replace(/\s+/g, "-")}.mp4`}
                   data-testid={`save-item-${item.position}`}
                 >
-                  Save {item.medicine}
+                  Save {item.label}
                 </a>
               </li>
             ))}

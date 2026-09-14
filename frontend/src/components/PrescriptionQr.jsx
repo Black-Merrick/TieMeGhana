@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import QRCode from "qrcode";
+import useQrCode from "../hooks/useQrCode.js";
 
 /**
  * The QR code a patient scans to take their prescription home, SRS FR 6.3.
@@ -9,37 +8,12 @@ import QRCode from "qrcode";
  * has no field that could carry one. That is FR 6.4, and it holds because of
  * what the payload is made of rather than because of a permission check.
  *
- * Error correction is set high rather than left at the default. This code is
- * photographed off a phone screen, in a hospital, possibly with a cracked
- * lens, a fingerprint, or glare across half of it. A higher level survives
- * more of the code being unreadable, at the cost of a slightly denser image.
+ * The drawing itself is in `useQrCode`, because the printed slip needs the same
+ * code at a different size and the two must not be able to point at different
+ * prescriptions.
  */
 export default function PrescriptionQr({ url, size = 240 }) {
-  const [image, setImage] = useState(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    QRCode.toDataURL(url, {
-      errorCorrectionLevel: "H",
-      margin: 2,
-      width: size,
-      // Explicit black on white. A themed QR code is a QR code that some
-      // scanners refuse, and the contrast here is functional, not decorative.
-      color: { dark: "#000000", light: "#ffffff" },
-    })
-      .then((dataUrl) => {
-        if (!cancelled) setImage(dataUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [url, size]);
+  const { image, failed } = useQrCode(url, size);
 
   if (failed) {
     // The link is shown as text, so the prescription is still reachable when

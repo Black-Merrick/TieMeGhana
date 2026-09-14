@@ -9,6 +9,7 @@ the QR payload by accident. A test pins the field list for the same reason.
 from rest_framework import serializers
 
 from clips.serializers import SignSequenceSerializer
+from prescriptions.dosing import AMOUNTS, FREQUENCIES, MEALS, TIMES_OF_DAY, UNITS
 from prescriptions.images import clean_medicine_image
 
 
@@ -23,8 +24,26 @@ class PrescriptionItemRequestSerializer(serializers.Serializer):
 
     medicine = serializers.CharField(max_length=120, required=False, allow_blank=True)
     image = serializers.ImageField(required=False, allow_null=True)
-    dosage = serializers.CharField(max_length=120)
-    frequency = serializers.CharField(max_length=120)
+
+    # The dose, as choices rather than as free text. ADR 049: a sentence built
+    # from a known vocabulary is one the app can promise to sign, where a typed
+    # one could be anything and was only refused after the fact.
+    amount = serializers.ChoiceField(choices=sorted(AMOUNTS))
+    unit = serializers.ChoiceField(choices=sorted(UNITS))
+    times = serializers.ListField(
+        child=serializers.ChoiceField(choices=sorted(TIMES_OF_DAY)),
+        required=False,
+        default=list,
+    )
+    frequency_choice = serializers.ChoiceField(
+        choices=sorted(FREQUENCIES), required=False, allow_blank=True, default=""
+    )
+    meal = serializers.ChoiceField(
+        choices=sorted(MEALS), required=False, allow_blank=True, default=""
+    )
+    days = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1, max_value=90, default=None
+    )
 
     def validate_image(self, upload):
         """
@@ -46,6 +65,16 @@ class PrescriptionItemRequestSerializer(serializers.Serializer):
                 "Each medicine needs either a photograph or a name, so the "
                 "patient can tell which one this is."
             )
+
+        # One of the two ways of saying how often. Neither would leave a dose
+        # with no schedule at all, which is half an instruction and the kind of
+        # gap a patient fills in by guessing.
+        if not attrs.get("times") and not attrs.get("frequency_choice"):
+            raise serializers.ValidationError(
+                "Say when to take it: tick the times of day, or choose how "
+                "many times a day."
+            )
+
         return attrs
 
 
@@ -98,6 +127,9 @@ class PlaylistItemSerializer(serializers.Serializer):
     # Shown to the patient before the dose is signed. Null when the doctor
     # typed a name instead.
     image_url = serializers.CharField(allow_null=True)
+    # This medicine alone as one file: the photograph, then the dose. What the
+    # patient plays, and what they save to their phone.
+    video_url = serializers.CharField(allow_null=True)
     dosage = serializers.CharField()
     frequency = serializers.CharField()
     instruction = serializers.CharField()

@@ -44,8 +44,10 @@ def photo(size=(600, 400), with_gps=False):
 def one_item(**overrides):
     return {
         "medicine": "Paracetamol",
-        "dosage": "one tablet",
-        "frequency": "twice a day",
+        # Structured rather than typed, per ADR 049: one tablet, twice a day.
+        "amount": "1",
+        "unit": "TABLET",
+        "frequency_choice": "TWICE",
         **overrides,
     }
 
@@ -111,7 +113,7 @@ class TestIssuing:
         # dangerous outcome available: it looks complete to whoever scans it.
         response = api_client.post(
             reverse("prescription-issue"),
-            {"items": [one_item(), one_item(medicine="Zinc", dosage="")]},
+            {"items": [one_item(), one_item(medicine="Zinc", unit="")]},
             format="json",
         )
 
@@ -305,7 +307,7 @@ class TestTheDosageIsNeverSilentlyDropped:
 
         body = issue(
             api_client,
-            [one_item(dosage="two tablet", frequency="every day")],
+            [one_item(amount="2", unit="TABLET", frequency_choice="ONCE")],
         )
 
         sequence = body["items"][0]["sequence"]
@@ -318,7 +320,9 @@ class TestTheDosageIsNeverSilentlyDropped:
         for gloss in ("PARACETAMOL", "TABLET", "ONE"):
             make_clip(gloss)
 
-        body = issue(api_client, [one_item(dosage="one tablet", frequency="twice")])
+        body = issue(
+            api_client, [one_item(amount="1", unit="TABLET", frequency_choice="TWICE")]
+        )
 
         sequence = body["items"][0]["sequence"]
         assert sequence["is_safe_to_show"] is False
@@ -363,7 +367,7 @@ class TestSavingToThePhonesGallery:
             api_client,
             [
                 one_item(),
-                one_item(medicine="Zinc", dosage="one tablet", frequency="twice a day"),
+                one_item(medicine="Zinc"),
             ],
         )
 
@@ -424,8 +428,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         )
@@ -440,7 +445,7 @@ class TestPhotographingTheMedicine:
         # way to tell which medicine it belongs to.
         response = api_client.post(
             reverse("prescription-issue"),
-            {"items": [{"dosage": "one tablet", "frequency": "twice a day"}]},
+            {"items": [{"amount": "1", "unit": "TABLET", "frequency_choice": "TWICE"}]},
             format="json",
         )
 
@@ -454,8 +459,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         )
@@ -477,8 +483,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         ).json()
@@ -496,8 +503,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(with_gps=True),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         )
@@ -516,8 +524,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(size=(3000, 2000)),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         )
@@ -534,8 +543,9 @@ class TestPhotographingTheMedicine:
                 "items[0]image": SimpleUploadedFile(
                     "notes.pdf", b"%PDF-1.4 not an image", content_type="image/jpeg"
                 ),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         )
@@ -550,11 +560,13 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
                 "items[1]image": photo(),
-                "items[1]dosage": "two spoons",
-                "items[1]frequency": "once a day",
+                "items[1]amount": "2",
+                "items[1]unit": "SPOON",
+                "items[1]frequency_choice": "ONCE",
             },
             format="multipart",
         )
@@ -583,8 +595,9 @@ class TestPhotographingTheMedicine:
             reverse("prescription-issue"),
             {
                 "items[0]image": photo(),
-                "items[0]dosage": "one tablet",
-                "items[0]frequency": "twice a day",
+                "items[0]amount": "1",
+                "items[0]unit": "TABLET",
+                "items[0]frequency_choice": "TWICE",
             },
             format="multipart",
         ).json()["reference"]
@@ -666,6 +679,8 @@ class TestFr64ThePrivateTranscriptIsUnreachable:
             # on upload, so it carries none of the camera metadata a phone
             # would have written into it.
             "image_url",
+            # This medicine alone as one file: the photograph, then the dose.
+            "video_url",
             "dosage",
             "frequency",
             "instruction",
@@ -710,3 +725,177 @@ class TestFr64ThePrivateTranscriptIsUnreachable:
         response = api_client.get(f"/api/prescriptions/{reference}/items/")
 
         assert response.status_code == 404
+
+
+class TestTheDoseIsWrittenNotTyped:
+    """
+    ADR 049. A prescription is a dose, a time, a relation to food and sometimes
+    a length of course, and the sentence is built from those rather than typed.
+
+    The point is not tidiness. A typed instruction could be any wording at all,
+    most of which has no chance of resolving to signs, and the doctor found out
+    only after the prescription was issued. A generated one is drawn from a
+    vocabulary known in advance, so once those clips exist every prescription
+    the app can produce is signable.
+    """
+
+    def test_one_tablet_twice_a_day(self, api_client):
+        body = issue(api_client)
+
+        item = body["items"][0]
+        assert item["dosage"] == "one tablet"
+        assert item["frequency"] == "twice a day"
+
+    def test_a_count_greater_than_one_reads_as_plural(self, api_client):
+        # The caption is read by a pharmacist, and "two tablet" reads as a
+        # mistake in a document people have to trust.
+        body = issue(api_client, [one_item(amount="2", unit="TABLET")])
+
+        assert body["items"][0]["dosage"] == "two tablets"
+
+    def test_half_takes_the_singular(self, api_client):
+        body = issue(api_client, [one_item(amount="HALF", unit="TABLET")])
+
+        assert body["items"][0]["dosage"] == "half tablet"
+
+    def test_times_of_day_read_in_the_order_of_the_day(self, api_client):
+        # Not the order they were ticked. The sentence should read the way the
+        # day runs.
+        body = issue(
+            api_client,
+            [
+                one_item(
+                    times=["EVENING", "MORNING"],
+                    frequency_choice="",
+                )
+            ],
+        )
+
+        assert body["items"][0]["frequency"] == "morning and evening"
+
+    def test_three_times_of_day_are_listed_properly(self, api_client):
+        body = issue(
+            api_client,
+            [
+                one_item(
+                    times=["MORNING", "AFTERNOON", "EVENING"],
+                    frequency_choice="",
+                )
+            ],
+        )
+
+        assert body["items"][0]["frequency"] == "morning, afternoon and evening"
+
+    def test_specific_times_win_over_a_count(self, api_client):
+        # They say strictly more. A patient told "morning and evening" knows
+        # when; one told "twice a day" has to decide, and may take both
+        # together.
+        body = issue(
+            api_client,
+            [one_item(times=["MORNING", "NIGHT"], frequency_choice="TWICE")],
+        )
+
+        assert body["items"][0]["frequency"] == "morning and night"
+
+    def test_the_relation_to_food_is_included(self, api_client):
+        body = issue(api_client, [one_item(meal="AFTER")])
+
+        assert body["items"][0]["frequency"] == "twice a day, after food"
+
+    def test_the_length_of_the_course_is_included_in_words(self, api_client):
+        # "for five days", not "for 5 days": the resolver matches words, and a
+        # digit has no sign to match.
+        body = issue(api_client, [one_item(days=5)])
+
+        assert body["items"][0]["frequency"] == "twice a day, for five days"
+
+    def test_everything_together(self, api_client):
+        body = issue(
+            api_client,
+            [
+                one_item(
+                    amount="2",
+                    unit="SPOON",
+                    times=["MORNING", "NIGHT"],
+                    frequency_choice="",
+                    meal="BEFORE",
+                    days=3,
+                )
+            ],
+        )
+
+        item = body["items"][0]
+        assert item["dosage"] == "two spoons"
+        assert item["frequency"] == "morning and night, before food, for three days"
+        assert item["instruction"] == (
+            "Paracetamol, two spoons, morning and night, before food, for three days"
+        )
+
+    def test_a_dose_with_no_schedule_is_refused(self, api_client):
+        # Half an instruction, and the kind of gap a patient fills in by
+        # guessing.
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {"items": [{"medicine": "Zinc", "amount": "1", "unit": "TABLET"}]},
+            format="json",
+        )
+
+        assert response.status_code == 400
+
+    def test_a_wording_outside_the_vocabulary_cannot_be_sent(self, api_client):
+        # The whole point. There is no way to enter something the app cannot
+        # then sign.
+        response = api_client.post(
+            reverse("prescription-issue"),
+            {
+                "items": [
+                    {
+                        "medicine": "Zinc",
+                        "amount": "1",
+                        "unit": "PUFF",
+                        "frequency_choice": "TWICE",
+                    }
+                ]
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
+
+    def test_the_filming_list_covers_every_word_a_prescription_can_use(self):
+        # The list is derived from the vocabulary rather than written out
+        # again, so it cannot fall behind what a prescription can contain.
+        from clips.safety import TokenRisk, classify
+        from clips.services import tokenize
+        from prescriptions.dosing import (
+            AMOUNTS,
+            FREQUENCIES,
+            MEALS,
+            TIMES_OF_DAY,
+            UNITS,
+            dosage_phrase,
+            filming_vocabulary,
+            frequency_phrase,
+        )
+
+        covered = set(filming_vocabulary())
+
+        for amount in AMOUNTS:
+            for unit in UNITS:
+                for token in tokenize(dosage_phrase(amount, unit)):
+                    if classify(token) == TokenRisk.DROPPABLE:
+                        continue
+                    assert token in covered, token
+
+        for times in ([], ["MORNING"], list(TIMES_OF_DAY)):
+            for frequency in [""] + list(FREQUENCIES):
+                for meal in [""] + list(MEALS):
+                    for days in (None, 5):
+                        phrase = frequency_phrase(times, frequency, meal, days)
+                        for token in tokenize(phrase):
+                            # Droppable words need no clip: the safety gate
+                            # leaves them out of the signed sentence, because
+                            # GhSL does not use them.
+                            if classify(token) == TokenRisk.DROPPABLE:
+                                continue
+                            assert token in covered, token

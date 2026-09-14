@@ -2131,3 +2131,70 @@ question without any searching:
 
 That is the fourth time an unapplied migration has broken the running app, and
 the first time finding out took one request instead of an hour. ADR 045.
+
+
+## The dose is chosen, not typed
+
+A doctor typed "how much" and "how often" as free text, and nearly every
+prescription came back refused. That looked like missing footage. It was really
+a design problem: any wording at all could be entered, most of it had no chance
+of resolving to signs, and the doctor found out afterwards with no way to know
+what wording would have worked.
+
+Real prescriptions are structured: a dose, a time, a relation to food, and
+sometimes a length of course. The hospital writes that down and the app was
+throwing it away to ask for a sentence. Recorded as ADR 049.
+
+### What changed
+
+| Piece | File |
+| --- | --- |
+| The vocabulary, and the sentence builders | `backend/prescriptions/dosing.py` |
+| Structured fields, and the generated wording | `prescriptions/models.py` |
+| Choices validated on the way in | `prescriptions/serializers.py` |
+| The doctor's controls and the live preview | `frontend/src/components/PrescriptionBuilder.jsx` |
+
+### What it buys
+
+The vocabulary is finite and known in advance, so the filming list is exact
+rather than estimated: 39 clips, listed in `BACKLOG.md`. Once they exist, every
+prescription the app can produce is signable. Before, whether a prescription
+could be shown depended on what the doctor happened to type.
+
+It also ties the caption to the signs. Both are built from one generated
+sentence, so what the pharmacist reads and what the patient watches cannot
+drift apart.
+
+Issued against the dev server, three medicines, to see the real wording:
+
+```
+Paracetamol   one tablet     morning, afternoon and evening, after food, for five days
+Amoxicillin   two capsules   twice a day, before food
+Zinc syrup    half spoon     night
+```
+
+### The test that paid for itself immediately
+
+`filming_vocabulary()` is derived from the same tables the sentences are built
+from, and a test walks every sentence the builders can produce and asserts each
+word is on the list. It failed on the first run with `for`, which comes from the
+duration phrase rather than from any table and would have been left off a list
+assembled by eye. Somebody would have filmed 38 clips and found prescriptions
+with a course length still refused.
+
+Droppable words are excluded from the list for the opposite reason: the gate
+leaves "a" and "and" out of a signed sentence, so filming them would be work
+nothing ever plays.
+
+### An inconsistency found in the safety lists
+
+`morning` and `night` are classified blocking; `afternoon` and `evening` are
+not, so they fall through to content. Nothing about the four differs
+clinically: "one in the morning" and "one in the evening" are equally different
+instructions, and losing either word equally changes the prescription.
+
+Not changed here, because ADR 033 is explicit that these lists are a clinical
+judgment rather than an engineering one, and the review is already tracked in
+`BACKLOG.md`. Written down so the reviewer has the specific question rather
+than the whole list to re-derive: should the four times of day be classified
+alike, and if so, blocking.

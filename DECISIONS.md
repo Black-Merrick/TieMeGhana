@@ -1725,3 +1725,54 @@ to it as much as to the clips. Stitching gained a `StillFrame`, held for three
 seconds, and the still's duration is part of the cache key, because changing
 how long a photograph is shown has to produce a new file rather than serve the
 old one.
+
+
+## ADR 049: A prescription is chosen from a vocabulary, not typed
+
+**Context.** The doctor typed "how much" and "how often" as free text. That put
+the whole safety gate on a knife edge: any wording at all could be entered,
+most of it had no chance of resolving to signs, and the doctor found out only
+after the prescription was issued, from a warning saying the medicine could not
+be shown. The failure was normal rather than exceptional, and there was nothing
+the doctor could do about it except guess at different wording.
+
+Real prescriptions are not free text anyway. They are a dose, a time, a
+relation to food, and sometimes a length of course: one tablet, morning and
+evening, after food, for five days. A hospital writes that structure down; the
+app was throwing it away and asking for a sentence instead.
+
+**Decision.** The dose is chosen. Amount, unit, times of day or a count, an
+optional relation to food, an optional number of days, all from fixed lists in
+`prescriptions/dosing.py`. The sentence is generated from those choices and
+stored; nothing about it is typed.
+
+**Why this is a safety change rather than a convenience one.** The vocabulary
+is now finite and known in advance, so the filming list is exact and complete:
+once those clips exist, **every prescription the app can produce is signable**.
+That is a different guarantee from the one before, which was that a prescription
+might be signable depending on what was typed. The doctor can no longer enter
+something the app will refuse, because there is nothing to enter.
+
+It also makes the caption and the signs provably the same words. Both are built
+from one generated sentence, so what the pharmacist reads and what the patient
+watches cannot drift.
+
+**Two smaller decisions inside it.** Specific times of day beat a count when
+both are given, and choosing times disables the count: "morning and evening"
+says strictly more than "twice a day", where a patient told the latter has to
+decide when and may take both together. And the doctor is shown the sentence as
+they build it, because a row of six controls does not read as an instruction and
+the sentence is what the patient receives.
+
+**Consequence.** `dosage` and `frequency` are still stored as text, generated
+rather than typed. Keeping them means a prescription issued before this existed
+still reads correctly, and it keeps the caption tied to the exact words it was
+translated from.
+
+The vocabulary function that produces the filming list is derived from the same
+tables the sentences are built from, and a test walks every sentence the
+builders can produce and asserts each word is on the list. That test immediately
+found "for" missing, which comes from the duration phrase rather than from any
+table and would have been left off a list assembled by eye. Droppable words are
+excluded: the gate leaves "a" and "and" out of a signed sentence, so filming
+them would be work nothing ever plays.

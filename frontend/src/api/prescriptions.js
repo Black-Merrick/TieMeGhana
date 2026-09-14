@@ -30,9 +30,18 @@ export function issuePrescription(items) {
 
   const form = new FormData();
   items.forEach((item, index) => {
-    form.append(`items[${index}]dosage`, item.dosage);
-    form.append(`items[${index}]frequency`, item.frequency);
+    form.append(`items[${index}]amount`, item.amount);
+    form.append(`items[${index}]unit`, item.unit);
+    form.append(`items[${index}]frequency_choice`, item.frequency_choice ?? "");
+    form.append(`items[${index}]meal`, item.meal ?? "");
 
+    // Repeated rather than joined: multipart has no nesting, and a list is
+    // expressed by sending the same key more than once.
+    (item.times ?? []).forEach((time) => {
+      form.append(`items[${index}]times`, time);
+    });
+
+    if (item.days) form.append(`items[${index}]days`, String(item.days));
     if (item.medicine) form.append(`items[${index}]medicine`, item.medicine);
     if (item.image) form.append(`items[${index}]image`, item.image);
   });
@@ -87,6 +96,12 @@ export async function cachePlaylistClips(playlist) {
   const urls = new Set();
 
   for (const item of playlist?.items ?? []) {
+    // The medicine's own file, photograph and all. This is the one the patient
+    // plays and the one they save, so it is the one that has to be here when
+    // there is no connection.
+    if (item.video_url) urls.add(item.video_url);
+    if (item.image_url) urls.add(item.image_url);
+
     if (item.sequence?.stitched_video_url) {
       urls.add(item.sequence.stitched_video_url);
     }

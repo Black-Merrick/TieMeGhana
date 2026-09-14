@@ -27,6 +27,10 @@ const PrescriptionPlayback = lazy(
 import ConnectionStatus from "./components/ConnectionStatus.jsx";
 import { referenceFromPath } from "./api/prescriptions.js";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
+import {
+  clearCurrentPrescription,
+  loadCurrentPrescription,
+} from "./prescription/currentPrescription.js";
 import { clearTranscript } from "./transcript/transcript.js";
 import {
   DEFAULT_OUTPUT_LANGUAGE,
@@ -73,7 +77,14 @@ export default function App() {
   // The prescription builder, FR 6.1. Inside the visit, unlike emergency mode:
   // it is the last thing that happens in a consultation, so there is always a
   // visit by the time it is wanted.
-  const [prescribing, setPrescribing] = useState(false);
+  //
+  // Opened on load when a prescription is already issued, so a reload comes
+  // back to the QR code rather than to the consultation behind it. Losing it
+  // would mean issuing a second prescription, leaving the first one live and
+  // scannable with nothing to say it was replaced.
+  const [prescribing, setPrescribing] = useState(
+    () => loadCurrentPrescription() !== null,
+  );
 
   // The listener's language still applies in an emergency, and there may be no
   // visit yet to have set it.
@@ -117,6 +128,11 @@ export default function App() {
     endVisit();
     setEmergency(false);
     setPrescribing(false);
+
+    // The prescription goes with the visit, for the reasons in ADR 026. The
+    // reference identifies nobody, per ADR 044, but this device is handed from
+    // one patient to the next and the next one must not find these medicines.
+    clearCurrentPrescription();
 
     // The transcript goes with the visit. This device is handed from one
     // patient to the next, and these consultations are about pregnancy,
@@ -165,6 +181,12 @@ export default function App() {
   // On a phone the columns are stacked and the page scrolls as one, because
   // two short scroll panes on top of each other is worse than one page.
   const split = emergency || (Boolean(visit) && !prescribing);
+
+  // The prescription is two columns as well, so it takes the full width, but
+  // it is not a pair of independent scroll panes: the code is sticky and the
+  // medicines scroll with the page, which is one thing to follow rather than
+  // two.
+  const wide = split || prescribing;
 
   return (
     <div className={split ? "app app--split" : "app"}>
@@ -264,7 +286,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className={split ? "shell shell--wide" : "shell"}>
+      <main className={wide ? "shell shell--wide" : "shell"}>
 
       {/* Development only in practice, but shown rather than logged: a
           console warning is a warning nobody reads. */}

@@ -1,9 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { cachePlaylistClips, issuePrescription, playlistUrl } from "../api/prescriptions.js";
+import {
+  cachePlaylistClips,
+  fetchPlaylist,
+  issuePrescription,
+  playlistUrl,
+} from "../api/prescriptions.js";
+import {
+  clearCurrentPrescription,
+  loadCurrentPrescription,
+  saveCurrentPrescription,
+} from "../prescription/currentPrescription.js";
+import useQrCode from "../hooks/useQrCode.js";
+import {
+  AMOUNTS,
+  FREQUENCIES,
+  MEALS,
+  TIMES_OF_DAY,
+  UNITS,
+  previewInstruction,
+} from "../prescription/dosing.js";
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
 import PrescriptionPlaylist from "./PrescriptionPlaylist.jsx";
 import PrescriptionQr from "./PrescriptionQr.jsx";
+import ScreenLoader from "./ScreenLoader.jsx";
 
 /**
  * Where the doctor writes the take home instructions, SRS FR 6.1 and FR 6.3.
@@ -17,8 +37,13 @@ import PrescriptionQr from "./PrescriptionQr.jsx";
 
 const blankItem = () => ({
   medicine: "",
-  dosage: "",
-  frequency: "",
+  // The dose, as choices rather than free text. ADR 049.
+  amount: "1",
+  unit: "TABLET",
+  times: [],
+  frequencyChoice: "TWICE",
+  meal: "",
+  days: "",
   // The File itself, plus a preview URL made from it. Kept together so
   // clearing the photograph cannot leave a thumbnail of it behind.
   image: null,
@@ -27,10 +52,54 @@ const blankItem = () => ({
 
 export default function PrescriptionBuilder({ onLeave }) {
   const [items, setItems] = useState([blankItem()]);
-  const [status, setStatus] = useState("editing");
+  // "editing", "issuing", "issued", or "restoring" while a reference found in
+  // storage is being fetched back.
+  const [status, setStatus] = useState(() =>
+    loadCurrentPrescription() ? "restoring" : "editing",
+  );
   const [playlist, setPlaylist] = useState(null);
   const [problem, setProblem] = useState(null);
   const [offline, setOffline] = useState(null);
+
+  // A prescription already issued is fetched back rather than rebuilt from
+  // storage. Only the reference was kept, per ADR 043: the signs are resolved
+  // on every read so a withdrawn clip stops playing, and a playlist cached
+  // here would be the frozen copy that decision exists to avoid.
+  useEffect(() => {
+    const reference = loadCurrentPrescription();
+    if (!reference) return undefined;
+
+    let cancelled = false;
+
+    fetchPlaylist(reference)
+      .then((restored) => {
+        if (cancelled) return;
+
+        if (!Array.isArray(restored?.items)) {
+          // A reference that resolves to something unexpected. Dropped rather
+          // than shown, and the doctor starts a new prescription instead of
+          // handing over a QR code nobody can explain.
+          clearCurrentPrescription();
+          setStatus("editing");
+          return;
+        }
+
+        setPlaylist(restored);
+        setStatus("issued");
+      })
+      .catch(() => {
+        if (cancelled) return;
+
+        // Gone from the server, or no connection. Either way there is nothing
+        // to show, so the screen goes back to a blank prescription.
+        clearCurrentPrescription();
+        setStatus("editing");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const update = (index, field, value) => {
     setItems((previous) =>
@@ -69,8 +138,14 @@ export default function PrescriptionBuilder({ onLeave }) {
   const issue = async () => {
     const filled = items.map((item) => ({
       medicine: item.medicine.trim(),
-      dosage: item.dosage.trim(),
-      frequency: item.frequency.trim(),
+      amount: item.amount,
+      unit: item.unit,
+      times: item.times,
+      // Specific times say strictly more than a count, so when both are set
+      // the count is dropped rather than sent to be ignored.
+      frequency_choice: item.times.length > 0 ? "" : item.frequencyChoice,
+      meal: item.meal,
+      days: item.days ? Number(item.days) : null,
       image: item.image,
     }));
 
@@ -87,12 +162,12 @@ export default function PrescriptionBuilder({ onLeave }) {
       return;
     }
 
-    const incomplete = filled.findIndex(
-      (item) => !item.dosage || !item.frequency,
+    const unscheduled = filled.findIndex(
+      (item) => item.times.length === 0 && !item.frequency_choice,
     );
-    if (incomplete !== -1) {
+    if (unscheduled !== -1) {
       setProblem(
-        `Medicine ${incomplete + 1} needs a dosage and how often to take it.`,
+        `Medicine ${unscheduled + 1} needs a time: tick the times of day, or choose how many times a day.`,
       );
       return;
     }
@@ -104,6 +179,7 @@ export default function PrescriptionBuilder({ onLeave }) {
       const issued = await issuePrescription(filled);
       setPlaylist(issued);
       setStatus("issued");
+      saveCurrentPrescription(issued.reference);
       vibrate(VibrationPattern.TRANSCRIPT_SAVED);
 
       // FR 6.2. Pulled into the cache now, on the hospital connection, rather
@@ -115,15 +191,28 @@ export default function PrescriptionBuilder({ onLeave }) {
     }
   };
 
+  if (status === "restoring") {
+    return <ScreenLoader label="Opening the prescription" />;
+  }
+
   if (status === "issued" && playlist) {
     return (
-      <section className="prescription" data-testid="prescription-issued">
+      <section
+        className="prescription prescription--issued"
+        data-testid="prescription-issued"
+      >
         <div className="prescription__header">
           <h2 className="prescription__title">Prescription ready</h2>
           <button
             type="button"
             className="triage__leave"
-            onClick={onLeave}
+            onClick={() => {
+              // Forgotten on the way out. The reference identifies nobody, per
+              // ADR 044, but this device is handed from one patient to the
+              // next and the next one must not find these medicines on screen.
+              clearCurrentPrescription();
+              onLeave();
+            }}
             data-testid="leave-prescription"
           >
             Done
@@ -135,66 +224,43 @@ export default function PrescriptionBuilder({ onLeave }) {
           without a connection.
         </p>
 
+        {/* Two columns rather than one column and a scroll. The doctor is
+            holding the phone up to be scanned while reading the medicines back
+            to the patient, so the code and the list are wanted at the same
+            time, not one after the other. Same arrangement as the printed
+            sheet. */}
+
         {/* Paper is the most reliable thing in the room. It survives a flat
             battery, a phone with no camera, and a patient who is handed the
             slip by a relative, and the pharmacist can read the medicines off
             it directly. The printed sheet carries the code and the words: it
             is not a receipt for the QR code, it is the prescription. */}
-        <button
-          type="button"
-          className="prescription__print"
-          onClick={() => window.print()}
-          data-testid="print-prescription"
-        >
-          Print for the patient
-        </button>
+        <div className="issued">
+          <div className="issued__code">
+            <PrescriptionQr url={playlistUrl(playlist.reference)} />
 
-        <PrescriptionQr url={playlistUrl(playlist.reference)} />
+            <button
+              type="button"
+              className="prescription__print"
+              onClick={() => window.print()}
+              data-testid="print-prescription"
+            >
+              <span className="btn__icon" aria-hidden="true">
+                <PrinterIcon />
+              </span>
+              Print for the patient
+            </button>
 
-        {/* Printed only. On screen the medicines are already below, in the
-            playlist, with their videos. On paper there are no videos, so the
-            words have to carry the whole prescription by themselves. */}
-        <div className="print-only" aria-hidden="true">
-          <h3 className="slip__title">Your medicines</h3>
-          <table className="slip__table">
-            <thead>
-              <tr>
-                <th>Medicine</th>
-                <th>How much</th>
-                <th>How often</th>
-              </tr>
-            </thead>
-            <tbody>
-              {playlist.items.map((item) => (
-                <tr key={item.position}>
-                  <td>
-                    {/* Printed as well as shown. For a medicine identified
-                        only by its photograph this is the only thing on the
-                        paper that says which one it is, so the slip would
-                        otherwise carry a dose belonging to nothing. */}
-                    {item.image_url ? (
-                      <img
-                        className="slip__photo"
-                        src={item.image_url}
-                        alt=""
-                      />
-                    ) : null}
-                    {item.label}
-                  </td>
-                  <td>{item.dosage}</td>
-                  <td>{item.frequency}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="slip__note">
-            Scan the code above to watch these in sign language.
-            {playlist.is_fully_signable
-              ? ""
-              : ` Medicine ${playlist.unsignable_positions.join(", ")} cannot be shown in sign language and must be explained in person.`}
-          </p>
-        </div>
+            {offline ? (
+              <p className="prescription__offline" data-testid="offline-status">
+                {offline.total === 0
+                  ? "There are no sign clips to save yet."
+                  : `Saved ${offline.saved} of ${offline.total} sign clips to this phone for offline replay.`}
+              </p>
+            ) : null}
+          </div>
 
+          <div className="issued__medicines">
         {/* Said plainly, and before the doctor walks away. An item that cannot
             be signed is not a rendering detail: someone has to explain that
             medicine another way, and they can only do that if they are told
@@ -216,15 +282,11 @@ export default function PrescriptionBuilder({ onLeave }) {
           </p>
         )}
 
-        {offline ? (
-          <p className="prescription__offline" data-testid="offline-status">
-            {offline.total === 0
-              ? "There are no sign clips to save yet."
-              : `Saved ${offline.saved} of ${offline.total} sign clips to this phone for offline replay.`}
-          </p>
-        ) : null}
+            <PrescriptionPlaylist playlist={playlist} />
+          </div>
+        </div>
 
-        <PrescriptionPlaylist playlist={playlist} />
+        <PrintSlip playlist={playlist} />
       </section>
     );
   }
@@ -309,37 +371,142 @@ export default function PrescriptionBuilder({ onLeave }) {
               </p>
             </div>
 
-            <div className="prescription__fields">
-              <label className="prescription__field">
-                <span>Medicine {item.image ? "(optional)" : ""}</span>
-                <input
-                  type="text"
-                  value={item.medicine}
-                  onChange={(event) => update(index, "medicine", event.target.value)}
-                  placeholder={item.image ? "Not needed with a photo" : "Paracetamol"}
-                  data-testid={`medicine-${index}`}
-                />
-              </label>
-              <label className="prescription__field">
-                <span>How much</span>
-                <input
-                  type="text"
-                  value={item.dosage}
-                  onChange={(event) => update(index, "dosage", event.target.value)}
-                  placeholder="one tablet"
-                  data-testid={`dosage-${index}`}
-                />
-              </label>
-              <label className="prescription__field">
-                <span>How often</span>
-                <input
-                  type="text"
-                  value={item.frequency}
-                  onChange={(event) => update(index, "frequency", event.target.value)}
-                  placeholder="twice a day"
-                  data-testid={`frequency-${index}`}
-                />
-              </label>
+            <label className="prescription__field prescription__name">
+              <span>Medicine {item.image ? "(optional)" : ""}</span>
+              <input
+                type="text"
+                value={item.medicine}
+                onChange={(event) => update(index, "medicine", event.target.value)}
+                placeholder={item.image ? "Not needed with a photo" : "Paracetamol"}
+                data-testid={`medicine-${index}`}
+              />
+            </label>
+
+            {/* The dose, chosen rather than typed. A prescription is a dose, a
+                time, a relation to food and sometimes a length of course, and
+                choosing from those means the app can promise to sign whatever
+                the doctor enters. ADR 049. */}
+            <div className="dose">
+              <div className="dose__row">
+                <label className="prescription__field">
+                  <span>How much</span>
+                  <select
+                    value={item.amount}
+                    onChange={(event) => update(index, "amount", event.target.value)}
+                    data-testid={`amount-${index}`}
+                  >
+                    {AMOUNTS.map((amount) => (
+                      <option key={amount.value} value={amount.value}>
+                        {amount.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="prescription__field">
+                  <span>Of what</span>
+                  <select
+                    value={item.unit}
+                    onChange={(event) => update(index, "unit", event.target.value)}
+                    data-testid={`unit-${index}`}
+                  >
+                    {UNITS.map((unit) => (
+                      <option key={unit.value} value={unit.value}>
+                        {unit.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <fieldset className="dose__times">
+                <legend>When</legend>
+                {/* Times of day and a count are two ways of saying the same
+                    thing, and the times say more: a patient told "morning and
+                    evening" knows when, where one told "twice a day" has to
+                    decide and may take both together. Choosing times therefore
+                    turns the count off rather than sitting alongside it. */}
+                {TIMES_OF_DAY.map((time) => (
+                  <label key={time.value} className="dose__time">
+                    <input
+                      type="checkbox"
+                      checked={item.times.includes(time.value)}
+                      onChange={(event) =>
+                        update(
+                          index,
+                          "times",
+                          event.target.checked
+                            ? [...item.times, time.value]
+                            : item.times.filter((one) => one !== time.value),
+                        )
+                      }
+                      data-testid={`time-${time.value}-${index}`}
+                    />
+                    {time.label}
+                  </label>
+                ))}
+              </fieldset>
+
+              <div className="dose__row">
+                <label className="prescription__field">
+                  <span>{item.times.length > 0 ? "How often (set by the times above)" : "How often"}</span>
+                  <select
+                    value={item.times.length > 0 ? "" : item.frequencyChoice}
+                    disabled={item.times.length > 0}
+                    onChange={(event) =>
+                      update(index, "frequencyChoice", event.target.value)
+                    }
+                    data-testid={`frequency-${index}`}
+                  >
+                    <option value="">Choose</option>
+                    {FREQUENCIES.map((frequency) => (
+                      <option key={frequency.value} value={frequency.value}>
+                        {frequency.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="prescription__field">
+                  <span>Food</span>
+                  <select
+                    value={item.meal}
+                    onChange={(event) => update(index, "meal", event.target.value)}
+                    data-testid={`meal-${index}`}
+                  >
+                    {MEALS.map((meal) => (
+                      <option key={meal.value} value={meal.value}>
+                        {meal.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="prescription__field">
+                  <span>For how long</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={item.days}
+                    onChange={(event) => update(index, "days", event.target.value)}
+                    placeholder="days"
+                    data-testid={`days-${index}`}
+                  />
+                </label>
+              </div>
+
+              {/* The sentence the patient will get, while it can still be
+                  changed. A row of separate controls does not read as an
+                  instruction, and the doctor should see what they are
+                  prescribing before issuing it rather than after. */}
+              {previewInstruction(item) ? (
+                <p className="dose__preview" data-testid={`dose-preview-${index}`}>
+                  <span className="dose__preview-label">The patient is told</span>
+                  {item.medicine ? `${item.medicine}, ` : ""}
+                  {previewInstruction(item)}
+                </p>
+              ) : null}
             </div>
 
             {items.length > 1 ? (
@@ -385,7 +552,109 @@ export default function PrescriptionBuilder({ onLeave }) {
   );
 }
 
+/**
+ * The sheet the doctor hands over, on paper.
+ *
+ * Printed only, and it is the whole page: the print stylesheet blanks
+ * everything else rather than naming the parts to hide, because naming them is
+ * how the last version broke. It listed `.shell__bar`, which stopped existing
+ * when the top bar was restructured, so the navigation, the Emergency button
+ * and the install bar all printed.
+ *
+ * Two columns, code beside table. The pharmacist reads the table and the
+ * patient scans the code, and on one A5 of paper neither should have to be
+ * found underneath the other.
+ */
+function PrintSlip({ playlist }) {
+  const url = playlistUrl(playlist.reference);
+  const { image } = useQrCode(url, 420);
+
+  return (
+    <div className="slip print-only" aria-hidden="true">
+      <div className="slip__head">
+        <span className="slip__brand">Tie Me Ghana</span>
+        <span className="slip__kind">Prescription</span>
+      </div>
+
+      <div className="slip__body">
+        <div className="slip__qr">
+          {image ? <img className="slip__code" src={image} alt="" /> : null}
+          <p className="slip__scan">
+            <strong>Scan this</strong> to watch these instructions in Ghanaian
+            Sign Language. It works afterwards with no internet.
+          </p>
+          {/* The link in text as well, because a phone with no working camera
+              still has a keyboard, and losing the code must not lose the
+              prescription. */}
+          <p className="slip__url">{url}</p>
+        </div>
+
+        <div className="slip__meds">
+          <table className="slip__table">
+            <thead>
+              <tr>
+                <th>Medicine</th>
+                <th>How much</th>
+                <th>How often</th>
+              </tr>
+            </thead>
+            <tbody>
+              {playlist.items.map((item) => (
+                <tr key={item.position}>
+                  <td>
+                    {/* Printed as well as shown. For a medicine identified
+                        only by its photograph this is the only thing on the
+                        paper that says which one it is, so the slip would
+                        otherwise carry a dose belonging to nothing. */}
+                    {item.image_url ? (
+                      <img className="slip__photo" src={item.image_url} alt="" />
+                    ) : null}
+                    <span className="slip__name">{item.label}</span>
+                  </td>
+                  <td className="slip__dose">{item.dosage}</td>
+                  <td className="slip__dose">{item.frequency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* The one line on the page somebody has to act on, so it prints
+              whatever else is trimmed. */}
+          {playlist.is_fully_signable ? null : (
+            <p className="slip__warning">
+              Medicine {playlist.unsignable_positions.join(", ")} cannot be
+              shown in sign language and must be explained in person before the
+              patient leaves.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Inline so the control cannot lose its mark on a slow connection. */
+function PrinterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path
+        d="M6 7.5V3h8v4.5M6 14h8v3.5H6V14Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 14H3.5v-5A1.5 1.5 0 0 1 5 7.5h10a1.5 1.5 0 0 1 1.5 1.5v5H14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function CameraIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

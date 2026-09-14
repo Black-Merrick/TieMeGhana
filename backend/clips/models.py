@@ -144,6 +144,26 @@ class SignClip(models.Model):
     def __str__(self) -> str:
         return f"{self.gloss} ({self.get_kind_display()})"
 
+    def clean_fields(self, exclude=None):
+        """
+        Normalize the gloss before anything is validated against it.
+
+        Here as well as in `save`, and the reason is a 500 the admin used to
+        throw. Normalizing only on save meant a gloss typed as "tablet" was
+        checked for uniqueness as "tablet", found nothing, passed validation,
+        and then became "TABLET" on the way to a database that already had one.
+        The doctor got an IntegrityError page instead of "Sign clip with this
+        Gloss already exists", which is the same information delivered as a
+        crash.
+
+        Normalizing here puts the value the database will see in front of every
+        check that runs against it.
+        """
+        if self.gloss:
+            self.gloss = normalize_gloss(self.gloss)
+
+        super().clean_fields(exclude=exclude)
+
     def save(self, *args, **kwargs):
         """
         Normalize the gloss before storing it.
@@ -157,6 +177,11 @@ class SignClip(models.Model):
         looks for. Without this the row saved cleanly, showed as approved, and
         could never match anything, which is a worse failure than a rejected
         form: it looks finished and does nothing.
+
+        Kept as well as `clean_fields`, not instead of it. Plenty of paths never
+        call full_clean: `objects.create`, the footage importer, and every test
+        that builds a row directly. Normalizing in only one of the two would
+        leave one of those writing a gloss nothing can match.
         """
         self.gloss = normalize_gloss(self.gloss)
         super().save(*args, **kwargs)
@@ -219,6 +244,13 @@ class ClipAlias(models.Model):
 
     def __str__(self) -> str:
         return f"{self.term} -> {self.clip.gloss}"
+
+    def clean_fields(self, exclude=None):
+        """Normalize before validation, for the reason SignClip does."""
+        if self.term:
+            self.term = self.term.strip().upper()
+
+        super().clean_fields(exclude=exclude)
 
     def save(self, *args, **kwargs):
         """Normalize the term, for the same reason the gloss is normalized."""

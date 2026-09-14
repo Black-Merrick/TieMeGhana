@@ -42,6 +42,49 @@ class PlaylistItem:
     caption_provider: str
     sequence: SignSequence
 
+    @property
+    def video_url(self) -> str | None:
+        """
+        This medicine alone, as one file: its photograph, then its dose.
+
+        The picture is part of the video rather than sitting above it, because
+        the video is what leaves the app. A patient who saves it to their phone
+        gets a file that says which medicine it is; one holding only the signs
+        is a dose with nothing attached to it, and a gallery of those is
+        unreadable.
+
+        None when the instruction cannot be signed safely, for the reason in
+        ADR 033: a file cannot say that part of it is missing.
+        """
+        if not self.sequence.is_safe_to_show:
+            return None
+
+        still = _still_frame(self.image_url)
+        clips = [
+            path
+            for segment in self.sequence.segments
+            for clip in segment.clips
+            if (path := _media_path(clip.video_url)) is not None
+        ]
+
+        if not clips:
+            return None
+
+        sources = ([still] if still else []) + clips
+        material = ([f"still:{still.path}:{still.seconds:g}"] if still else []) + [
+            f"clip:{path}" for path in clips
+        ]
+
+        stitched = stitch(sources, material)
+        if stitched:
+            return stitched
+
+        # One source, so there was nothing to concatenate. With no photograph
+        # that single clip is already the whole instruction and can be served
+        # as it is; with one it would be a picture and no dose, which is worse
+        # than offering nothing.
+        return None if still else self.sequence.segments[0].clips[0].video_url
+
 
 @dataclass(frozen=True)
 class Playlist:
@@ -167,9 +210,18 @@ def issue_prescription(items: list[dict]) -> Prescription:
             prescription=prescription,
             position=position,
             medicine=item.get("medicine", ""),
-            dosage=item["dosage"],
-            frequency=item["frequency"],
+            amount=item["amount"],
+            unit=item["unit"],
+            times=item.get("times") or [],
+            frequency_choice=item.get("frequency_choice", ""),
+            meal=item.get("meal", ""),
+            days=item.get("days"),
         )
+
+        # The wording is generated from the structure, never typed, so the
+        # caption a pharmacist reads and the sentence the patient watches are
+        # built from the same words. ADR 049.
+        row.write_instruction()
 
         # Saved through the field so the file lands in MEDIA_ROOT under its own
         # name. Already validated, stripped of metadata and resized by

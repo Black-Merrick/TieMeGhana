@@ -40,7 +40,17 @@ export default function PrescriptionPlaylist({ playlist }) {
             <dd data-testid={`playlist-frequency-${item.position}`}>{item.frequency}</dd>
           </dl>
 
-          {item.sequence.is_safe_to_show ? (
+          {item.sequence.is_safe_to_show && item.video_url ? (
+            <div className="playlist__video">
+              {/* One file: the photograph, then the dose. The picture is
+                  inside the video rather than only above it, because the video
+                  is what leaves the app. A file holding only the signs is a
+                  dose with nothing attached to it. */}
+              <SignSequencePlayer
+                sequence={{ ...item.sequence, stitched_video_url: item.video_url }}
+              />
+            </div>
+          ) : item.sequence.is_safe_to_show ? (
             <div className="playlist__video">
               <SignSequencePlayer sequence={item.sequence} />
             </div>

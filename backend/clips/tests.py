@@ -501,3 +501,69 @@ class TestCriticalAlerts:
     def test_the_set_costs_one_query(self, api_client, django_assert_max_num_queries):
         with django_assert_max_num_queries(1):
             api_client.get(reverse("clip-alerts"))
+
+
+@pytest.mark.django_db
+class TestNormalizingBeforeValidation:
+    """
+    A gloss is normalized before anything is checked against it, not after.
+
+    Normalizing only on save meant the admin checked uniqueness against what
+    was typed and the database against what was stored, so adding "tablet"
+    where "TABLET" already existed passed validation and then raised
+    IntegrityError. The doctor got a 500 page carrying the same information as
+    the field error they should have seen.
+    """
+
+    def test_a_differently_typed_duplicate_is_a_field_error_not_a_crash(
+        self, make_clip
+    ):
+        from django.core.exceptions import ValidationError
+
+        from clips.models import SignClip
+
+        make_clip("TABLET")
+
+        with pytest.raises(ValidationError) as raised:
+            SignClip(gloss="tablet").full_clean()
+
+        assert "gloss" in raised.value.message_dict
+
+    def test_a_phrase_typed_with_spaces_is_caught_too(self, make_clip):
+        # ADR 039. "how are you doing" becomes HOW_ARE_YOU_DOING, so a second
+        # one typed the same way has to be refused rather than accepted and
+        # then rejected by the database.
+        from django.core.exceptions import ValidationError
+
+        from clips.models import ClipKind, SignClip
+
+        make_clip("HOW_ARE_YOU_DOING", kind=ClipKind.PHRASE)
+
+        with pytest.raises(ValidationError):
+            SignClip(gloss="how are you doing", kind=ClipKind.PHRASE).full_clean()
+
+    def test_validation_still_normalizes_the_stored_value(self):
+        from clips.models import SignClip
+
+        clip = SignClip(gloss="  two tablets ")
+        clip.full_clean(exclude=["video"])
+
+        assert clip.gloss == "TWO_TABLETS"
+
+    def test_creating_without_validation_still_normalizes(self):
+        # The importer and every test build rows directly, so save has to keep
+        # normalizing as well: doing it in only one of the two places would
+        # leave one path writing a gloss nothing can match.
+        from clips.models import SignClip
+
+        clip = SignClip.objects.create(gloss="two tablets")
+
+        assert clip.gloss == "TWO_TABLETS"
+
+    def test_an_alias_term_is_normalized_before_validation_too(self, make_clip):
+        from clips.models import ClipAlias
+
+        alias = ClipAlias(clip=make_clip("FEELING"), term=" doing ")
+        alias.full_clean()
+
+        assert alias.term == "DOING"

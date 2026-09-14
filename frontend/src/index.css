@@ -236,7 +236,15 @@ body {
   cursor: default;
 }
 
+/* inline-flex, not the default inline.
+
+   A width on an inline element is ignored, so wherever this span sat in a
+   button that was not itself a flex container, the svg inside it took its
+   `width: 100%` from the button instead and printed a picture the size of the
+   control. The print button on the issued prescription is where that showed
+   up. Setting it here fixes every use rather than the one that was noticed. */
 .btn__icon {
+  display: inline-flex;
   width: 1rem;
   height: 1rem;
   flex: 0 0 auto;
@@ -2170,8 +2178,18 @@ body {
   cursor: pointer;
 }
 
+/* A form is a reading column: the editing state stays narrow whatever the
+   window does, because a row of three fields stretched across a wide monitor
+   is three fields nobody can scan. The issued state opts out below, since it
+   is two columns rather than a form. */
 .prescription {
   margin-top: 1.5rem;
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.prescription--issued {
+  max-width: none;
 }
 
 .prescription__header {
@@ -2476,15 +2494,250 @@ body {
 
 .prescription__print {
   font: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   min-height: 2.75rem;
-  margin-bottom: 1.25rem;
   padding: 0 1.1rem;
   border: 1px solid var(--colour-primary);
-  border-radius: 0.4rem;
+  border-radius: 0.45rem;
   background: transparent;
   color: var(--colour-primary);
-  font-weight: 600;
   cursor: pointer;
+}
+
+.prescription__print:hover {
+  background: var(--colour-mint-pale);
+}
+
+/* Shown only on paper. */
+.print-only {
+  display: none;
+}
+
+/* The printed prescription.
+   ------------------------
+   One sheet: the code on the left, the medicines on the right. The pharmacist
+   reads the table and the patient scans the code, and neither should have to
+   be found underneath the other.
+
+   Everything else on the page is blanked rather than named. The previous
+   version listed the parts to hide, including `.shell__bar`, which stopped
+   existing when the top bar was restructured, so the navigation, the Emergency
+   button and the install bar all printed. Hiding by exception cannot rot the
+   same way: anything added to the app in future is hidden until somebody puts
+   it inside the slip on purpose. */
+@media print {
+  /* visibility rather than display, so the slip can be pulled to the page
+     origin without the rest of the layout collapsing underneath it first. */
+  body * {
+    visibility: hidden;
+  }
+
+  .slip,
+  .slip * {
+    visibility: visible;
+  }
+
+  .slip {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  /* A video element prints as a black rectangle, and an animation prints as
+     whichever frame it happened to be on. */
+  video,
+  .wave,
+  .consultation__pulse {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+
+  .slip__head {
+    display: flex;
+    align-items: baseline;
+    gap: 3mm;
+    padding-bottom: 2mm;
+    border-bottom: 0.4mm solid #000;
+  }
+
+  .slip__brand {
+    font-size: 12pt;
+    font-weight: 700;
+  }
+
+  .slip__kind {
+    font-size: 9pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .slip__body {
+    display: grid;
+    /* The code is a fixed physical size, because it has to survive being
+       photographed off paper. The table takes whatever is left. */
+    grid-template-columns: 48mm 1fr;
+    gap: 6mm;
+    margin-top: 4mm;
+  }
+
+  .slip__code {
+    display: block;
+    width: 44mm;
+    height: 44mm;
+  }
+
+  .slip__scan {
+    margin: 2mm 0 0;
+    font-size: 8pt;
+    line-height: 1.35;
+  }
+
+  .slip__url {
+    margin: 1.5mm 0 0;
+    font-family: ui-monospace, monospace;
+    font-size: 6.5pt;
+    word-break: break-all;
+  }
+
+  .slip__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+  }
+
+  .slip__table th {
+    text-align: left;
+    font-size: 7.5pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 0.4mm solid #000;
+    padding: 0 2mm 1.5mm 0;
+  }
+
+  .slip__table td {
+    border-bottom: 0.2mm solid #999;
+    padding: 2mm 2mm 2mm 0;
+    vertical-align: top;
+  }
+
+  /* The photograph on paper. Fixed size, so it does not depend on the page
+     width, and it is the only thing identifying a medicine entered without a
+     name. */
+  .slip__photo {
+    display: block;
+    width: 16mm;
+    height: 16mm;
+    object-fit: cover;
+    margin-bottom: 1mm;
+    border: 0.2mm solid #999;
+  }
+
+  .slip__name {
+    font-weight: 700;
+  }
+
+  /* The dose and the frequency are the two facts that must not be misread off
+     a page, so they are the largest thing in the table. */
+  .slip__dose {
+    font-size: 12pt;
+    font-weight: 700;
+  }
+
+  /* The one line somebody has to act on, so it survives whatever else is
+     trimmed. */
+  .slip__warning {
+    margin-top: 4mm;
+    padding: 2mm 3mm;
+    border: 0.5mm solid #000;
+    font-size: 9.5pt;
+    font-weight: 700;
+  }
+
+  /* A prescription is one page, and a medicine split across a break is how a
+     dose gets read off the wrong row. */
+  .slip__table tr,
+  .slip__body {
+    break-inside: avoid;
+  }
+}
+
+/* Saving to the patient's own phone, FR 6.2 and ADR 046. */
+.save {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px solid #c8d2ce;
+  border-radius: 0.6rem;
+  background: var(--colour-surface);
+}
+
+.save__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.save__hint {
+  color: var(--colour-muted);
+  margin: 0 0 0.75rem;
+}
+
+.save__hint--home {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+}
+
+.save__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* A link, not a button: it is a file download, and the browser's own handling
+   of that is what puts the file in the phone's gallery. */
+.save__download {
+  display: inline-block;
+  font-weight: 700;
+  min-height: 2.75rem;
+  padding: 0.7rem 1.1rem;
+  border-radius: 0.4rem;
+  background: var(--colour-primary);
+  color: #fff;
+  text-decoration: none;
+}
+
+.prescription__print {
+  font: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--colour-primary);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--colour-primary);
+  cursor: pointer;
+}
+
+.prescription__print:hover {
+  background: var(--colour-mint-pale);
 }
 
 /* Shown only on paper. */
@@ -3396,4 +3649,157 @@ body {
   border-radius: 0.5rem;
   border: 1px solid var(--colour-line);
   margin-bottom: 0.75rem;
+}
+
+/* The issued prescription, FR 6.1 and 6.3.
+   Two columns rather than one column and a scroll: the doctor holds the phone
+   up to be scanned while reading the medicines back to the patient, so the
+   code and the list are wanted at the same time. The same arrangement as the
+   printed sheet, so paper and screen do not have to be learned separately. */
+.issued {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 62rem) {
+  .issued {
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  }
+
+  /* The code stays in view while the medicines scroll, because it is what the
+     patient is pointing a camera at. */
+  .issued__code {
+    position: sticky;
+    top: 0;
+  }
+}
+
+.issued__code {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  padding: 1.25rem;
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.issued__code .qr {
+  margin: 0;
+}
+
+.issued__code .prescription__print {
+  width: 100%;
+  margin: 0;
+}
+
+.issued__medicines {
+  min-width: 0;
+}
+
+.issued__medicines .playlist {
+  margin-top: 0;
+}
+
+/* The dose, chosen rather than typed, ADR 049. Grouped so the three questions
+   it answers, how much, when, and for how long, read as one instruction being
+   assembled rather than as six unrelated controls. */
+.dose {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+  background: var(--colour-inset);
+}
+
+.dose__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.75rem;
+}
+
+.dose__row + .dose__row {
+  margin-top: 0.75rem;
+}
+
+.prescription__field select,
+.prescription__field input[type="number"] {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--colour-field-line);
+  border-radius: 0.4rem;
+  background: var(--colour-surface);
+  color: inherit;
+}
+
+.prescription__field select:disabled {
+  opacity: 0.55;
+}
+
+.dose__times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.5rem;
+  background: var(--colour-surface);
+}
+
+.dose__times legend {
+  padding: 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.dose__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dose__time input {
+  accent-color: var(--colour-primary);
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+/* The sentence the patient will get, while it can still be changed. A row of
+   separate controls does not read as an instruction. */
+.dose__preview {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--colour-primary);
+  border-radius: 0.3rem;
+  background: var(--colour-mint-pale);
+  font-weight: 600;
+}
+
+.dose__preview-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.prescription__name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }

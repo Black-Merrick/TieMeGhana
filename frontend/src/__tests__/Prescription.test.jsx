@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -72,6 +72,9 @@ function playlist({ safe = true, reference = "abc123XYZ_-def456ghi" } = {}) {
         dosage: "one tablet",
         frequency: "twice a day",
         instruction: "Paracetamol, one tablet, twice a day",
+        // The medicine's own file: the photograph, then the dose. What the
+        // patient plays and what they save.
+        video_url: safe ? "/media/stitched/item.mp4" : null,
         caption: "Paracetamol, taabolet baako, da biara mprenu",
         caption_language: "tw",
         caption_provider: "khaya",
@@ -84,6 +87,12 @@ function playlist({ safe = true, reference = "abc123XYZ_-def456ghi" } = {}) {
 }
 
 beforeEach(() => {
+  // The issued prescription's reference is kept in localStorage so a reload
+  // comes back to the QR code. Without clearing it, a test that renders the
+  // builder fresh inherits the previous test's prescription and opens on the
+  // issued screen instead of an empty form.
+  localStorage.clear();
+
   issuePrescription.mockResolvedValue(playlist());
   fetchPlaylist.mockResolvedValue(playlist());
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
@@ -93,12 +102,18 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
+/**
+ * Fill in one medicine.
+ *
+ * The dose is chosen rather than typed since ADR 049, and the form opens on
+ * one tablet twice a day, so a medicine needs only its name. Tests that care
+ * about a particular dose set the controls themselves.
+ */
 async function fillOneMedicine() {
   await userEvent.type(screen.getByTestId("medicine-0"), "Paracetamol");
-  await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
-  await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
 }
 
 describe("writing a prescription, FR 6.1", () => {
@@ -108,33 +123,42 @@ describe("writing a prescription, FR 6.1", () => {
     await fillOneMedicine();
     await userEvent.click(screen.getByTestId("add-medicine"));
     await userEvent.type(screen.getByTestId("medicine-1"), "Zinc");
-    await userEvent.type(screen.getByTestId("dosage-1"), "one spoon");
-    await userEvent.type(screen.getByTestId("frequency-1"), "once a day");
+    await userEvent.selectOptions(screen.getByTestId("unit-1"), "SPOON");
+    await userEvent.selectOptions(screen.getByTestId("frequency-1"), "ONCE");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
     expect(issuePrescription).toHaveBeenCalledWith([
       {
         medicine: "Paracetamol",
-        dosage: "one tablet",
-        frequency: "twice a day",
+        amount: "1",
+        unit: "TABLET",
+        times: [],
+        frequency_choice: "TWICE",
+        meal: "",
+        days: null,
         image: null,
       },
       {
         medicine: "Zinc",
-        dosage: "one spoon",
-        frequency: "once a day",
+        amount: "1",
+        unit: "SPOON",
+        times: [],
+        frequency_choice: "ONCE",
+        meal: "",
+        days: null,
         image: null,
       },
     ]);
   });
 
-  it("refuses a row with a missing dosage and says which row", async () => {
+  it("refuses a row with no schedule and says which row", async () => {
     // The server rejects this too, but a 400 cannot say which row it was, and
     // the useful message is the one that arrives before the request.
     render(<PrescriptionBuilder onLeave={() => {}} />);
 
     await userEvent.type(screen.getByTestId("medicine-0"), "Paracetamol");
+    await userEvent.selectOptions(screen.getByTestId("frequency-0"), "");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     expect(screen.getByTestId("prescription-problem")).toHaveTextContent(
@@ -408,11 +432,15 @@ describe("printing for the patient, FR 6.1", () => {
 
     await waitFor(() => expect(screen.getByTestId("qr-image")).toBeInTheDocument());
 
-    const slip = document.querySelector(".print-only");
+    const slip = document.querySelector(".slip");
     expect(slip).not.toBeNull();
     expect(slip.textContent).toContain("Paracetamol");
     expect(slip.textContent).toContain("one tablet");
     expect(slip.textContent).toContain("twice a day");
+
+    // The code is on the sheet too, not only on screen: the pharmacist reads
+    // the table and the patient scans the code, off the same piece of paper.
+    expect(slip.querySelector(".slip__code")).not.toBeNull();
   });
 
   it("prints the instruction to explain a refused medicine in person", async () => {
@@ -427,7 +455,7 @@ describe("printing for the patient, FR 6.1", () => {
     await waitFor(() => {
       expect(screen.getByTestId("not-fully-signable")).toBeInTheDocument();
     });
-    expect(document.querySelector(".print-only").textContent).toContain(
+    expect(document.querySelector(".slip").textContent).toContain(
       "explained in person",
     );
   });
@@ -529,15 +557,14 @@ describe("photographing the medicine, FR 6.1", () => {
     render(<PrescriptionBuilder onLeave={() => {}} />);
 
     await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
-    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
-    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
     expect(issuePrescription.mock.calls[0][0][0]).toMatchObject({
       medicine: "",
-      dosage: "one tablet",
-      frequency: "twice a day",
+      amount: "1",
+      unit: "TABLET",
+      frequency_choice: "TWICE",
     });
     expect(issuePrescription.mock.calls[0][0][0].image).toBeInstanceOf(File);
   });
@@ -548,8 +575,6 @@ describe("photographing the medicine, FR 6.1", () => {
     render(<PrescriptionBuilder onLeave={() => {}} />);
 
     await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
-    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
-    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
@@ -561,8 +586,6 @@ describe("photographing the medicine, FR 6.1", () => {
     // which medicine it belongs to.
     render(<PrescriptionBuilder onLeave={() => {}} />);
 
-    await userEvent.type(screen.getByTestId("dosage-0"), "one tablet");
-    await userEvent.type(screen.getByTestId("frequency-0"), "twice a day");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     expect(screen.getByTestId("prescription-problem")).toHaveTextContent(
@@ -571,15 +594,16 @@ describe("photographing the medicine, FR 6.1", () => {
     expect(issuePrescription).not.toHaveBeenCalled();
   });
 
-  it("still needs the dose, photograph or not", async () => {
-    // The picture says which medicine. It cannot say how much.
+  it("still needs a schedule, photograph or not", async () => {
+    // The picture says which medicine. It cannot say when to take it.
     render(<PrescriptionBuilder onLeave={() => {}} />);
 
     await userEvent.upload(screen.getByTestId("photo-input-0"), jpeg());
+    await userEvent.selectOptions(screen.getByTestId("frequency-0"), "");
     await userEvent.click(screen.getByTestId("issue-prescription"));
 
     expect(screen.getByTestId("prescription-problem")).toHaveTextContent(
-      /dosage/i,
+      /times of day/i,
     );
   });
 
@@ -649,5 +673,364 @@ describe("photographing the medicine, FR 6.1", () => {
     await waitFor(() => {
       expect(screen.getByText("Medicine 1")).toBeInTheDocument();
     });
+  });
+});
+
+describe("the printed sheet", () => {
+  it("carries the code and the table, and nothing from the app around them", async () => {
+    // The print stylesheet blanks the page and reveals only the slip, rather
+    // than naming the parts to hide. Naming them is how the previous version
+    // broke: it listed .shell__bar, which stopped existing when the top bar
+    // was restructured, so the navigation, the Emergency button and the
+    // install bar all printed.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => {
+      expect(document.querySelector(".slip__code")).not.toBeNull();
+    });
+
+    const slip = document.querySelector(".slip");
+    // Nothing that belongs to the app shell is inside the printed sheet, so
+    // there is nothing for the stylesheet to have to exclude.
+    expect(slip.querySelector(".topbar")).toBeNull();
+    expect(slip.querySelector("button")).toBeNull();
+    expect(slip.querySelector("video")).toBeNull();
+  });
+
+  it("prints the photograph, which may be all that names a medicine", async () => {
+    issuePrescription.mockResolvedValue({
+      ...playlist(),
+      items: [
+        {
+          ...playlist().items[0],
+          medicine: "",
+          label: "Medicine 1",
+          image_url: "/media/medicines/drug.jpg",
+        },
+      ],
+    });
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => {
+      expect(document.querySelector(".slip__photo")).not.toBeNull();
+    });
+    expect(document.querySelector(".slip").textContent).toContain("Medicine 1");
+  });
+
+  it("prints the same reference it shows on screen", async () => {
+    // Two QR codes are drawn, one per size, and pointing them at different
+    // prescriptions would be the worst possible bug on this screen.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => screen.getByTestId("qr-url"));
+
+    expect(document.querySelector(".slip__url").textContent).toBe(
+      screen.getByTestId("qr-url").textContent,
+    );
+  });
+});
+
+describe("surviving a reload, ADR 043 and ADR 026", () => {
+  it("comes back to the prescription instead of the consultation", async () => {
+    // Losing it would mean issuing a second prescription, which leaves the
+    // first one live and scannable with nothing to say it was replaced.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await waitFor(() => screen.getByTestId("prescription-issued"));
+
+    cleanup();
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-issued")).toBeInTheDocument();
+    });
+  });
+
+  it("refetches the playlist rather than restoring a cached copy", async () => {
+    // ADR 043. The signs are resolved on every read so a clip a consultant
+    // withdraws stops playing, and a playlist kept in localStorage would be
+    // exactly the frozen copy that decision exists to avoid.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await waitFor(() => screen.getByTestId("prescription-issued"));
+
+    cleanup();
+    fetchPlaylist.mockClear();
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await waitFor(() => expect(fetchPlaylist).toHaveBeenCalledWith(
+      "abc123XYZ_-def456ghi",
+    ));
+  });
+
+  it("stores the reference and nothing else", async () => {
+    // The reference identifies nobody, per ADR 044. A playlist would carry the
+    // medicines themselves onto a shared device.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await waitFor(() => screen.getByTestId("prescription-issued"));
+
+    const stored = JSON.stringify(localStorage);
+    expect(stored).toContain("abc123XYZ_-def456ghi");
+    expect(stored).not.toContain("Paracetamol");
+    expect(stored).not.toContain("one tablet");
+  });
+
+  it("forgets it when the doctor is done", async () => {
+    // This device is handed from one patient to the next, and the next one
+    // must not find these medicines on screen. ADR 026.
+    const onLeave = vi.fn();
+    render(<PrescriptionBuilder onLeave={onLeave} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await waitFor(() => screen.getByTestId("prescription-issued"));
+
+    await userEvent.click(screen.getByTestId("leave-prescription"));
+
+    expect(onLeave).toHaveBeenCalled();
+    cleanup();
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+    expect(screen.getByTestId("prescription-builder")).toBeInTheDocument();
+  });
+
+  it("starts a fresh prescription when the reference has gone", async () => {
+    // Deleted on the server, or no connection. There is nothing to show, so
+    // the doctor gets an empty form rather than a dead QR code.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await waitFor(() => screen.getByTestId("prescription-issued"));
+
+    cleanup();
+    fetchPlaylist.mockRejectedValue(new Error("404"));
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("prescription-builder")).toBeInTheDocument();
+    });
+  });
+
+  it("puts the code and the medicines side by side", async () => {
+    // Two columns rather than one and a scroll: the doctor holds the phone up
+    // to be scanned while reading the medicines back to the patient.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    // Awaited: the code is drawn asynchronously, so the element it goes into
+    // exists before the image does.
+    await waitFor(() => screen.getByTestId("qr-image"));
+
+    const code = document.querySelector(".issued__code");
+    const medicines = document.querySelector(".issued__medicines");
+    expect(code).toContainElement(screen.getByTestId("qr-image"));
+    expect(medicines).toContainElement(
+      screen.getByTestId("prescription-playlist"),
+    );
+  });
+});
+
+/*
+ * Not tested here: that the print button's icon is icon sized.
+ *
+ * The span holding it is inline by default, and a width on an inline element
+ * is ignored, so the svg took its width from the button and drew a printer the
+ * size of the control. The fix is `display: inline-flex` on `.btn__icon`.
+ *
+ * It has no test because this suite runs with `css: false`, so no stylesheet
+ * is loaded and getComputedStyle reports nothing. Enabling CSS processing for
+ * the whole suite to assert one declaration is a worse trade than saying here
+ * that it is unasserted.
+ */
+
+describe("the photograph inside the video, ADR 048", () => {
+  function withPhoto(overrides = {}) {
+    return {
+      ...playlist(),
+      items: [
+        {
+          ...playlist().items[0],
+          medicine: "",
+          label: "Medicine 1",
+          image_url: "/media/medicines/drug.jpg",
+          video_url: "/media/stitched/photo-then-dose.mp4",
+          ...overrides,
+        },
+      ],
+    };
+  }
+
+  it("plays the medicine's own file, not the bare signs", async () => {
+    // The file begins with the photograph. Playing the sequence's own stitched
+    // clips instead would show the dose with nothing attached to it.
+    fetchPlaylist.mockResolvedValue(withPhoto());
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(document.querySelector("video")).not.toBeNull();
+    });
+    expect(document.querySelector("video").getAttribute("src")).toBe(
+      "/media/stitched/photo-then-dose.mp4",
+    );
+  });
+
+  it("saves that same file, so the picture goes with it", async () => {
+    // A saved medicine with no picture is a dose the patient cannot attach to
+    // a box, and a gallery of those is unreadable.
+    fetchPlaylist.mockResolvedValue({ ...withPhoto(), video_url: null });
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-item-1")).toBeInTheDocument();
+    });
+
+    const link = screen.getByTestId("save-item-1");
+    expect(link).toHaveAttribute("href", "/media/stitched/photo-then-dose.mp4");
+    // Named for the medicine, which for an unnamed one is its position.
+    expect(link).toHaveAttribute("download", "medicine-1.mp4");
+  });
+
+  it("keeps the medicine's file for offline replay", async () => {
+    // FR 6.2. The file the patient plays is the one that has to be on the
+    // phone when there is no connection.
+    fetchPlaylist.mockResolvedValue(withPhoto());
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/media/stitched/photo-then-dose.mp4",
+        expect.objectContaining({ cache: "reload" }),
+      );
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "/media/medicines/drug.jpg",
+      expect.objectContaining({ cache: "reload" }),
+    );
+  });
+
+  it("offers nothing to save for a medicine that cannot be signed", async () => {
+    // ADR 033. A file cannot say that part of it is missing.
+    fetchPlaylist.mockResolvedValue({
+      ...withPhoto({ video_url: null, sequence: sequence({ safe: false }) }),
+      video_url: null,
+      is_fully_signable: false,
+      unsignable_positions: [1],
+    });
+    render(<PrescriptionPlayback reference="abc123XYZ_-def456ghi" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("nothing-to-save")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("choosing the dose rather than typing it, ADR 049", () => {
+  it("shows the doctor the sentence the patient will get", async () => {
+    // A row of separate controls does not read as an instruction, and the
+    // doctor should see what they are prescribing before issuing it.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.type(screen.getByTestId("medicine-0"), "Paracetamol");
+
+    expect(screen.getByTestId("dose-preview-0")).toHaveTextContent(
+      "Paracetamol, one tablet, twice a day",
+    );
+  });
+
+  it("reads times of day in the order of the day", async () => {
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.click(screen.getByTestId("time-EVENING-0"));
+    await userEvent.click(screen.getByTestId("time-MORNING-0"));
+
+    expect(screen.getByTestId("dose-preview-0")).toHaveTextContent(
+      "one tablet, morning and evening",
+    );
+  });
+
+  it("lets the times of day replace the count", async () => {
+    // They say strictly more: a patient told "morning and evening" knows when,
+    // where one told "twice a day" has to decide and may take both together.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.click(screen.getByTestId("time-MORNING-0"));
+
+    expect(screen.getByTestId("frequency-0")).toBeDisabled();
+
+    await userEvent.type(screen.getByTestId("medicine-0"), "Zinc");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
+    expect(issuePrescription.mock.calls[0][0][0]).toMatchObject({
+      times: ["MORNING"],
+      frequency_choice: "",
+    });
+  });
+
+  it("carries the relation to food and the length of the course", async () => {
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await fillOneMedicine();
+    await userEvent.selectOptions(screen.getByTestId("meal-0"), "AFTER");
+    await userEvent.type(screen.getByTestId("days-0"), "5");
+
+    expect(screen.getByTestId("dose-preview-0")).toHaveTextContent(
+      "one tablet, twice a day, after food, for five days",
+    );
+
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+
+    await waitFor(() => expect(issuePrescription).toHaveBeenCalled());
+    expect(issuePrescription.mock.calls[0][0][0]).toMatchObject({
+      meal: "AFTER",
+      days: 5,
+    });
+  });
+
+  it("says two tablets rather than two tablet", async () => {
+    // The caption is read by a pharmacist, and the singular reads as a mistake
+    // in a document people have to trust.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.selectOptions(screen.getByTestId("amount-0"), "2");
+
+    expect(screen.getByTestId("dose-preview-0")).toHaveTextContent("two tablets");
+  });
+
+  it("says half tablet rather than half tablets", async () => {
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    await userEvent.selectOptions(screen.getByTestId("amount-0"), "HALF");
+
+    expect(screen.getByTestId("dose-preview-0")).toHaveTextContent("half tablet");
+  });
+
+  it("offers no way to enter a wording the app cannot sign", async () => {
+    // The point of the change. Every control is a choice from a vocabulary
+    // that is known in advance, so there is nothing to type that would be
+    // refused after the prescription was issued.
+    render(<PrescriptionBuilder onLeave={() => {}} />);
+
+    const dose = document.querySelector(".dose");
+    expect(dose.querySelectorAll("input[type='text']")).toHaveLength(0);
+    expect(dose.querySelectorAll("textarea")).toHaveLength(0);
   });
 });
