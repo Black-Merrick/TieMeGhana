@@ -96,4 +96,6 @@ the change before it reaches an integration branch. See ADR 019.
   every choice that would be expensive to reverse
 - [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md), what happened in each sprint, the
   commands that reproduce it, and the problems hit along the way
+- [DEPLOY.md](DEPLOY.md), the two platforms, every environment variable each
+  one needs, and the four things that fail quietly if they are missed
 - `Tie_Me_Ghana_SRS_v2.pdf`, the requirements specification, source of truth
