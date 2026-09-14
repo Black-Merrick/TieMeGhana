@@ -17,6 +17,34 @@ def api_client() -> APIClient:
 
 
 @pytest.fixture(autouse=True)
+def static_files_need_no_collectstatic(settings):
+    """
+    Use the plain static files backend for every test.
+
+    With `DJANGO_DEBUG=0`, which is what CI sets and what a deployment uses,
+    settings select WhiteNoise's manifest backend. That one refuses to resolve
+    a name that is not in `staticfiles.json`, and that file is written by
+    `collectstatic` at build time. So any test that renders a page using
+    `{% static %}`, which includes every Django admin page, fails with
+    "Missing staticfiles manifest entry for admin/css/base.css".
+
+    The manifest is a deployment concern: it exists so a browser can cache a
+    hashed filename forever. A test asserting that the admin reports a missing
+    footage folder has no business depending on a build step, and CI should not
+    have to run one to check it.
+
+    Caught by CI on a push, having passed locally, because development runs
+    with `DJANGO_DEBUG=1` and never selects that backend.
+    """
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        },
+    }
+
+
+@pytest.fixture(autouse=True)
 def never_write_to_real_media_storage(settings, tmp_path):
     """
     Force local, throwaway media storage for every test.
