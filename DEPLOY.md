@@ -10,6 +10,36 @@ the dashboards by hand.
 
 Do the backend first. The frontend needs its address.
 
+## How one repository becomes two deployments
+
+Both platforms are connected to **the same repository**. Each is pointed at one
+directory and ignores the other:
+
+| | Render | Netlify |
+| --- | --- | --- |
+| Directory | `rootDir: backend` | `base = "frontend"` |
+| Sees | `backend/` as the whole project | `frontend/` as the whole project |
+| Rebuilds when | `backend/**` changes | `frontend/**` changes |
+
+The directory setting is also the build context, which is why
+`backend/Dockerfile` can say `COPY . .` and get only the backend, and why
+`npm run build` finds `frontend/package.json` without any path juggling.
+
+The build filters matter more than they look. Without them every frontend
+commit redeploys Django, which on the free tier means a container rebuild, a
+migration run and a cold start for whoever happens to be using it, all to ship
+a CSS change. And every backend commit spends Netlify build minutes rebuilding
+an identical bundle.
+
+**Both platforms deploy from a branch you choose.** Point them at the same one,
+or the two halves drift apart: a frontend expecting a field the deployed
+backend does not return yet is the kind of mismatch that looks like a bug in
+neither.
+
+The two halves are joined by three settings, and nothing else:
+`API_PROXY_TARGET` on Netlify points at Render, and `CORS_ALLOWED_ORIGINS` and
+`CSRF_TRUSTED_ORIGINS` on Render name the Netlify domain.
+
 ---
 
 ## 1. Cloudflare R2, the media bucket

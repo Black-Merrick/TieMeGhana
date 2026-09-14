@@ -21,6 +21,18 @@ services:
     # green check means the whole path works, per core/views.py.
     healthCheckPath: /api/health/
 
+    # Only rebuild when the backend changed. Paths are relative to the
+    # repository root, not to rootDir.
+    #
+    # Without this, every frontend commit redeploys Django: a container
+    # rebuild, a migration run, and on the free tier a cold start for whoever
+    # is using it, all to ship a CSS change.
+    buildFilter:
+      paths:
+        - backend/**
+      ignoredPaths:
+        - backend/footage/**
+
     envVars:
       - key: DJANGO_DEBUG
         value: "0"

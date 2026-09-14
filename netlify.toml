@@ -12,6 +12,14 @@
   command = "npm run build"
   publish = "dist"
 
+  # Skip the build when nothing under frontend/ changed. Exit 0 means "no
+  # changes, do not build", which is the opposite of the usual convention and
+  # worth knowing before reading this line.
+  #
+  # The free tier allows 300 build minutes a month, and without this every
+  # backend commit spends some of them rebuilding an identical bundle.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
+
 [build.environment]
   NODE_VERSION = "22"
 
