@@ -114,18 +114,29 @@ supplies the settings, so the form should already show:
 
 ### Environment variables
 
-**None.**
+| Variable | Value |
+| --- | --- |
+| `API_PROXY_TARGET` | `https://your-service.onrender.com` |
 
-The app calls `/api/...` relative to itself, exactly as it does in development,
-and `netlify.toml` proxies `/api`, `/admin` and `/static` to Render. The
-browser therefore sees a single origin: no CORS preflight on every request, no
-second origin to keep in the Django settings, and no backend URL compiled into
-the bundle that would need a rebuild to move.
+One, and it is the Render address from step 2. No trailing slash is needed;
+one is stripped if present.
 
-### The one manual edit
+The app calls `/api/...` relative to itself, exactly as it does in
+development, and the build writes redirects proxying `/api`, `/admin` and
+`/static` to that address. The browser therefore sees a single origin: no CORS
+preflight on every request, no second origin to keep in the Django settings,
+and no backend URL compiled into the bundle.
 
-Open `netlify.toml` and replace `tiemeghana-api.onrender.com` in the three
-redirects with the real Render address. Commit, and Netlify redeploys.
+The rules are generated into `dist/_redirects` by
+`frontend/tools/write-redirects.mjs` rather than written in `netlify.toml`,
+because that file is parsed statically and does not substitute environment
+variables. A rule written there would put the backend's address in the
+repository, and moving the backend would mean a commit rather than a setting.
+
+A build without the variable still produces a working site with no proxy,
+which is what `npm run build` does on a laptop and in CI. It says so on
+stdout rather than omitting the rules silently, because a deploy missing the
+variable would otherwise look fine until the first request failed.
 
 ---
 

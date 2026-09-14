@@ -3,7 +3,8 @@
 #
 # This file is a convenience: it can be imported as a Blueprint, or the same
 # settings entered by hand in the dashboard. Either way the values marked
-# sync: false have to be supplied once, because they are secrets.
+# sync: false have to be supplied once, because they are secrets or because
+# they name a domain that does not exist until the other half is deployed.
 
 services:
   - type: web

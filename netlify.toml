@@ -15,41 +15,14 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# The API, proxied rather than called across origins.
+# Redirects are not here. They are generated into dist/_redirects by
+# frontend/tools/write-redirects.mjs, because this file is parsed statically
+# and does not substitute environment variables: a rule written here would
+# have the backend's address committed into the repository, and moving the
+# backend would mean editing a file and pushing rather than changing one
+# setting in the dashboard.
 #
-# The app asks for /api/... relative to itself, which is what it does in
-# development too. Proxying keeps that true in deployment, so the browser sees
-# one origin: no CORS preflight on every request, no second origin in the CSRF
-# settings, and no build time URL baked into the bundle that would have to be
-# rebuilt to move the backend.
-#
-# Replace the host below with the Render service's own address once it exists.
-[[redirects]]
-  from = "/api/*"
-  to = "https://tiemeghana-api.onrender.com/api/:splat"
-  status = 200
-  force = true
-
-# The Django admin, for approving clips. Proxied for the same reason, and
-# because a CSRF protected form posted across origins is refused.
-[[redirects]]
-  from = "/admin/*"
-  to = "https://tiemeghana-api.onrender.com/admin/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/static/*"
-  to = "https://tiemeghana-api.onrender.com/static/:splat"
-  status = 200
-  force = true
-
-# Single page app fallback, last, so it never swallows the rules above. A
-# prescription QR code points at /p/<reference>, which is not a file on disk.
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Set API_PROXY_TARGET in Netlify's environment to the Render service address.
 
 # The service worker must never be served from cache, or a device keeps running
 # an old build and a fix appears not to have deployed.
