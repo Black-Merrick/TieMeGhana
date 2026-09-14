@@ -17,6 +17,35 @@ def api_client() -> APIClient:
 
 
 @pytest.fixture(autouse=True)
+def never_write_to_real_media_storage(settings, tmp_path):
+    """
+    Force local, throwaway media storage for every test.
+
+    Media goes to a Cloudflare R2 bucket when `R2_*` is configured, per
+    ADR 050, and a developer with a working deployment has exactly that in
+    their `.env`. Without this fixture every clip fixture, every uploaded
+    photograph and every stitched video in the suite is an HTTP round trip to
+    that bucket.
+
+    Two things go wrong, and the second is the serious one. The suite becomes
+    slow and dependent on someone else's uptime: it went from fifteen seconds
+    to not finishing. And it writes hundreds of junk objects into the bucket
+    the live app reads from, under names the app may later try to serve.
+
+    Autouse, and sited next to the language provider fixture below, because
+    both guard the same mistake: a test reaching a real service because a
+    developer happened to have credentials configured.
+    """
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    }
+    # A fresh directory per test, so nothing accumulates in backend/media and
+    # no test can see a file another test wrote.
+    settings.MEDIA_ROOT = tmp_path / "media"
+
+
+@pytest.fixture(autouse=True)
 def never_call_a_real_language_service(settings):
     """
     Force the stub language provider for every test.

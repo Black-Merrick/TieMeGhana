@@ -1,0 +1,59 @@
+# Netlify builds the frontend only. The backend is a separate service on
+# Render; see render.yaml and SETUP_GUIDE.md.
+#
+# One repository, two deployments. Each platform is pointed at its own
+# directory, so a backend change does not rebuild the frontend and a frontend
+# change does not redeploy Django.
+
+[build]
+  # Everything below is relative to this, so the build runs as if frontend/
+  # were the whole project.
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The API, proxied rather than called across origins.
+#
+# The app asks for /api/... relative to itself, which is what it does in
+# development too. Proxying keeps that true in deployment, so the browser sees
+# one origin: no CORS preflight on every request, no second origin in the CSRF
+# settings, and no build time URL baked into the bundle that would have to be
+# rebuilt to move the backend.
+#
+# Replace the host below with the Render service's own address once it exists.
+[[redirects]]
+  from = "/api/*"
+  to = "https://tiemeghana-api.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# The Django admin, for approving clips. Proxied for the same reason, and
+# because a CSRF protected form posted across origins is refused.
+[[redirects]]
+  from = "/admin/*"
+  to = "https://tiemeghana-api.onrender.com/admin/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/static/*"
+  to = "https://tiemeghana-api.onrender.com/static/:splat"
+  status = 200
+  force = true
+
+# Single page app fallback, last, so it never swallows the rules above. A
+# prescription QR code points at /p/<reference>, which is not a file on disk.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The service worker must never be served from cache, or a device keeps running
+# an old build and a fix appears not to have deployed.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

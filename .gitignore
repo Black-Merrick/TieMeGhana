@@ -42,3 +42,6 @@ coverage/
 .idea/
 .vscode/
 *.swp
+
+# Personal scratch notes, kept out of the repository.
+note.md

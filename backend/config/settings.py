@@ -52,6 +52,15 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Render names the service's own hostname in the environment, and it is not
+# known until the first deploy. Added automatically because forgetting it fails
+# in a way that reads like a crash rather than a setting: every request returns
+# DisallowedHost, including the platform's own health check, so the deploy is
+# marked failed and rolled back before anyone sees a log line explaining it.
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

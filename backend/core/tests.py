@@ -223,8 +223,13 @@ class TestMediaStorageIsConfigurable:
         # A bucket name with no account id is a half filled .env, which is a
         # normal thing to have mid setup. Falling back to disk keeps the app
         # running; failing to start would make it look broken.
+        #
+        # Blanked rather than deleted, because the loader uses setdefault and a
+        # deleted variable is simply read back out of .env on the next import.
+        # That is the behaviour we want from the loader, and it means a blank
+        # value is the shape a half filled file actually has.
         monkeypatch.setenv("R2_BUCKET", "tiemeghana-media")
-        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.setenv("R2_ACCOUNT_ID", "")
 
         assert (
             _reloaded_settings().STORAGES["default"]["BACKEND"]

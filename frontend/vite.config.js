@@ -98,14 +98,31 @@ export default defineConfig(({ mode }) => {
           globIgnores: ["icon.png", "icon-512.png", "screen.png", "icons.svg"],
           runtimeCaching: [
             {
-              urlPattern: /\/media\/clips\/.*\.(mp4|webm)$/,
+              // Sign videos and medicine photographs, wherever they are served
+              // from, FR 6.2.
+              //
+              // Matched on the file rather than on a path prefix. The rule
+              // used to be /\/media\/clips\/, which was correct while media
+              // was served by Django from MEDIA_URL and silently stopped
+              // matching anything when it moved to a bucket under ADR 050: the
+              // URL became https://pub-....r2.dev/clips/appear.mp4, with no
+              // /media/ segment in it. Nothing failed. Offline replay simply
+              // stopped working, which is exactly the kind of quiet regression
+              // a cache rule invites.
+              urlPattern: ({ url }) =>
+                /\.(mp4|webm|jpg|jpeg|png)$/i.test(url.pathname) &&
+                /^\/(clips|stitched|medicines)\//.test(url.pathname),
               handler: "CacheFirst",
               options: {
-                cacheName: "ghsl-clips",
+                cacheName: "ghsl-media",
                 expiration: {
-                  maxEntries: 200,
+                  maxEntries: 300,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
+                // 0 as well as 200: a cross origin response the page did not
+                // ask CORS for is opaque and reports status 0, and refusing to
+                // cache those would leave the bucket's files uncached on any
+                // browser that fetched them without CORS.
                 cacheableResponse: { statuses: [0, 200] },
               },
             },
