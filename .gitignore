@@ -14,6 +14,11 @@ htmlcov/
 /backend/media/
 /backend/staticfiles/
 
+# Filmed GhSL footage. Large binaries, kept out of the repository. The folder's
+# README explains the naming convention and is tracked.
+/backend/footage/*
+!/backend/footage/README.md
+
 # Environment, never commit real credentials
 .env
 .env.local
@@ -23,11 +28,20 @@ htmlcov/
 node_modules/
 dist/
 dist-ssr/
+# vite-plugin-pwa writes the development service worker here, now that the PWA
+# is generated during `npm run dev` so installing can be tested where it is built.
+frontend/dev-dist/
 .vite/
 coverage/
 
 # Editors and OS
+# LibreOffice writes a lock file beside any open document, and the SRS and
+# abstract live in this repository, so one appears whenever they are being read.
+.~lock.*#
 .DS_Store
 .idea/
 .vscode/
 *.swp
+
+# Personal scratch notes, kept out of the repository.
+note.md

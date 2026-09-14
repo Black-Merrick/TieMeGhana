@@ -1,0 +1,40 @@
+# Netlify builds the frontend only. The backend is a separate service on
+# Render; see render.yaml and SETUP_GUIDE.md.
+#
+# One repository, two deployments. Each platform is pointed at its own
+# directory, so a backend change does not rebuild the frontend and a frontend
+# change does not redeploy Django.
+
+[build]
+  # Everything below is relative to this, so the build runs as if frontend/
+  # were the whole project.
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+  # Skip the build when nothing under frontend/ changed. Exit 0 means "no
+  # changes, do not build", which is the opposite of the usual convention and
+  # worth knowing before reading this line.
+  #
+  # The free tier allows 300 build minutes a month, and without this every
+  # backend commit spends some of them rebuilding an identical bundle.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Redirects are not here. They are generated into dist/_redirects by
+# frontend/tools/write-redirects.mjs, because this file is parsed statically
+# and does not substitute environment variables: a rule written here would
+# have the backend's address committed into the repository, and moving the
+# backend would mean editing a file and pushing rather than changing one
+# setting in the dashboard.
+#
+# Set API_PROXY_TARGET in Netlify's environment to the Render service address.
+
+# The service worker must never be served from cache, or a device keeps running
+# an old build and a fix appears not to have deployed.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
