@@ -1,0 +1,92 @@
+# Render builds the backend only. The frontend is a separate deployment on
+# Netlify; see netlify.toml and SETUP_GUIDE.md.
+#
+# This file is a convenience: it can be imported as a Blueprint, or the same
+# settings entered by hand in the dashboard. Either way the values marked
+# sync: false have to be supplied once, because they are secrets or because
+# they name a domain that does not exist until the other half is deployed.
+
+services:
+  - type: web
+    name: tiemeghana-api
+    runtime: docker
+    plan: free
+    # The repository holds both halves, so Render is pointed at one of them.
+    # The Dockerfile's build context becomes this directory, which is what its
+    # `COPY . .` already assumes.
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    # Hit by the platform to decide whether the instance is healthy. This
+    # endpoint touches the database rather than returning a hardcoded 200, so a
+    # green check means the whole path works, per core/views.py.
+    healthCheckPath: /api/health/
+
+    # Only rebuild when the backend changed. Paths are relative to the
+    # repository root, not to rootDir.
+    #
+    # Without this, every frontend commit redeploys Django: a container
+    # rebuild, a migration run, and on the free tier a cold start for whoever
+    # is using it, all to ship a CSS change.
+    buildFilter:
+      paths:
+        - backend/**
+      ignoredPaths:
+        - backend/footage/**
+
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "0"
+      # Render generates and stores this, so it is never in the repository.
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      # The service's own hostname is added automatically from
+      # RENDER_EXTERNAL_HOSTNAME, so this only needs the frontend's domain.
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: DJANGO_SECURE_SSL
+        value: "1"
+      # The Netlify site, for the admin's CSRF check. Proxied requests carry
+      # the browser's origin, which is the Netlify domain rather than this one.
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tiemeghana-db
+          property: connectionString
+
+      # Media storage, ADR 050. Required here, not optional: a container's
+      # filesystem is replaced on every restart and deploy.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_HOST
+        sync: false
+
+      # Khaya's free tier is metered. Left on the stub until the key is set
+      # deliberately, per ADR 015.
+      - key: KHAYA_API_KEY
+        sync: false
+      - key: LANGUAGE_PROVIDER
+        value: stub
+
+      # The admin account, created on first start by ensure_superuser. There
+      # is no shell on the free plan to run createsuperuser in, and without an
+      # admin nobody can approve a clip, which means no clip ever plays.
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+
+databases:
+  - name: tiemeghana-db
+    plan: free

@@ -41,6 +41,19 @@ based gesture detection.
 patient's own device, never on a shared server. That is a structural property
 of the system, not a permissions setting that could be misconfigured.
 
+## Status
+
+**P0 is complete.** All four core groups are built and tested: doctor to
+patient captioning with GhSL rendering, the literacy check and Guided
+Interrogation, patient responses spoken aloud, and the on device transcript.
+312 tests, both halves green.
+
+What the system still needs is not code. It needs **filmed GhSL footage**: the
+clip library holds 95 glosses and zero usable clips, so captions and questions
+correctly report that they cannot be signed yet. Drop recordings into
+`backend/footage/` and coverage appears with no code change. See
+[BACKLOG.md](BACKLOG.md) for the full picture.
+
 ## Architecture
 
 | Layer | Choice | Why |
@@ -61,6 +74,18 @@ clinical consequences.
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
+## Branches
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Stable baseline |
+| `develop` | Integration branch, features merge here first |
+| `feature/p0-core-consultation` | Ongoing work, **commit and push here** |
+
+Day to day work goes to the feature branch. `git push` with no arguments
+already targets it. Merging into `develop` is a pull request, so CI validates
+the change before it reaches an integration branch. See ADR 019.
+
 ## Working on this project
 
 - [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md), the workflow every
@@ -71,4 +96,6 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md).
   every choice that would be expensive to reverse
 - [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md), what happened in each sprint, the
   commands that reproduce it, and the problems hit along the way
+- [DEPLOY.md](DEPLOY.md), the two platforms, every environment variable each
+  one needs, and the four things that fail quietly if they are missed
 - `Tie_Me_Ghana_SRS_v2.pdf`, the requirements specification, source of truth

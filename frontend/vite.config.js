@@ -16,14 +16,20 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET ?? "http://localhost:8000";
 
   return {
-    // Proxying /api in development mirrors what nginx does in the
-    // containerized stack, so the frontend uses one relative API path
-    // everywhere and a CORS or absolute URL problem cannot appear only in
-    // deployment.
+    // Proxying in development mirrors what nginx does in the containerized
+    // stack, so the frontend uses one relative path everywhere and a CORS or
+    // absolute URL problem cannot appear only in deployment.
+    //
+    // /admin and /static are proxied for a sharper reason: without them the
+    // SPA fallback answers /admin with the React app and a 200, so someone
+    // looking for the Django admin gets the patient screen and no error to
+    // explain it. nginx already proxies /admin, so this is dev catching up.
     server: {
       proxy: {
         "/api": { target: apiProxyTarget, changeOrigin: true },
         "/media": { target: apiProxyTarget, changeOrigin: true },
+        "/admin": { target: apiProxyTarget, changeOrigin: true },
+        "/static": { target: apiProxyTarget, changeOrigin: true },
       },
     },
 
@@ -31,6 +37,22 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
+
+        // Without this the plugin generates nothing during `npm run dev`: no
+        // manifest, no service worker, and therefore no install prompt, since
+        // a browser will not offer to install a page that does not claim to be
+        // an app. Requests for /manifest.webmanifest fell through to Vite's
+        // SPA fallback and returned index.html with a 200, which is the most
+        // confusing possible answer: everything looked wired up and nothing
+        // was. Enabled so that installing can be tested where it is built.
+        devOptions: { enabled: true, type: "module" },
+
+        // The plugin adds every manifest icon to the precache by default,
+        // which put the 512px icon back in after globIgnores had taken it out.
+        // The operating system fetches that one when the app is installed, an
+        // action that needs a connection anyway, so it does not have to be
+        // downloaded before the app will open for the first time.
+        includeManifestIcons: false,
         manifest: {
           name: "Tie Me Ghana",
           short_name: "Tie Me Ghana",
@@ -41,11 +63,23 @@ export default defineConfig(({ mode }) => {
           display: "standalone",
           start_url: "/",
           icons: [
+            // Derived from public/icon.png by tools/build_icons.py. Two sizes,
+            // which is what a manifest is expected to carry.
             {
-              src: "icon.svg",
-              sizes: "any",
-              type: "image/svg+xml",
-              purpose: "any maskable",
+              src: "icon-192.png",
+              sizes: "192x192",
+              type: "image/png",
+              purpose: "any",
+            },
+            {
+              src: "icon-512.png",
+              sizes: "512x512",
+              type: "image/png",
+              // Deliberately not "maskable". A launcher crops a maskable icon
+              // to its own rounded shape, and this logo already has one of its
+              // own, so declaring it maskable would round the corners twice
+              // and clip the artwork inside them.
+              purpose: "any",
             },
           ],
         },
@@ -53,17 +87,65 @@ export default defineConfig(({ mode }) => {
           // GhSL clips are the expensive asset. Cache them aggressively so a
           // prescription playlist replays at home with no connection, FR 6.2.
           globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+
+          // The large icons and the stray screenshot are not needed offline,
+          // and precaching them cost around 590 kB on the first visit: the
+          // 512px icon is fetched by the operating system at install time,
+          // which needs a connection anyway, and the 250 kB source is only
+          // there for tools/build_icons.py to derive the rest from. NFR 5 is
+          // about a hospital connection, so what is not needed offline should
+          // not be downloaded before the app will open.
+          globIgnores: ["icon.png", "icon-512.png", "screen.png", "icons.svg"],
           runtimeCaching: [
             {
-              urlPattern: /\/media\/clips\/.*\.(mp4|webm)$/,
+              // Sign videos and medicine photographs, wherever they are served
+              // from, FR 6.2.
+              //
+              // Matched on the file rather than on a path prefix. The rule
+              // used to be /\/media\/clips\/, which was correct while media
+              // was served by Django from MEDIA_URL and silently stopped
+              // matching anything when it moved to a bucket under ADR 050: the
+              // URL became https://pub-....r2.dev/clips/appear.mp4, with no
+              // /media/ segment in it. Nothing failed. Offline replay simply
+              // stopped working, which is exactly the kind of quiet regression
+              // a cache rule invites.
+              urlPattern: ({ url }) =>
+                /\.(mp4|webm|jpg|jpeg|png)$/i.test(url.pathname) &&
+                /^\/(clips|stitched|medicines)\//.test(url.pathname),
               handler: "CacheFirst",
               options: {
-                cacheName: "ghsl-clips",
+                cacheName: "ghsl-media",
                 expiration: {
-                  maxEntries: 200,
+                  maxEntries: 300,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
+                // 0 as well as 200: a cross origin response the page did not
+                // ask CORS for is opaque and reports status 0, and refusing to
+                // cache those would leave the bucket's files uncached on any
+                // browser that fetched them without CORS.
                 cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+            {
+              // The playlist itself, FR 6.2. Without this the clips are cached
+              // but the list naming them is not, so an offline patient has
+              // every video on the phone and no way to reach them.
+              //
+              // NetworkFirst, not CacheFirst: a sign a consultant withdraws
+              // has to stop playing, per ADR 043, and CacheFirst would keep
+              // serving the old playlist indefinitely. This way an online
+              // patient always gets the current rendering and an offline one
+              // gets the last one they saw. Offline replay does mean a
+              // withdrawn sign can still play until the phone next has signal;
+              // that is the unavoidable cost of the requirement, and the whole
+              // reason the sequence is resolved server side on every read.
+              urlPattern: /\/api\/prescriptions\/[^/]+\/$/,
+              handler: "NetworkFirst",
+              options: {
+                cacheName: "prescription-playlists",
+                networkTimeoutSeconds: 5,
+                expiration: { maxEntries: 20 },
+                cacheableResponse: { statuses: [200] },
               },
             },
           ],

@@ -52,6 +52,15 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Render names the service's own hostname in the environment, and it is not
+# known until the first deploy. Added automatically because forgetting it fails
+# in a way that reads like a crash rather than a setting: every request returns
+# DisallowedHost, including the platform's own health check, so the deploy is
+# marked failed and rolled back before anyone sees a log line explaining it.
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -62,6 +71,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "core",
+    "clips",
+    "consultations",
+    "prescriptions",
 ]
 
 MIDDLEWARE = [
@@ -140,7 +152,7 @@ TIME_ZONE = "Africa/Accra"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Hashed, compressed static files in deployment only. The manifest backend
@@ -151,35 +163,170 @@ _staticfiles_backend = (
     if DEBUG
     else "whitenoise.storage.CompressedManifestStaticFilesStorage"
 )
+# Where uploaded and generated media lives: GhSL clips, medicine photographs,
+# and the stitched videos built from them.
+#
+# Local disk by default, so a fresh clone needs no cloud account to run. Object
+# storage when R2 is configured, and on a deployment that is not optional: a
+# container's filesystem is replaced on every restart and deploy, so a
+# prescription issued on Monday would have lost its photographs by Tuesday and
+# the QR code would resolve to broken images.
+#
+# Cloudflare R2 is S3 compatible, so this is the ordinary S3 backend pointed at
+# an R2 endpoint. It is the one chosen because it charges nothing for egress,
+# and this application serves video.
+_R2_BUCKET = os.environ.get("R2_BUCKET", "").strip()
+_R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "").strip()
+
+if _R2_BUCKET and _R2_ACCOUNT_ID:
+    _media_storage = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": _R2_BUCKET,
+            "endpoint_url": f"https://{_R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            "access_key": os.environ.get("R2_ACCESS_KEY_ID", ""),
+            "secret_key": os.environ.get("R2_SECRET_ACCESS_KEY", ""),
+            # R2 has one region and rejects the usual names.
+            "region_name": "auto",
+            # The public base URL for reading, which is a different host from
+            # the endpoint used for writing: the endpoint is authenticated and
+            # the public URL is not. Either the bucket's r2.dev address or a
+            # custom domain attached to it.
+            "custom_domain": os.environ.get("R2_PUBLIC_HOST", "").strip() or None,
+            # URLs are public and permanent rather than signed and expiring. A
+            # prescription QR code is scanned weeks later, and a link that
+            # expires would turn into a broken page at exactly the moment the
+            # patient needs it.
+            "querystring_auth": False,
+            # A clip never changes once reviewed: a corrected sign is published
+            # under a new filename, per the footage README.
+            "object_parameters": {"CacheControl": "public, max-age=2592000"},
+            # Two files with the same name are the same file here, because the
+            # stitching cache is addressed by content. Overwriting keeps that
+            # true rather than accumulating name_a1b2c3 duplicates.
+            "file_overwrite": True,
+        },
+    }
+else:
+    _media_storage = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": _media_storage,
     "staticfiles": {"BACKEND": _staticfiles_backend},
 }
 
-MEDIA_URL = "media/"
+# Leading slash matters. Clip URLs are built from this, and a relative value
+# would resolve against whatever path the app happens to be on.
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Where filmed GhSL footage is dropped before being imported. Configurable
+# because in a deployment it is likely a mounted volume rather than a folder
+# beside the code.
+# Where `import_clips` looks for footage to bring in.
+#
+# A blank value falls back rather than being used, because `Path("")` is
+# `Path(".")`: the import would quietly scan the backend directory instead of
+# the footage one, find nothing, and report success.
+FOOTAGE_DIR = Path(os.environ.get("FOOTAGE_DIR", "").strip() or BASE_DIR / "footage")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
+    # No session authentication. The patient facing API has no user accounts
+    # and never reads request.user, so session authentication buys nothing and
+    # costs a confusing failure: a doctor who approves clips in the admin
+    # leaves a session cookie in the same browser, DRF then treats every API
+    # call as authenticated and enforces CSRF on it, and the consultation
+    # screen starts failing with 403 while telling the doctor the language
+    # service is unreachable.
+    #
+    # The Django admin is unaffected. It is not DRF, and its own forms remain
+    # CSRF protected, which is where CSRF actually matters because those
+    # requests change state as an authenticated user. These endpoints do not.
+    #
+    # If the API ever does authenticate a user, this comes back and the
+    # frontend has to send X-CSRFToken with it.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
 }
 
 # The PWA is served from a separate origin in development, so the Vite dev
 # server needs explicit permission to call the API.
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get(
-        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",")
-    if origin.strip()
-]
+#
+# 5174 is included because Vite moves to the next free port when 5173 is taken,
+# which happens routinely on a machine running more than one project.
+_DEV_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "http://localhost:5174,http://127.0.0.1:5174"
+)
+
+
+def env_origins(name: str, default: str) -> list[str]:
+    """
+    Read a comma separated list of origins from the environment.
+
+    A variable that is present but empty is treated as absent. `.env` files and
+    deployment dashboards are both full of keys with nothing after the `=`,
+    written by someone who meant "leave this alone", and without this line that
+    reads as "allow no origins at all": every request from the frontend is
+    refused as cross site, with nothing in the logs naming the setting that did
+    it.
+    """
+    configured = os.environ.get(name, "").strip() or default
+
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
+
+
+CORS_ALLOWED_ORIGINS = env_origins("CORS_ALLOWED_ORIGINS", _DEV_ORIGINS)
+
+# Origins allowed to POST a form, which the Django admin does.
+#
+# Needed because the dev server proxies /admin: the browser's Origin header is
+# the Vite port while Django sees its own host, and Django rejects the
+# mismatch as a cross site request. Without this, approving a clip in the admin
+# fails with a 403 and a CSRF message that says nothing about proxying.
+#
+# In deployment nginx forwards the real Host, so the two agree, but the setting
+# is still required for any origin that differs from the host Django sees.
+CSRF_TRUSTED_ORIGINS = env_origins(
+    "CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS)
+)
 
 # GhanaNLP Khaya AI credentials. Absent in CI and on fresh clones, which is
 # why every language operation goes through a provider interface that has a
 # deterministic stub implementation.
 KHAYA_API_KEY = os.environ.get("KHAYA_API_KEY", "")
+
+# Which language provider to use: auto, stub, or khaya.
+#
+# The project runs on Khaya's free tier, where every translation, transcription,
+# and synthesis call spends metered credit. `auto` would burn that credit on
+# ordinary development the moment a key is present, so day to day work sets
+# this to `stub` and only switches to `khaya` for a deliberate verification
+# run. See ADR 015.
+LANGUAGE_PROVIDER = os.environ.get("LANGUAGE_PROVIDER", "auto").strip().lower()
+
+# Our own app loggers reach the console. Django configures logging for its own
+# loggers only, so without this a warning we deliberately recorded, such as the
+# reason a language call failed, would be written nowhere and the failure would
+# have to be rediscovered by spending metered credit on it again.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "{levelname} {name}: {message}", "style": "{"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    # propagate stays on. Records reach the root logger as well as our console
+    # handler, which is what lets a test or an aggregator observe them. The
+    # root logger has no handler of its own, so nothing is logged twice.
+    "loggers": {
+        app: {"handlers": ["console"], "level": "INFO", "propagate": True}
+        for app in ("core", "clips", "consultations")
+    },
+}
 
 # Transport security, applied outside development only. Gated on an explicit
 # variable rather than on DEBUG alone, because a hackathon demo may legitimately
