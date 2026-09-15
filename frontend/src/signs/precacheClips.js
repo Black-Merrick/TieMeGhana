@@ -59,7 +59,7 @@ const QUOTA_HEADROOM = 0.8;
  * that could not be fetched, and `unverified` those stored as opaque responses
  * whose status could not be read.
  */
-export async function precacheClips({ signal } = {}) {
+export async function precacheClips({ signal, onProgress } = {}) {
   const idle = { warmed: 0, alreadyCached: 0, failed: 0, unverified: 0 };
 
   if (typeof caches === "undefined") {
@@ -101,8 +101,28 @@ export async function precacheClips({ signal } = {}) {
     return { ...idle, supported: false };
   }
 
+  // What is already here is settled before any downloading starts, so the
+  // count reported to the interface is the real amount of work rather than a
+  // total that keeps being revised downwards as cached entries are discovered.
+  // On a second visit this is the whole list and nothing is announced at all.
+  const missing = [];
   const summary = { ...idle, supported: true };
-  const queue = [...urls];
+
+  for (const url of urls) {
+    if (await isCached(cache, url)) summary.alreadyCached += 1;
+    else missing.push(url);
+  }
+
+  if (!missing.length) {
+    onProgress?.({ total: 0, completed: 0, done: true });
+    return summary;
+  }
+
+  const total = missing.length;
+  let completed = 0;
+  onProgress?.({ total, completed, done: false });
+
+  const queue = [...missing];
 
   const worker = async () => {
     while (queue.length) {
@@ -118,6 +138,9 @@ export async function precacheClips({ signal } = {}) {
       const url = queue.shift();
       const outcome = await warmOne(cache, url, signal);
       summary[outcome] += 1;
+
+      completed += 1;
+      onProgress?.({ total, completed, done: false });
     }
   };
 
@@ -125,7 +148,18 @@ export async function precacheClips({ signal } = {}) {
     Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker),
   );
 
+  onProgress?.({ total, completed, done: true });
+
   return summary;
+}
+
+/** Whether this url is already in the cache, treating a broken cache as no. */
+async function isCached(cache, url) {
+  try {
+    return Boolean(await cache.match(url));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -138,12 +172,6 @@ export async function precacheClips({ signal } = {}) {
  * at all look like success.
  */
 async function warmOne(cache, url, signal) {
-  try {
-    if (await cache.match(url)) return "alreadyCached";
-  } catch {
-    return "failed";
-  }
-
   try {
     const response = await fetch(url, { signal, credentials: "omit" });
     if (!response.ok) return "failed";

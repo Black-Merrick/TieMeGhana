@@ -606,3 +606,98 @@ describe("installing the app, NFR 5", () => {
     expect(screen.queryByTestId("install-app")).not.toBeInTheDocument();
   });
 });
+
+describe("where the privacy policy and terms are offered", () => {
+  /**
+   * The opening screen only.
+   *
+   * They belong where somebody is deciding whether to use the app, not under a
+   * consultation that is already happening: beneath the body map in an
+   * emergency, or under the doctor's message box mid visit, the footer offered
+   * a document to read to somebody who is treating a patient.
+   *
+   * Both addresses still work when typed or followed from elsewhere. They are
+   * simply not advertised on top of clinical work.
+   */
+
+  it("are offered on the screen the app opens into", async () => {
+    render(<App />);
+
+    // Awaited so the health check settling after the first render lands inside
+    // act rather than warning about it.
+    await waitFor(() =>
+      expect(screen.getByTestId("legal-footer")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
+    expect(screen.getByTestId("open-privacy")).toBeInTheDocument();
+    expect(screen.getByTestId("open-terms")).toBeInTheDocument();
+  });
+
+  it("are gone once a consultation has started", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("legal-footer")).not.toBeInTheDocument();
+  });
+
+  it("are gone in emergency mode, which is reachable without a visit", async () => {
+    // The case a single `visit` check would have missed: emergency sits
+    // outside the visit entirely, so it is reachable while the app still has
+    // no visit at all.
+    render(<App />);
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("emergency-triage")).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("legal-footer")).not.toBeInTheDocument();
+  });
+
+  it("are gone on a scanned prescription", async () => {
+    window.history.pushState({}, "", "/p/abc123XYZ_-def");
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("prescription-playback")).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("legal-footer")).not.toBeInTheDocument();
+  });
+
+  it("come back when the visit ends", async () => {
+    // The next patient is handed the device at the opening screen, and that is
+    // the moment the documents are worth offering again.
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("legal-footer")).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByTestId("new-patient"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("legal-footer")).toBeInTheDocument(),
+    );
+  });
+
+  it("still open at their own addresses", async () => {
+    // Removing the links must not remove the pages. A hospital sent the
+    // privacy policy link has to be able to open it.
+    window.history.pushState({}, "", "/privacy");
+
+    render(<App />);
+
+    // Awaited rather than asserted outright, so the health check settling
+    // after the first render lands inside act rather than warning about it.
+    await waitFor(() =>
+      expect(screen.getByTestId("legal-screen")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: /privacy policy/i }),
+    ).toBeInTheDocument();
+  });
+});
