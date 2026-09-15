@@ -1,0 +1,236 @@
+{
+  "viewport": {
+    "width": 1280,
+    "height": 860,
+    "scale": 1.5
+  },
+  "screens": [
+    {
+      "id": "opening",
+      "title": "The opening screen",
+      "image": "shots/opening.png",
+      "callouts": [
+        {
+          "selector": "[data-testid=\"enter-emergency\"]",
+          "note": "Emergency",
+          "x": 1112.953125,
+          "y": 11.6875,
+          "width": 147.046875,
+          "height": 40
+        },
+        {
+          "selector": "[data-testid=\"install-app\"]",
+          "note": "Install app",
+          "x": 975.09375,
+          "y": 13.6875,
+          "width": 121.859375,
+          "height": 36
+        },
+        {
+          "selector": "[data-testid=\"connection-status\"]",
+          "note": "Connection",
+          "x": 920.703125,
+          "y": 16.09375,
+          "width": 38.390625,
+          "height": 31.171875
+        },
+        {
+          "selector": "[data-testid=\"choice-yes\"]",
+          "note": "Yes",
+          "x": 384,
+          "y": 378.09375,
+          "width": 248,
+          "height": 180
+        },
+        {
+          "selector": "[data-testid=\"choice-no\"]",
+          "note": "No",
+          "x": 648,
+          "y": 378.09375,
+          "width": 248,
+          "height": 180
+        },
+        {
+          "selector": "[data-testid=\"open-privacy\"]",
+          "note": "Privacy and terms",
+          "x": 1070.140625,
+          "y": 817,
+          "width": 87.9375,
+          "height": 19
+        }
+      ]
+    },
+    {
+      "id": "consultation",
+      "title": "Talking to a patient who reads",
+      "image": "shots/consultation.png",
+      "callouts": [
+        {
+          "selector": "[data-testid=\"doctor-language\"]",
+          "note": "I speak",
+          "x": 41,
+          "y": 129.5625,
+          "width": 305.53125,
+          "height": 30.59375
+        },
+        {
+          "selector": "[data-testid=\"output-language\"]",
+          "note": "Speak in",
+          "x": 41,
+          "y": 169.75,
+          "width": 244.125,
+          "height": 30.59375
+        },
+        {
+          "selector": "#doctor-message",
+          "note": "The message box",
+          "x": 41,
+          "y": 214.734375,
+          "width": 562.609375,
+          "height": 93.59375
+        },
+        {
+          "selector": ".consultation__send",
+          "note": "Send to patient",
+          "x": 41,
+          "y": 320.328125,
+          "width": 188.609375,
+          "height": 46.390625
+        },
+        {
+          "selector": "[data-testid=\"microphone-button\"]",
+          "note": "Speak to patient",
+          "x": 241.609375,
+          "y": 320.328125,
+          "width": 194.46875,
+          "height": 46.390625
+        },
+        {
+          "selector": "[data-testid=\"new-patient\"]",
+          "note": "New patient",
+          "x": 984.875,
+          "y": 13.6875,
+          "width": 112.078125,
+          "height": 36
+        }
+      ]
+    },
+    {
+      "id": "guided",
+      "title": "Talking to a patient who does not read",
+      "image": "shots/guided.png",
+      "callouts": [
+        {
+          "selector": "#doctor-message",
+          "note": "The question",
+          "x": 41,
+          "y": 180.140625,
+          "width": 562.609375,
+          "height": 93.59375
+        },
+        {
+          "selector": ".consultation__send",
+          "note": "Send to patient",
+          "x": 41,
+          "y": 285.734375,
+          "width": 188.6875,
+          "height": 46.390625
+        },
+        {
+          "selector": "[data-testid=\"ask-where-it-hurts\"]",
+          "note": "Ask where it hurts",
+          "x": 41,
+          "y": 348.125,
+          "width": 562.609375,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "id": "emergency",
+      "title": "Emergency mode",
+      "image": "shots/emergency.png",
+      "callouts": [
+        {
+          "selector": "[data-testid=\"triage-voice\"]",
+          "note": "Read answers in",
+          "x": 524.875,
+          "y": 100.375,
+          "width": 158.78125,
+          "height": 61.1875
+        },
+        {
+          "selector": ".alerts",
+          "note": "Cannot breathe, Pregnant",
+          "x": 41,
+          "y": 312.53125,
+          "width": 612.140625,
+          "height": 144
+        },
+        {
+          "selector": "[data-testid=\"pain-scale\"]",
+          "note": "How much pain",
+          "x": 41,
+          "y": 550.515625,
+          "width": 612.140625,
+          "height": 116.03125
+        },
+        {
+          "selector": "[data-testid=\"body-map\"]",
+          "note": "Point to where it hurts",
+          "x": 941.28125,
+          "y": 333.125,
+          "width": 291.328125,
+          "height": 584.796875
+        },
+        {
+          "selector": "[data-testid=\"leave-emergency\"]",
+          "note": "Leave emergency mode",
+          "x": 1049.796875,
+          "y": 100.375,
+          "width": 210.203125,
+          "height": 40
+        }
+      ]
+    },
+    {
+      "id": "prescription",
+      "title": "Writing a prescription",
+      "image": "shots/prescription.png",
+      "callouts": [
+        {
+          "selector": ".photo__pick",
+          "note": "Photograph of the medicine",
+          "x": 289,
+          "y": 207.375,
+          "width": 702,
+          "height": 72.578125
+        },
+        {
+          "selector": "[data-testid=\"amount-0\"]",
+          "note": "How much",
+          "x": 306,
+          "y": 461.3125,
+          "width": 328,
+          "height": 44
+        },
+        {
+          "selector": ".dose__times",
+          "note": "When",
+          "x": 306,
+          "y": 517.3125,
+          "width": 668,
+          "height": 57.984375
+        },
+        {
+          "selector": "[data-testid=\"issue-prescription\"]",
+          "note": "Issue the prescription",
+          "x": 484.75,
+          "y": 774.046875,
+          "width": 161.984375,
+          "height": 44
+        }
+      ]
+    }
+  ]
+}

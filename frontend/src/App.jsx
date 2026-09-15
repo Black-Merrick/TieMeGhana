@@ -6,6 +6,8 @@ import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import InstallApp from "./components/InstallApp.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import ScreenLoader from "./components/ScreenLoader.jsx";
+import SetupProgress from "./components/SetupProgress.jsx";
+import useClipWarmup from "./hooks/useClipWarmup.js";
 
 /*
  * Split out of the main bundle, fetched the first time they are opened.
@@ -26,6 +28,12 @@ const PrescriptionPlayback = lazy(
 );
 import ConnectionStatus from "./components/ConnectionStatus.jsx";
 import { referenceFromPath } from "./api/prescriptions.js";
+import LegalScreen from "./legal/LegalScreen.jsx";
+import {
+  LegalDocument,
+  legalDocumentFromPath,
+  pathForLegalDocument,
+} from "./legal/documents.js";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import {
   clearCurrentPrescription,
@@ -56,7 +64,18 @@ export default function App() {
   // navigates to it; a scan is always a fresh page load.
   const [prescriptionReference] = useState(() => referenceFromPath());
 
+  // The privacy policy and the terms, at /privacy and /terms. Held in state as
+  // well as in the address so opening one does not tear down the consultation
+  // behind it: a clinician checking what the app stores, mid visit, must come
+  // back to the question they were on rather than to an empty screen.
+  const [legal, setLegal] = useState(() => legalDocumentFromPath());
+
   const [connection, setConnection] = useState("checking");
+
+  // Stocking the device with sign videos on first open, reported on screen.
+  // Null once everything is already cached, which is every visit after the
+  // first, and the indicator then renders nothing.
+  const clipWarmup = useClipWarmup();
 
   // Migrations written but not applied to this database, reported by the
   // health endpoint. Surfaced here because the alternative is finding out from
@@ -89,6 +108,38 @@ export default function App() {
   // The listener's language still applies in an emergency, and there may be no
   // visit yet to have set it.
   const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
+
+  // The literacy check, which is what the app opens into before a visit
+  // exists. `visit` alone would be enough, since the prescription builder is
+  // only reachable inside one, but emergency mode is reachable without a visit
+  // at all and must not carry the footer either.
+  const showingOpeningScreen = !emergency && !visit;
+
+  /**
+   * Open or close a legal document, keeping the address in step.
+   *
+   * pushState rather than assigning to location, so the consultation behind it
+   * is never unloaded and coming back is instant even with no connection.
+   */
+  const openLegal = (document) => {
+    setLegal(document);
+    window.history.pushState({ legal: document }, "", pathForLegalDocument(document));
+    // A document opened from the bottom of a long consultation would otherwise
+    // begin part way down, which reads as a broken page rather than a new one.
+    window.scrollTo(0, 0);
+  };
+
+  const leaveLegal = () => {
+    setLegal(null);
+    window.history.pushState({ legal: null }, "", "/");
+  };
+
+  // The browser's own back button, which is the one a patient will reach for.
+  useEffect(() => {
+    const onPopState = () => setLegal(legalDocumentFromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     // The health check is for the hospital device. A patient opening their
@@ -158,6 +209,24 @@ export default function App() {
     setVisit(saveOutputLanguage(language) ?? loadVisit());
   };
 
+  // The documents come first, and they are plain content with no dependency on
+  // a visit, a connection or a database. Somebody sent a link to the privacy
+  // policy must get the privacy policy, not a consultation screen that happens
+  // to be what the app usually opens into.
+  if (legal) {
+    return (
+      <div className="app">
+        <main className="shell">
+          <LegalScreen
+            document={legal}
+            onOpen={openLegal}
+            onLeave={leaveLegal}
+          />
+        </main>
+      </div>
+    );
+  }
+
   // Nothing else renders. No shell, no bar, no route back into the app: a link
   // anyone holding the phone can open shows a prescription and stops there.
   // FR 6.4.
@@ -170,6 +239,7 @@ export default function App() {
             <PrescriptionPlayback reference={prescriptionReference} />
           </Suspense>
         </main>
+        <SetupProgress progress={clipWarmup} />
       </div>
     );
   }
@@ -327,7 +397,96 @@ export default function App() {
           <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
         )}
       </main>
+
+      {/* The opening screen only.
+
+          These belong where somebody is deciding whether to use the app, not
+          under a consultation that is already happening. On every other screen
+          the footer competed with the work: it sat beneath the body map in an
+          emergency, and under the doctor's message box mid visit, offering a
+          document to read to somebody who is treating a patient.
+
+          Both addresses still work when typed or followed from elsewhere, so
+          nothing is unreachable. They are simply not advertised on top of a
+          consultation. */}
+      {showingOpeningScreen ? <LegalFooter onOpen={openLegal} /> : null}
+      <SetupProgress progress={clipWarmup} />
     </div>
+  );
+}
+
+/**
+ * Where the privacy policy and the terms are reachable from.
+ *
+ * On every screen, because a policy somebody has to go looking for is a policy
+ * written for nobody. Real links with real addresses rather than buttons, so
+ * they can be opened in a new tab, copied, and sent to a hospital's data
+ * protection officer without first being found inside a running app.
+ *
+ * The click is intercepted to keep the consultation behind it alive; holding a
+ * modifier, or right clicking, falls through to the browser and opens the
+ * address properly.
+ */
+/**
+ * The user manual, built by tools/build-manual.mjs into public/.
+ *
+ * A plain path rather than an import, because it is a static file copied
+ * through the build rather than a module, and because the name is also typed
+ * into the manual's own build script: keeping it in one named constant here is
+ * what makes a broken link findable.
+ */
+const MANUAL_PDF = "/tie-me-ghana-manual.pdf";
+
+function LegalFooter({ onOpen }) {
+  const open = (event, document) => {
+    // Let the browser handle anything that is not a plain left click: a new
+    // tab, a new window, a saved link.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    onOpen(document);
+  };
+
+  return (
+    <footer className="legal-footer" data-testid="legal-footer">
+      <p className="legal-footer__note">
+        A pilot for the MTN Ghana Tekyerema Pa Hackathon 2026. Not yet approved
+        for clinical use.
+      </p>
+      <nav className="legal-footer__links" aria-label="Legal">
+        {/* A real file at a real address, opened in its own tab. The browser's
+            own viewer shows it and offers the download, which is one link
+            doing both jobs rather than two links doing one each.
+
+            Not routed through the app: a manual is what somebody reaches for
+            when the app is confusing them, so it must not depend on the app
+            working. It is also the one thing here worth having open beside the
+            app rather than instead of it. */}
+        <a
+          href={MANUAL_PDF}
+          target="_blank"
+          rel="noopener"
+          data-testid="open-manual"
+        >
+          User Manual
+        </a>
+        <a
+          href={pathForLegalDocument(LegalDocument.PRIVACY)}
+          onClick={(event) => open(event, LegalDocument.PRIVACY)}
+          data-testid="open-privacy"
+        >
+          Privacy Policy
+        </a>
+        <a
+          href={pathForLegalDocument(LegalDocument.TERMS)}
+          onClick={(event) => open(event, LegalDocument.TERMS)}
+          data-testid="open-terms"
+        >
+          Terms of Use
+        </a>
+      </nav>
+    </footer>
   );
 }
 
