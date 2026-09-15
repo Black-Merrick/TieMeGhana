@@ -26,6 +26,12 @@ const PrescriptionPlayback = lazy(
 );
 import ConnectionStatus from "./components/ConnectionStatus.jsx";
 import { referenceFromPath } from "./api/prescriptions.js";
+import LegalScreen from "./legal/LegalScreen.jsx";
+import {
+  LegalDocument,
+  legalDocumentFromPath,
+  pathForLegalDocument,
+} from "./legal/documents.js";
 import { clearCurrentExchange } from "./consultation/currentExchange.js";
 import {
   clearCurrentPrescription,
@@ -55,6 +61,12 @@ export default function App() {
   // Read from the path rather than held in state because nothing in the app
   // navigates to it; a scan is always a fresh page load.
   const [prescriptionReference] = useState(() => referenceFromPath());
+
+  // The privacy policy and the terms, at /privacy and /terms. Held in state as
+  // well as in the address so opening one does not tear down the consultation
+  // behind it: a clinician checking what the app stores, mid visit, must come
+  // back to the question they were on rather than to an empty screen.
+  const [legal, setLegal] = useState(() => legalDocumentFromPath());
 
   const [connection, setConnection] = useState("checking");
 
@@ -89,6 +101,32 @@ export default function App() {
   // The listener's language still applies in an emergency, and there may be no
   // visit yet to have set it.
   const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
+
+  /**
+   * Open or close a legal document, keeping the address in step.
+   *
+   * pushState rather than assigning to location, so the consultation behind it
+   * is never unloaded and coming back is instant even with no connection.
+   */
+  const openLegal = (document) => {
+    setLegal(document);
+    window.history.pushState({ legal: document }, "", pathForLegalDocument(document));
+    // A document opened from the bottom of a long consultation would otherwise
+    // begin part way down, which reads as a broken page rather than a new one.
+    window.scrollTo(0, 0);
+  };
+
+  const leaveLegal = () => {
+    setLegal(null);
+    window.history.pushState({ legal: null }, "", "/");
+  };
+
+  // The browser's own back button, which is the one a patient will reach for.
+  useEffect(() => {
+    const onPopState = () => setLegal(legalDocumentFromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     // The health check is for the hospital device. A patient opening their
@@ -158,6 +196,24 @@ export default function App() {
     setVisit(saveOutputLanguage(language) ?? loadVisit());
   };
 
+  // The documents come first, and they are plain content with no dependency on
+  // a visit, a connection or a database. Somebody sent a link to the privacy
+  // policy must get the privacy policy, not a consultation screen that happens
+  // to be what the app usually opens into.
+  if (legal) {
+    return (
+      <div className="app">
+        <main className="shell">
+          <LegalScreen
+            document={legal}
+            onOpen={openLegal}
+            onLeave={leaveLegal}
+          />
+        </main>
+      </div>
+    );
+  }
+
   // Nothing else renders. No shell, no bar, no route back into the app: a link
   // anyone holding the phone can open shows a prescription and stops there.
   // FR 6.4.
@@ -170,6 +226,11 @@ export default function App() {
             <PrescriptionPlayback reference={prescriptionReference} />
           </Suspense>
         </main>
+        {/* The one exception to "no route back into the app", and it has to be.
+            This is the screen a patient reaches on their own phone, so it is
+            exactly where the policy has to be reachable. These are documents,
+            not a way into a consultation. */}
+        <LegalFooter onOpen={openLegal} />
       </div>
     );
   }
@@ -327,7 +388,58 @@ export default function App() {
           <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
         )}
       </main>
+
+      <LegalFooter onOpen={openLegal} />
     </div>
+  );
+}
+
+/**
+ * Where the privacy policy and the terms are reachable from.
+ *
+ * On every screen, because a policy somebody has to go looking for is a policy
+ * written for nobody. Real links with real addresses rather than buttons, so
+ * they can be opened in a new tab, copied, and sent to a hospital's data
+ * protection officer without first being found inside a running app.
+ *
+ * The click is intercepted to keep the consultation behind it alive; holding a
+ * modifier, or right clicking, falls through to the browser and opens the
+ * address properly.
+ */
+function LegalFooter({ onOpen }) {
+  const open = (event, document) => {
+    // Let the browser handle anything that is not a plain left click: a new
+    // tab, a new window, a saved link.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    onOpen(document);
+  };
+
+  return (
+    <footer className="legal-footer" data-testid="legal-footer">
+      <p className="legal-footer__note">
+        A pilot for the MTN Ghana Tekyerema Pa Hackathon 2026. Not yet approved
+        for clinical use.
+      </p>
+      <nav className="legal-footer__links" aria-label="Legal">
+        <a
+          href={pathForLegalDocument(LegalDocument.PRIVACY)}
+          onClick={(event) => open(event, LegalDocument.PRIVACY)}
+          data-testid="open-privacy"
+        >
+          Privacy Policy
+        </a>
+        <a
+          href={pathForLegalDocument(LegalDocument.TERMS)}
+          onClick={(event) => open(event, LegalDocument.TERMS)}
+          data-testid="open-terms"
+        >
+          Terms of Use
+        </a>
+      </nav>
+    </footer>
   );
 }
 

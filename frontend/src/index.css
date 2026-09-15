@@ -4026,3 +4026,206 @@ body {
   flex-direction: column;
   gap: 0.3rem;
 }
+
+/* --------------------------------------------------------------------------
+   The privacy policy and the terms.
+
+   Typeset as documents rather than as app screens. Somebody reading these is
+   reading prose at length, possibly a hospital's data protection officer
+   deciding whether the app may be used at all, so the measure is narrow, the
+   line height is generous and nothing competes with the text.
+   -------------------------------------------------------------------------- */
+
+.legal-screen {
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.legal-screen__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.legal-screen__back,
+.legal-screen__switch {
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
+  color: var(--colour-primary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.legal-screen__back:hover,
+.legal-screen__switch:hover {
+  border-color: var(--colour-primary);
+}
+
+.legal {
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  /* Long prose wants a looser line than an interface does. */
+  line-height: 1.65;
+  color: var(--colour-ink);
+}
+
+.legal__header {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--colour-line);
+}
+
+.legal__title {
+  margin: 0;
+  font-size: 1.65rem;
+  letter-spacing: -0.02em;
+}
+
+.legal__updated {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}
+
+/* The part most people will actually read. Given its own ground so it is
+   found without hunting, and placed before the detail rather than after it. */
+.legal__summary {
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.4rem;
+  border-radius: var(--radius);
+  background: var(--colour-mint-pale);
+  border: 1px solid var(--colour-mint);
+}
+
+.legal__summary-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--colour-primary-deep);
+}
+
+.legal__summary-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.legal section + section {
+  margin-top: 2rem;
+}
+
+.legal h3 {
+  margin: 0 0 0.7rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+  color: var(--colour-primary-deep);
+}
+
+.legal h4 {
+  margin: 1.4rem 0 0.5rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--colour-muted);
+}
+
+.legal p {
+  margin: 0 0 0.9rem;
+}
+
+.legal p:last-child {
+  margin-bottom: 0;
+}
+
+.legal ul {
+  margin: 0 0 0.9rem;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+/* Definition list for the four things kept on the device, because each is a
+   named item with an explanation rather than a bullet in a sequence. */
+.legal__terms {
+  margin: 0 0 1rem;
+}
+
+.legal__terms dt {
+  font-weight: 650;
+  color: var(--colour-primary-deep);
+}
+
+.legal__terms dd {
+  margin: 0.2rem 0 0.9rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--colour-mint);
+}
+
+.legal a {
+  color: var(--colour-primary);
+}
+
+/* The footer carrying the links, on every screen. A policy somebody has to go
+   looking for is a policy written for nobody. */
+.legal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 1.5rem;
+  border-top: 1px solid var(--colour-line);
+  margin-top: auto;
+}
+
+.legal-footer__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--colour-muted);
+}
+
+.legal-footer__links {
+  display: flex;
+  gap: 1.1rem;
+}
+
+.legal-footer__links a {
+  font-size: 0.85rem;
+  font-weight: 550;
+  color: var(--colour-primary);
+}
+
+/* The split layout fills the viewport and scrolls its two columns separately,
+   so a footer in the normal flow would be pushed off the bottom where nothing
+   can reach it. Kept in the flow of the page instead of pinned, since pinning
+   it would eat vertical space the body map needs. */
+.app--split .legal-footer {
+  padding-block: 0.6rem;
+}
+
+@media (max-width: 40rem) {
+  .legal {
+    padding: 1.35rem 1.15rem;
+  }
+
+  .legal__title {
+    font-size: 1.4rem;
+  }
+
+  .legal-footer {
+    justify-content: center;
+    text-align: center;
+  }
+}
