@@ -35,6 +35,20 @@ export function fetchCriticalAlerts() {
 }
 
 /**
+ * Fetch every clip that can actually be played.
+ *
+ * The endpoint is the clip library's own list, which the viewset already
+ * restricts to `resolvable()`: approved by a GhSL consultant and filmed. So
+ * this returns exactly the set worth having on the device in advance, and
+ * cannot include a sign that has not been reviewed.
+ *
+ * Used to warm the media cache when the app opens. See signs/precacheClips.js.
+ */
+export function fetchResolvableClips() {
+  return apiRequest("/clips/");
+}
+
+/**
  * Fetch one reviewed clip by its gloss.
  *
  * Rejects when the clip is missing, unfilmed, or unapproved, all of which the
