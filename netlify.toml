@@ -18,10 +18,27 @@
   #
   # The free tier allows 300 build minutes a month, and without this every
   # backend commit spends some of them rebuilding an identical bundle.
+  #
+  # Note the trap: `.` is the base directory, so this file is not in it. A
+  # commit that changes only netlify.toml skips the build, and the settings
+  # below therefore do not take effect until something under frontend/ changes.
+  # If a config change appears to have done nothing, that is why; an empty
+  # commit touching frontend/ is enough to apply it.
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
 
 [build.environment]
   NODE_VERSION = "22"
+
+# The keep-alive scheduler lives here, netlify/functions/keep-awake.mjs, which
+# declares its own cron schedule in the file rather than in this config. The
+# path is relative to `base` above, so it resolves to frontend/netlify/functions.
+#
+# Stated explicitly even though it is the default, because the default is
+# relative to the repository root in some Netlify docs and to the base
+# directory in others, and a functions directory that is merely not found
+# deploys a site with no functions and no error.
+[functions]
+  directory = "netlify/functions"
 
 # Redirects are not here. They are generated into dist/_redirects by
 # frontend/tools/write-redirects.mjs, because this file is parsed statically
