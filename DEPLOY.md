@@ -163,12 +163,14 @@ supplies the settings, so the form should already show:
 
 ### Environment variables
 
-| Variable | Value |
-| --- | --- |
-| `API_PROXY_TARGET` | `https://your-service.onrender.com` |
+| Variable | Value | Why |
+| --- | --- | --- |
+| `API_PROXY_TARGET` | `https://your-service.onrender.com` | The Render address from step 2 |
+| `KEEP_AWAKE` | `on`, or `off` to stop the pings | Optional, defaults to `on`. See **Keeping the backend awake** |
 
-One, and it is the Render address from step 2. No trailing slash is needed;
-one is stripped if present.
+`API_PROXY_TARGET` is the only one that has to be set. No trailing slash is
+needed; one is stripped if present. It is also what the keep-alive function
+pings, so there is no second place to keep the backend's address in step with.
 
 The app calls `/api/...` relative to itself, exactly as it does in
 development, and the build writes redirects proxying `/api`, `/admin` and
@@ -223,11 +225,56 @@ Then open the site itself and check three things a health check cannot:
 
 ---
 
-## What the free tier does
+## Keeping the backend awake
 
-**The backend sleeps after about 15 minutes** of no traffic and takes 30 to 60
-seconds to wake. On a demo that is fatal: a judge taps and nothing happens.
-Open the app yourself a minute beforehand.
+Render's free tier stops the container after about 15 minutes with no inbound
+request, and the next request waits 30 to 60 seconds while it starts. For this
+app that lands on the worst possible person: a patient who cannot hear taps a
+sign and nothing happens, with no way to ask why.
+
+`frontend/netlify/functions/keep-awake.mjs` is a Netlify scheduled function
+that requests `/api/ping/` every five minutes. It needs no setup beyond
+`API_PROXY_TARGET`, which is already set for the redirects, and nothing has to
+be enabled in the dashboard: the schedule is declared in the file and Netlify
+registers it on deploy. Check it under **Logs > Functions**.
+
+Five minutes rather than fourteen, because the sleep threshold is approximate
+and schedulers drift. Three chances inside the window means one late run does
+not let it sleep.
+
+**It pings `/api/ping/`, and that matters.** `/api/health/` opens a database
+connection and reads the migration table. Pinging *that* every five minutes
+would hold the Postgres compute awake around the clock too, and on a
+serverless database that suspends when idle, the monthly compute allowance
+would go on the monitor instead of on patients — with the database being the
+half whose exhaustion stops the app working. `/api/ping/` touches nothing; a
+test asserts it runs in zero queries.
+
+### What it costs
+
+**Read this before leaving it on.** Render's free tier includes **750
+instance-hours a month across all free web services**. A service kept awake
+continuously uses about **720 hours in a 30-day month, 744 in a 31-day one**.
+So one service fits, with almost no margin, and **two do not**: a second free
+service would put the account over and suspend them both. If you add another
+Render service, turn this off.
+
+To turn it off, set `KEEP_AWAKE=off` in Netlify and redeploy. The function
+still runs on schedule and returns immediately without pinging, so the
+schedule is there when you want it back.
+
+Netlify's free tier includes 125,000 function invocations a month. At five
+minute intervals this uses about 8,700, so it is not the constraint.
+
+### If you would rather not run it continuously
+
+Leave `KEEP_AWAKE=off` and open the app yourself a minute before the demo. That
+costs nothing and solves the same problem for a scheduled presentation. The
+keep-alive earns its cost when people arrive unannounced.
+
+---
+
+## What else the free tier does
 
 **Stitching is CPU work on a shared instance**, so the first prescription is
 slow. Every later one for the same medicines is served from the cache in R2,
