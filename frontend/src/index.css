@@ -551,13 +551,6 @@ body {
     overflow: hidden;
   }
 
-  /* The footer is a row of this column, not something after it. Without this
-     the panes take the whole height and the legal links sit below the fold of
-     a page that cannot scroll, which is to say they do not exist. */
-  .app--split .legal-footer {
-    flex: 0 0 auto;
-  }
-
   .app--split .shell--wide {
     /* A flex column rather than a height percentage, so the region's own
        padding is taken out of the space the panes divide up instead of being
@@ -4232,14 +4225,6 @@ body {
   font-size: 0.85rem;
   font-weight: 550;
   color: var(--colour-primary);
-}
-
-/* The split layout fills the viewport and scrolls its two columns separately,
-   so a footer in the normal flow would be pushed off the bottom where nothing
-   can reach it. Kept in the flow of the page instead of pinned, since pinning
-   it would eat vertical space the body map needs. */
-.app--split .legal-footer {
-  padding-block: 0.6rem;
 }
 
 @media (max-width: 40rem) {

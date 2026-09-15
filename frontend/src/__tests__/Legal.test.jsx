@@ -259,23 +259,12 @@ describe("what the documents must say plainly", () => {
   });
 });
 
-describe("the footer stays reachable", () => {
+describe("the split layout has room for its content", () => {
   /**
-   * The consultation and emergency screens lock themselves to the viewport and
-   * hide the overflow, so anything below the panes is not merely out of view,
-   * it cannot be scrolled to at all. A footer placed there without allowing for
-   * it would be links that do not exist.
-   *
    * Asserted against the stylesheet because jsdom has no layout engine and so
    * cannot be asked where an element ended up.
    */
   const css = () => read("src/index.css");
-
-  it("the locked layout keeps a row for the footer", () => {
-    expect(css()).toMatch(
-      /\.app--split \.legal-footer \{\s*flex: 0 0 auto;/,
-    );
-  });
 
   it("the layout only locks when the viewport is tall enough for it", () => {
     // On a 1366 by 768 laptop the panes were dividing about 640 pixels, which

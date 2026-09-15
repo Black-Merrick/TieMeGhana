@@ -109,6 +109,12 @@ export default function App() {
   // visit yet to have set it.
   const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
 
+  // The literacy check, which is what the app opens into before a visit
+  // exists. `visit` alone would be enough, since the prescription builder is
+  // only reachable inside one, but emergency mode is reachable without a visit
+  // at all and must not carry the footer either.
+  const showingOpeningScreen = !emergency && !visit;
+
   /**
    * Open or close a legal document, keeping the address in step.
    *
@@ -233,11 +239,6 @@ export default function App() {
             <PrescriptionPlayback reference={prescriptionReference} />
           </Suspense>
         </main>
-        {/* The one exception to "no route back into the app", and it has to be.
-            This is the screen a patient reaches on their own phone, so it is
-            exactly where the policy has to be reachable. These are documents,
-            not a way into a consultation. */}
-        <LegalFooter onOpen={openLegal} />
         <SetupProgress progress={clipWarmup} />
       </div>
     );
@@ -397,7 +398,18 @@ export default function App() {
         )}
       </main>
 
-      <LegalFooter onOpen={openLegal} />
+      {/* The opening screen only.
+
+          These belong where somebody is deciding whether to use the app, not
+          under a consultation that is already happening. On every other screen
+          the footer competed with the work: it sat beneath the body map in an
+          emergency, and under the doctor's message box mid visit, offering a
+          document to read to somebody who is treating a patient.
+
+          Both addresses still work when typed or followed from elsewhere, so
+          nothing is unreachable. They are simply not advertised on top of a
+          consultation. */}
+      {showingOpeningScreen ? <LegalFooter onOpen={openLegal} /> : null}
       <SetupProgress progress={clipWarmup} />
     </div>
   );
