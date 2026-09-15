@@ -37,6 +37,32 @@ API_KEY_HEADER = "Ocp-Apim-Subscription-Key"
 REQUEST_TIMEOUT_SECONDS = 4
 
 
+def _refuse_unless_a_real_language(**languages: Language) -> None:
+    """
+    Stop `MIXED` from ever being sent to Khaya as a language code.
+
+    Every language argument here is interpolated straight into the request:
+    `params={"language": str(language)}` and `lang=f"{source}-{target}"`. So a
+    `MIXED` that slipped through would go out as "mixed" or "mixed-tw". That is
+    a metered request on a free tier, and the failure it produces is the bad
+    kind: either an error mid consultation, or a 200 the doctor cannot tell
+    from real Twi.
+
+    A mixed utterance is meant to be passed through untranslated, which is
+    `build_caption`'s job. This is the backstop for the day someone adds a code
+    path that forgets, because that mistake costs credit and clinical trust
+    rather than a test failure.
+    """
+    for role, language in languages.items():
+        if not language.is_provider_language:
+            raise LanguageError(
+                f"Khaya cannot be asked for {role}={language!s}: it is a "
+                "declaration that one utterance mixes English and Twi, not a "
+                "language the service can transcribe, translate or speak. Such "
+                "text is passed through untranslated instead."
+            )
+
+
 class KhayaLanguageProvider(LanguageProvider):
     """Twi speech recognition, translation, and synthesis through Khaya AI."""
 
@@ -54,6 +80,7 @@ class KhayaLanguageProvider(LanguageProvider):
     def transcribe(
         self, audio: bytes, *, language: Language, content_type: str | None = None
     ) -> str:
+        _refuse_unless_a_real_language(language=language)
         response = self._request(
             TRANSCRIBE_PATH,
             params={"language": str(language)},
@@ -65,6 +92,7 @@ class KhayaLanguageProvider(LanguageProvider):
         return self._read_text(response)
 
     def translate(self, text: str, *, source: Language, target: Language) -> str:
+        _refuse_unless_a_real_language(source=source, target=target)
         response = self._request(
             TRANSLATE_PATH,
             json={"in": text, "lang": f"{source}-{target}"},
@@ -72,6 +100,7 @@ class KhayaLanguageProvider(LanguageProvider):
         return self._read_text(response)
 
     def synthesize(self, text: str, *, language: Language) -> bytes:
+        _refuse_unless_a_real_language(language=language)
         response = self._request(
             SYNTHESIZE_PATH,
             json={"text": text, "language": str(language)},

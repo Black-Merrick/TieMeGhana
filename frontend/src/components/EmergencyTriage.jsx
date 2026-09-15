@@ -28,7 +28,22 @@ import SpokenResponse, { StubNotice } from "./SpokenResponse.jsx";
  * - There is no text input anywhere, per FR 5.4, so a first responder who has
  *   never seen the app cannot be stuck looking for what to type.
  */
-export default function EmergencyTriage({ outputLanguage, onLeave }) {
+/**
+ * The voices a tapped answer can be read out in, FR 5.5.
+ *
+ * English and Twi only. This chooses the voice, and there is no mixed voice to
+ * choose, so offering one would mean picking behind the responder's back.
+ */
+const VOICES = [
+  { value: "en", label: "English" },
+  { value: "tw", label: "Twi" },
+];
+
+export default function EmergencyTriage({
+  outputLanguage,
+  onOutputLanguageChange = null,
+  onLeave,
+}) {
   const [alerts, setAlerts] = useState(null);
   const [chosen, setChosen] = useState({ pain: null, location: null, alert: null });
   const spoken = useSpokenResponse();
@@ -102,6 +117,33 @@ export default function EmergencyTriage({ outputLanguage, onLeave }) {
           <h2 className="triage__title">Emergency</h2>
           <p className="triage__hint">No typing needed.</p>
         </div>
+
+        {/* FR 5.5 speaks every tap aloud, and who is listening is not knowable
+            in advance: emergency can be the first screen anyone opens, before
+            a visit exists and before anyone has chosen anything. A Twi
+            speaking responder was previously stuck hearing English with no
+            control to change it. Two radios rather than a menu, because
+            section 4.1 asks for choices to be on screen, and here more than
+            anywhere: this has to be usable in seconds by someone who has never
+            seen the app. */}
+        {onOutputLanguageChange ? (
+          <fieldset className="triage__voice" data-testid="triage-voice">
+            <legend className="triage__voice-legend">Read answers in</legend>
+            {VOICES.map((voice) => (
+              <label key={voice.value} className="triage__voice-option">
+                <input
+                  type="radio"
+                  name="triage-output-language"
+                  value={voice.value}
+                  checked={outputLanguage === voice.value}
+                  onChange={() => onOutputLanguageChange(voice.value)}
+                />
+                {voice.label}
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+
         <div className="triage__said">
           {spoken.canReplay && !speaking ? (
             <button

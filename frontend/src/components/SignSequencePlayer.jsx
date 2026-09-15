@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import useVideoReadiness from "../hooks/useVideoReadiness.js";
+import PlayerStatus from "./PlayerStatus.jsx";
+
 /**
  * Plays a resolved sign sequence as one continuous signed utterance.
  *
@@ -50,6 +53,14 @@ export default function SignSequencePlayer({
   const bufferA = useRef(null);
   const bufferB = useRef(null);
   const buffers = [bufferA, bufferB];
+
+  // Watches whichever source is actually on screen, so the wait is reported
+  // for the stitched file and for each clip of the fallback alike. Keyed on
+  // the source rather than on the sequence: in the fallback path the element
+  // stays mounted and its `src` changes, and a readiness state that did not
+  // reset would report the previous clip's.
+  const onScreen = stitched ?? clips[Math.min(index, Math.max(clips.length - 1, 0))]?.video_url;
+  const readiness = useVideoReadiness({ source: onScreen });
 
   // A new utterance starts at its own first clip rather than resuming from
   // wherever the previous sentence stopped. Adjusted during render rather than
@@ -106,7 +117,11 @@ export default function SignSequencePlayer({
             autoPlay
             preload="auto"
             muted
+            {...readiness.handlers}
           />
+          {readiness.showOverlay ? (
+            <PlayerStatus phase={readiness.phase} />
+          ) : null}
         </div>
       </div>
     );
@@ -161,9 +176,15 @@ export default function SignSequencePlayer({
               // and an unmuted autoplay would be blocked outright.
               muted
               aria-hidden={!isActive}
+              // Only the clip on screen reports readiness. The standby buffer
+              // is loading too, and letting it fire these would clear the
+              // overlay on the strength of a video nobody is watching yet.
+              {...(isActive ? readiness.handlers : {})}
             />
           );
         })}
+
+        {readiness.showOverlay ? <PlayerStatus phase={readiness.phase} /> : null}
       </div>
 
       {controls ? (

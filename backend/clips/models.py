@@ -140,6 +140,34 @@ class SignClip(models.Model):
         ordering = ["gloss"]
         verbose_name = "GhSL clip"
         verbose_name_plural = "GhSL clips"
+        indexes = [
+            # The resolver's one lookup with no equality test on an already
+            # indexed column: `resolvable().filter(kind=PHRASE)` fetches every
+            # phrase clip with no gloss to match on, so it reads the whole
+            # table. It runs on every consultation exchange, and it is the only
+            # access path here that grows with the library rather than staying
+            # a handful of keyed lookups.
+            #
+            # Partial, matching `resolvable()` exactly, so the index holds only
+            # the rows the resolver can use. Most of the library is unfilmed
+            # vocabulary waiting to be recorded, and there is no reason to
+            # carry those in an index nothing reads.
+            #
+            # Be clear about what this does today: nothing measurable. At 102
+            # rows in a 96 kB table Postgres correctly prefers a sequential
+            # scan and executes these in 0.02 to 0.5ms, against a 240ms network
+            # round trip to reach the database at all. It will keep preferring
+            # one until the table is big enough to be worth an index lookup.
+            # This is here for the library the project is filming towards, and
+            # because the shape of the access path is known now; it is not a
+            # speedup anyone will feel this week.
+            models.Index(
+                fields=["kind", "gloss"],
+                condition=models.Q(review_status=ReviewStatus.APPROVED)
+                & ~models.Q(video=""),
+                name="clip_resolvable_by_kind",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.gloss} ({self.get_kind_display()})"

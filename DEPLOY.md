@@ -96,7 +96,8 @@ connection string as `DATABASE_URL`.
 | `DJANGO_ALLOWED_HOSTS` | `your-site.netlify.app` | The Render hostname is added automatically |
 | `CORS_ALLOWED_ORIGINS` | `https://your-site.netlify.app` | **With the scheme** |
 | `CSRF_TRUSTED_ORIGINS` | `https://your-site.netlify.app` | **With the scheme** |
-| `DATABASE_URL` | from the Render database | |
+| `DATABASE_URL` | from the Render database, or Neon | Keep the `?sslmode=require` on it; it is honoured |
+| `DJANGO_CONN_MAX_AGE` | optional, defaults to `600` | Seconds a database connection is reused. See below |
 | `R2_ACCOUNT_ID` | from Cloudflare | |
 | `R2_BUCKET` | from Cloudflare | |
 | `R2_ACCESS_KEY_ID` | from Cloudflare | |
@@ -222,6 +223,50 @@ Then open the site itself and check three things a health check cannot:
 - The Django admin at `/admin/` accepts a login, which proves the CSRF origins
   are right.
 - A prescription issues and its QR code resolves, which proves the whole chain.
+
+---
+
+## Why reads are fast, and what actually makes them slow
+
+Worth knowing before optimising anything here, because the numbers are not
+where people expect. Measured against the deployed Neon database:
+
+| | Measured |
+| --- | --- |
+| Executing a query | **0.02 – 0.5 ms** |
+| One network round trip to issue it | **~240 ms** |
+| Opening a new connection (TCP, TLS, auth) | **~1,919 ms** |
+
+So a request's cost is essentially *how many times it talks to the database*,
+plus whether it had to connect first. Query execution does not register.
+
+Two things follow.
+
+**`CONN_MAX_AGE` is the whole optimisation.** Django's default of 0 closes the
+connection after every request, so each one paid ~1.9 seconds before it could
+read anything. Reusing connections makes a warm request **8.3x faster**, saving
+about 1,800 ms. `CONN_HEALTH_CHECKS` is on with it and is not optional: a
+serverless database suspends when idle and drops held connections, so Django
+has to notice a dead one and reconnect rather than hand it to a view. That
+check costs 0.02 ms.
+
+Lower `DJANGO_CONN_MAX_AGE` only if the database starts refusing connections
+because too many are held open. It will not make reads faster.
+
+**Indexes are not the lever here.** Every lookup key already has one: `gloss`,
+`term` and `reference` are unique, and the foreign keys are indexed by Django.
+There is one partial index, `clip_resolvable_by_kind`, covering the resolver's
+only scan that has no equality test on an indexed column. At the current 102
+rows in a 96 kB table Postgres correctly ignores it and scans instead, because
+scanning is genuinely faster at that size. It is there for the library the
+project is filming towards.
+
+**What keeps reads cheap is query count, and that is held by tests.**
+`clips/test_read_cost.py` asserts the counts do not grow with the data: a
+prescription of sixteen medicines costs the same as one, an eight word sentence
+the same as one word, and the clip list is one query at any library size. They
+are written as scaling comparisons rather than fixed numbers, so they fail when
+an N+1 appears rather than when someone legitimately adds a query.
 
 ---
 
