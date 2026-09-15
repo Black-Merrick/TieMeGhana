@@ -526,17 +526,36 @@ body {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  /* Each side scrolls on its own.
+}
 
-     The reason is the device rather than the aesthetics: it gets turned
-     between the two of them. The doctor scrolling back through the record must
-     not drag the patient's video off screen, and the patient replaying a long
-     answer must not move the doctor's box. Previously the page scrolled as one
-     and the video column was merely sticky, which meant the video stayed put
-     but nothing else did. */
+/* Each side scrolls on its own, and the page itself does not.
+
+   The reason is the device rather than the aesthetics: it gets turned between
+   the two of them. The doctor scrolling back through the record must not drag
+   the patient's video off screen, and the patient replaying a long answer must
+   not move the doctor's box.
+
+   Gated on the viewport's height as well as its width, which it was not
+   before. Locking the layout to the viewport only works when the viewport has
+   the room for it: on a 1366 by 768 laptop, once the browser's own chrome is
+   taken out, two panes and a header were dividing about 640 pixels. The body
+   map lost its legs, the pain scale was cut off, and the only way to see
+   either was to scroll two panes separately. Below this height the page simply
+   scrolls, which is the behaviour that fits the space.
+
+   The columns themselves are not gated. They come from the width alone, so a
+   short wide screen keeps the two column layout and just scrolls. */
+@media (min-width: 62rem) and (min-height: 46rem) {
   .app--split {
     height: 100dvh;
     overflow: hidden;
+  }
+
+  /* The footer is a row of this column, not something after it. Without this
+     the panes take the whole height and the legal links sit below the fold of
+     a page that cannot scroll, which is to say they do not exist. */
+  .app--split .legal-footer {
+    flex: 0 0 auto;
   }
 
   .app--split .shell--wide {
@@ -4190,6 +4209,14 @@ body {
   margin-top: auto;
 }
 
+/* Clear of the corner the setup indicator occupies while it is on screen, so
+   the two never sit on top of one another on a narrow window. */
+@media (max-width: 34rem) {
+  .legal-footer {
+    padding-bottom: 5.5rem;
+  }
+}
+
 .legal-footer__note {
   margin: 0;
   font-size: 0.8rem;
@@ -4227,5 +4254,152 @@ body {
   .legal-footer {
     justify-content: center;
     text-align: center;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   First open, while the device is being stocked with sign videos.
+
+   Fixed to a corner rather than placed in the layout. The consultation and
+   emergency screens divide the viewport between two panes, and a banner in
+   that flow would take height from the body map a patient is pointing at.
+   -------------------------------------------------------------------------- */
+
+.setup {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  width: min(22rem, calc(100vw - 2.5rem));
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  box-shadow:
+    0 4px 12px rgba(16, 34, 28, 0.08),
+    0 12px 32px rgba(16, 34, 28, 0.1);
+  animation: setup-in 260ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes setup-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+}
+
+.setup--done {
+  border-color: #cfeee1;
+  background: var(--colour-mint-pale);
+}
+
+.setup__row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.setup__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.setup__title {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--colour-ink);
+  letter-spacing: -0.01em;
+}
+
+.setup__detail {
+  font-size: 0.78rem;
+  color: var(--colour-muted);
+  line-height: 1.4;
+}
+
+/* Pushed to the far end so the number sits in the same place as the bar's own
+   end, which makes the two read as one measurement rather than two. */
+.setup__count {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-primary);
+}
+
+.setup__spinner {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  border: 2px solid var(--colour-mint);
+  border-top-color: var(--colour-primary);
+  animation: setup-spin 760ms linear infinite;
+}
+
+@keyframes setup-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.setup__icon--done {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: var(--colour-primary);
+  color: #ffffff;
+}
+
+.setup__track {
+  height: 0.3rem;
+  margin-top: 0.7rem;
+  border-radius: 999px;
+  background: var(--colour-mint);
+  overflow: hidden;
+}
+
+.setup__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--colour-primary);
+  /* Eased rather than stepping, because three clips download at once and the
+     bar would otherwise jump in visible chunks. */
+  transition: width 320ms cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.setup__note {
+  margin: 0.55rem 0 0;
+  font-size: 0.74rem;
+  color: var(--colour-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup {
+    animation: none;
+  }
+
+  .setup__spinner {
+    animation-duration: 2.4s;
+  }
+
+  .setup__bar {
+    transition: none;
+  }
+}
+
+/* On a phone it spans the width above the thumb bar rather than floating in a
+   corner, where it would cover a control. */
+@media (max-width: 34rem) {
+  .setup {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: auto;
   }
 }

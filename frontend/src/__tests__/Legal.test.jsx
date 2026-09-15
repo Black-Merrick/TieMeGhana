@@ -258,3 +258,43 @@ describe("what the documents must say plainly", () => {
     }
   });
 });
+
+describe("the footer stays reachable", () => {
+  /**
+   * The consultation and emergency screens lock themselves to the viewport and
+   * hide the overflow, so anything below the panes is not merely out of view,
+   * it cannot be scrolled to at all. A footer placed there without allowing for
+   * it would be links that do not exist.
+   *
+   * Asserted against the stylesheet because jsdom has no layout engine and so
+   * cannot be asked where an element ended up.
+   */
+  const css = () => read("src/index.css");
+
+  it("the locked layout keeps a row for the footer", () => {
+    expect(css()).toMatch(
+      /\.app--split \.legal-footer \{\s*flex: 0 0 auto;/,
+    );
+  });
+
+  it("the layout only locks when the viewport is tall enough for it", () => {
+    // On a 1366 by 768 laptop the panes were dividing about 640 pixels, which
+    // cut the body map off at the knees and left no way to reach anything
+    // below. Below this height the page scrolls instead.
+    const stylesheet = css();
+    const lock = stylesheet.indexOf(".app--split {\n    height: 100dvh;");
+    const query = stylesheet.lastIndexOf("@media", lock);
+
+    expect(stylesheet.slice(query, lock)).toContain("min-height");
+  });
+
+  it("the two column layout is not gated on height", () => {
+    // A short wide screen should keep its columns and simply scroll. Losing
+    // them would turn a laptop into a phone layout.
+    const stylesheet = css();
+    const columns = stylesheet.indexOf(".consult {\n    grid-template-columns:");
+    const query = stylesheet.lastIndexOf("@media", columns);
+
+    expect(stylesheet.slice(query, columns)).not.toContain("min-height");
+  });
+});

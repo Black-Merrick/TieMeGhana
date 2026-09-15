@@ -165,3 +165,84 @@ describe("warming the clip cache", () => {
     await expect(precacheClips()).resolves.toMatchObject({ supported: false });
   });
 });
+
+describe("reporting progress to the interface", () => {
+  it("reports a total that is the real amount of work", async () => {
+    // Counted before any downloading starts. A total that keeps being revised
+    // downwards as cached entries turn up would show a bar going backwards.
+    const cached = "https://cdn.example/clips/have.mp4";
+    installCaches(fakeCache([cached]));
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("HAVE", cached),
+      CLIP("NEED", "https://cdn.example/clips/need.mp4"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    const seen = [];
+    await precacheClips({ onProgress: (update) => seen.push(update) });
+
+    expect(seen[0]).toEqual({ total: 1, completed: 0, done: false });
+    expect(seen.at(-1)).toEqual({ total: 1, completed: 1, done: true });
+  });
+
+  it("counts up as each clip lands", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("A", "https://cdn.example/clips/a.mp4"),
+      CLIP("B", "https://cdn.example/clips/b.mp4"),
+      CLIP("C", "https://cdn.example/clips/c.mp4"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    const seen = [];
+    await precacheClips({ onProgress: (update) => seen.push(update) });
+
+    const counts = seen.map((update) => update.completed);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+    expect(seen.at(-1)).toMatchObject({ total: 3, completed: 3, done: true });
+  });
+
+  it("reports nothing to do when every clip is already cached", async () => {
+    // What every visit after the first looks like. The indicator reads this
+    // and renders nothing, rather than announcing "ready" on every open.
+    const urls = [
+      "https://cdn.example/clips/a.mp4",
+      "https://cdn.example/clips/b.mp4",
+    ];
+    installCaches(fakeCache(urls));
+    fetchResolvableClips.mockResolvedValue([CLIP("A", urls[0]), CLIP("B", urls[1])]);
+    globalThis.fetch = vi.fn();
+
+    const seen = [];
+    const summary = await precacheClips({ onProgress: (update) => seen.push(update) });
+
+    expect(seen).toEqual([{ total: 0, completed: 0, done: true }]);
+    expect(summary.alreadyCached).toBe(2);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("still finishes the report when a clip fails", async () => {
+    // A stalled bar with no end is worse feedback than none: it says the app
+    // is stuck when it has in fact finished and moved on.
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("GONE", "https://cdn.example/clips/gone.mp4"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 }));
+
+    const seen = [];
+    await precacheClips({ onProgress: (update) => seen.push(update) });
+
+    expect(seen.at(-1)).toMatchObject({ done: true, completed: 1, total: 1 });
+  });
+
+  it("works with no progress callback at all", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("A", "https://cdn.example/clips/a.mp4"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await expect(precacheClips()).resolves.toMatchObject({ warmed: 1 });
+  });
+});

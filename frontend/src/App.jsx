@@ -6,6 +6,8 @@ import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
 import InstallApp from "./components/InstallApp.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import ScreenLoader from "./components/ScreenLoader.jsx";
+import SetupProgress from "./components/SetupProgress.jsx";
+import useClipWarmup from "./hooks/useClipWarmup.js";
 
 /*
  * Split out of the main bundle, fetched the first time they are opened.
@@ -69,6 +71,11 @@ export default function App() {
   const [legal, setLegal] = useState(() => legalDocumentFromPath());
 
   const [connection, setConnection] = useState("checking");
+
+  // Stocking the device with sign videos on first open, reported on screen.
+  // Null once everything is already cached, which is every visit after the
+  // first, and the indicator then renders nothing.
+  const clipWarmup = useClipWarmup();
 
   // Migrations written but not applied to this database, reported by the
   // health endpoint. Surfaced here because the alternative is finding out from
@@ -231,6 +238,7 @@ export default function App() {
             exactly where the policy has to be reachable. These are documents,
             not a way into a consultation. */}
         <LegalFooter onOpen={openLegal} />
+        <SetupProgress progress={clipWarmup} />
       </div>
     );
   }
@@ -390,6 +398,7 @@ export default function App() {
       </main>
 
       <LegalFooter onOpen={openLegal} />
+      <SetupProgress progress={clipWarmup} />
     </div>
   );
 }
