@@ -427,6 +427,16 @@ export default function App() {
  * modifier, or right clicking, falls through to the browser and opens the
  * address properly.
  */
+/**
+ * The user manual, built by tools/build-manual.mjs into public/.
+ *
+ * A plain path rather than an import, because it is a static file copied
+ * through the build rather than a module, and because the name is also typed
+ * into the manual's own build script: keeping it in one named constant here is
+ * what makes a broken link findable.
+ */
+const MANUAL_PDF = "/tie-me-ghana-manual.pdf";
+
 function LegalFooter({ onOpen }) {
   const open = (event, document) => {
     // Let the browser handle anything that is not a plain left click: a new
@@ -445,6 +455,22 @@ function LegalFooter({ onOpen }) {
         for clinical use.
       </p>
       <nav className="legal-footer__links" aria-label="Legal">
+        {/* A real file at a real address, opened in its own tab. The browser's
+            own viewer shows it and offers the download, which is one link
+            doing both jobs rather than two links doing one each.
+
+            Not routed through the app: a manual is what somebody reaches for
+            when the app is confusing them, so it must not depend on the app
+            working. It is also the one thing here worth having open beside the
+            app rather than instead of it. */}
+        <a
+          href={MANUAL_PDF}
+          target="_blank"
+          rel="noopener"
+          data-testid="open-manual"
+        >
+          User Manual
+        </a>
         <a
           href={pathForLegalDocument(LegalDocument.PRIVACY)}
           onClick={(event) => open(event, LegalDocument.PRIVACY)}

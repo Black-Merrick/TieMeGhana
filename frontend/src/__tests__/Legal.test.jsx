@@ -287,3 +287,91 @@ describe("the split layout has room for its content", () => {
     expect(stylesheet.slice(query, columns)).not.toContain("min-height");
   });
 });
+
+describe("the user manual", () => {
+  /**
+   * A PDF with screenshots and numbered callouts, built by
+   * frontend/tools/build-manual.mjs from a live capture of the running app.
+   */
+
+  it("is a file that exists and is shipped with the app", () => {
+    // public/ is copied verbatim into the build, so a missing file here is a
+    // 404 on a link a clinician follows when they are already confused.
+    const pdf = readFileSync(
+      resolve(process.cwd(), "public", "tie-me-ghana-manual.pdf"),
+    );
+
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.length).toBeGreaterThan(100_000);
+  });
+
+  it("is linked from the footer at the address it is published to", () => {
+    // The two would otherwise drift: the build writes one name and the link
+    // points at another, which nothing fails on until somebody clicks it.
+    const app = read("src/App.jsx");
+    const builder = read("tools/build-manual.mjs");
+
+    expect(app).toContain('"/tie-me-ghana-manual.pdf"');
+    expect(builder).toContain('"tie-me-ghana-manual.pdf"');
+  });
+
+  it("opens beside the app rather than replacing it", () => {
+    // Somebody reaches for a manual while stuck in the app. Navigating away
+    // from a half finished consultation to read about it would be unkind.
+    const app = read("src/App.jsx");
+    const link = app.slice(app.indexOf("href={MANUAL_PDF}"));
+
+    expect(link.slice(0, 200)).toContain('target="_blank"');
+    expect(link.slice(0, 200)).toContain('rel="noopener"');
+  });
+
+  it("every callout drawn on a screenshot has an explanation", () => {
+    // A number on a picture with nothing beside it is an arrow pointing at a
+    // button and saying nothing about it.
+    const captured = JSON.parse(read("../docs/manual/screens.json"));
+    const builder = read("tools/build-manual.mjs");
+
+    const unexplained = [];
+    for (const screen of captured.screens) {
+      for (const callout of screen.callouts) {
+        // The explanations are keyed by the selector the capture measured, and
+        // written in the source exactly as the capture records it. Compared
+        // raw: JSON encoding it escaped the inner quotes, which appear nowhere
+        // in the file, so every selector looked missing.
+        if (!builder.includes(callout.selector)) {
+          unexplained.push(`${screen.id}: ${callout.selector}`);
+        }
+      }
+    }
+
+    expect(unexplained).toEqual([]);
+  });
+
+  it("documents every screen a clinician has to operate", () => {
+    const captured = JSON.parse(read("../docs/manual/screens.json"));
+    const ids = captured.screens.map((screen) => screen.id).sort();
+
+    expect(ids).toEqual([
+      "consultation",
+      "emergency",
+      "guided",
+      "opening",
+      "prescription",
+    ]);
+  });
+
+  it("measured every callout it set out to, none silently missing", () => {
+    // The capture warns when a selector matches nothing, but a warning in a
+    // build log is not a guard. An empty screen would mean a figure with no
+    // callouts at all, printed as though it were finished.
+    const captured = JSON.parse(read("../docs/manual/screens.json"));
+
+    for (const screen of captured.screens) {
+      expect(screen.callouts.length).toBeGreaterThan(0);
+      for (const callout of screen.callouts) {
+        expect(callout.width).toBeGreaterThan(0);
+        expect(callout.height).toBeGreaterThan(0);
+      }
+    }
+  });
+});
