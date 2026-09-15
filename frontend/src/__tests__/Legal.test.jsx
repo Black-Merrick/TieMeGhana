@@ -375,3 +375,59 @@ describe("the user manual", () => {
     }
   });
 });
+
+describe("the README's screenshots", () => {
+  /**
+   * Broken images on a repository's front page are the first thing anyone
+   * sees, and nothing in a normal build notices them: markdown is not
+   * compiled, so a renamed or deleted screenshot stays a working file path
+   * right up until somebody opens the page.
+   */
+
+  it("all point at files that exist", () => {
+    const readme = read("../README.md");
+    const images = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]);
+
+    expect(images.length).toBeGreaterThan(0);
+
+    const missing = images.filter((path) => {
+      try {
+        readFileSync(resolve(process.cwd(), "..", path));
+        return false;
+      } catch {
+        return true;
+      }
+    });
+
+    expect(missing).toEqual([]);
+  });
+
+  it("show the screens the manual documents, from the same capture", () => {
+    // The README and the manual draw on one set of screenshots, so what the
+    // repository advertises and what the manual explains cannot diverge.
+    const readme = read("../README.md");
+    const captured = JSON.parse(read("../docs/manual/screens.json"));
+
+    for (const screen of captured.screens) {
+      expect(readme).toContain(`docs/manual/shots/${screen.id}.png`);
+    }
+  });
+
+  it("links the manual at the path the build writes it to", () => {
+    const readme = read("../README.md");
+
+    expect(readme).toContain("frontend/public/tie-me-ghana-manual.pdf");
+  });
+
+  it("carries no alt text that would be useless to a screen reader", () => {
+    // A README is read by people who cannot see the screenshots too, and
+    // "screenshot" as alt text tells them nothing at all.
+    const readme = read("../README.md");
+    const alts = [...readme.matchAll(/!\[([^\]]*)\]\([^)]+\)/g)].map((m) => m[1]);
+
+    for (const alt of alts) {
+      expect(alt.length).toBeGreaterThan(20);
+      expect(alt.toLowerCase()).not.toMatch(/^(screenshot|image|picture)$/);
+    }
+  });
+});
