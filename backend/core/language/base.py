@@ -17,10 +17,36 @@ class Language(StrEnum):
 
     Twi is `tw`, matching the ISO code Khaya uses, so the value can be sent to
     the provider without a translation table in between.
+
+    `MIXED` is not a third language. It is the doctor declaring that one
+    utterance contains both, which is how clinical Ghanaian English and Twi are
+    actually spoken: much medical vocabulary has no Twi word, plenty of Twi has
+    no single English one, and a speaker moves between them inside a sentence
+    without noticing. Asking them to pick one forces a lie, and the system then
+    acts on it confidently.
+
+    Crucially it is a statement about *input*, never a target. There is no
+    mixed voice to synthesize with and no `mixed-tw` translation direction, so
+    it must never reach a provider: see `is_provider_language`, which is
+    enforced in the provider itself rather than trusted to callers.
     """
 
     ENGLISH = "en"
     TWI = "tw"
+    MIXED = "mixed"
+
+    @property
+    def is_provider_language(self) -> bool:
+        """
+        Whether a speech or translation service can be asked for this language.
+
+        False only for `MIXED`. Checked before every provider call, because the
+        value is interpolated straight into Khaya's request as a language code:
+        "mixed" or "mixed-tw" would be a metered request that either errors or,
+        worse, is quietly treated as something else and returns confident
+        nonsense the doctor has no way to spot.
+        """
+        return self is not Language.MIXED
 
 
 class LanguageError(RuntimeError):

@@ -82,17 +82,44 @@ def build_caption(
         source_language=str(source_language),
         transcript=transcript,
         caption=caption,
-        caption_language=str(CAPTION_LANGUAGE),
+        # A mixed utterance is shown as the doctor wrote it, so saying it is
+        # Twi would be false. The interface reads this to label the caption,
+        # and mislabelling English text as Twi is how a patient comes to trust
+        # a caption nobody translated.
+        caption_language=str(
+            source_language if source_language is Language.MIXED else CAPTION_LANGUAGE
+        ),
         sign_lookup_text=sign_lookup_text,
         transcript_source="spoken" if audio is not None else "typed",
-        translation_applied=source_language != CAPTION_LANGUAGE,
+        translation_applied=(
+            source_language is not Language.MIXED
+            and source_language != CAPTION_LANGUAGE
+        ),
         language_provider=provider.name,
         sequence=resolve_sign_sequence(sign_lookup_text),
     )
 
 
 def _rendered_in(text, provider, *, source: Language, target: Language) -> str:
-    """Return the text in the target language, translating only if it differs."""
-    if source == target:
+    """
+    Return the text in the target language, translating only if it differs.
+
+    A mixed utterance is returned untouched, and that is the whole handling of
+    code switching rather than a gap in it.
+
+    There is no `mixed-tw` translation direction to ask for, and no way to
+    translate half a sentence without first knowing which half is which, which
+    would take a Twi lexicon the project does not have. What it does have is a
+    safety gate: the sign resolver tokenizes this text against an English keyed
+    library, so a Twi word simply does not resolve, and ADR 033 already reports
+    an unresolved content word as blocking rather than dropping it. The doctor
+    is told precisely which words could not be signed and can rephrase them.
+
+    That is a better outcome than translating the whole string as though it
+    were one language, which is what happened before: "Fa paracetamol mmienu"
+    declared as Twi went to the translator entire, and it returned something
+    fluent and wrong, with nothing on screen to suggest it.
+    """
+    if source is Language.MIXED or source == target:
         return text
     return provider.translate(text, source=source, target=target)

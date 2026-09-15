@@ -304,6 +304,12 @@ export default function App() {
         <Suspense fallback={<ScreenLoader label="Opening emergency mode" />}>
           <EmergencyTriage
             outputLanguage={outputLanguage}
+            // Emergency is reachable before a visit exists, so it may be the
+            // first screen anyone sees. Without this the responder was stuck
+            // with whatever the default happened to be, and a Twi speaking
+            // clinician heard every tap read out in English with no way to
+            // change it.
+            onOutputLanguageChange={changeOutputLanguage}
             onLeave={() => setEmergency(false)}
           />
         </Suspense>
