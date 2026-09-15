@@ -663,3 +663,67 @@ describe("the page not moving under the patient", () => {
     expect(screen.getAllByTestId("spoken-stub-warning")).toHaveLength(1);
   });
 });
+
+describe("choosing the voice answers are read in, FR 5.5", () => {
+  /**
+   * Emergency can be the first screen anyone opens: it is reachable before a
+   * visit exists and before anyone has chosen anything. The control was
+   * missing here while the consultation screen had one, so a Twi speaking
+   * responder heard every tap read out in English with no way to change it.
+   */
+
+  it("offers the choice on screen rather than in a menu", async () => {
+    // Section 4.1, and here more than anywhere: this has to be usable in
+    // seconds by someone who has never seen the app.
+    renderTriage({ onOutputLanguageChange: () => {} });
+    await settle();
+
+    const voice = screen.getByTestId("triage-voice");
+    expect(voice).toHaveTextContent("English");
+    expect(voice).toHaveTextContent("Twi");
+  });
+
+  it("shows which voice is currently selected", async () => {
+    renderTriage({ outputLanguage: "tw", onOutputLanguageChange: () => {} });
+    await settle();
+
+    expect(screen.getByRole("radio", { name: "Twi" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "English" })).not.toBeChecked();
+  });
+
+  it("reports a change so it outlasts the screen", async () => {
+    // The choice belongs to the visit, not to this component, or leaving and
+    // re-entering emergency would silently reset the responder's language.
+    const onOutputLanguageChange = vi.fn();
+    renderTriage({ outputLanguage: "en", onOutputLanguageChange });
+    await settle();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Twi" }));
+
+    expect(onOutputLanguageChange).toHaveBeenCalledWith("tw");
+  });
+
+  it("speaks a tapped answer in the chosen voice", async () => {
+    // The point of the control. A tap that is spoken in the wrong language is
+    // an answer nobody in the room receives.
+    renderTriage({ outputLanguage: "tw", onOutputLanguageChange: () => {} });
+    await settle();
+
+    await userEvent.click(screen.getByRole("button", { name: /cannot breathe/i }));
+
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ outputLanguage: "tw" }),
+      ),
+    );
+  });
+
+  it("does not offer a mixed voice", async () => {
+    // There is no mixed voice to pick, so offering one would mean choosing
+    // behind the responder's back.
+    renderTriage({ onOutputLanguageChange: () => {} });
+    await settle();
+
+    expect(screen.getByTestId("triage-voice")).not.toHaveTextContent("Both");
+  });
+});

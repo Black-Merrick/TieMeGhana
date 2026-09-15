@@ -11,10 +11,37 @@ import useAudioRecorder from "../hooks/useAudioRecorder.js";
  * lives here once. Section 4.4, Consistency.
  */
 
-const LANGUAGES = [
+/**
+ * What the doctor is speaking or typing.
+ *
+ * "Both" is how clinical speech in Ghana actually works: much medical
+ * vocabulary has no Twi word, plenty of Twi has no single English one, and a
+ * speaker moves between them inside a sentence. Making them pick one forced a
+ * declaration that was not true, and the translator then acted on it: a mixed
+ * sentence sent as Twi came back fluent and wrong, with nothing on screen to
+ * suggest it. Declared as both, it is passed through untranslated and the sign
+ * resolver reports exactly which words it could not sign.
+ */
+const SOURCE_LANGUAGES = [
   { value: "en", label: "English" },
   { value: "tw", label: "Twi" },
+  { value: "mixed", label: "Both" },
 ];
+
+/**
+ * What the patient's answers are read aloud in, FR 3.4.
+ *
+ * No "both" here, and it is not an oversight. This picks the voice, and there
+ * is no mixed voice to pick: offering one would mean choosing English or Twi
+ * behind the doctor's back and reporting whichever was chosen as though they
+ * had asked for it.
+ */
+const OUTPUT_LANGUAGES = SOURCE_LANGUAGES.filter(
+  (language) => language.value !== "mixed",
+);
+
+/** Speech recognition handles one language at a time, so "both" cannot. */
+const MIXED = "mixed";
 
 export default function DoctorUtteranceForm({
   onSend,
@@ -32,6 +59,11 @@ export default function DoctorUtteranceForm({
   const recorder = useAudioRecorder();
 
   const isRecording = recorder.status === "recording";
+
+  // Typing takes both languages at once; the microphone cannot, because speech
+  // recognition runs one language at a time and there is no model to ask for a
+  // sentence that switches between them.
+  const speakingIsUnavailable = sourceLanguage === MIXED;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -84,7 +116,7 @@ export default function DoctorUtteranceForm({
           data-testid="doctor-language"
         >
           <legend className="consultation__legend">I speak</legend>
-          {LANGUAGES.map((language) => (
+          {SOURCE_LANGUAGES.map((language) => (
             <label key={language.value} className="consultation__language">
               <input
                 type="radio"
@@ -109,7 +141,7 @@ export default function DoctorUtteranceForm({
             data-testid="output-language"
           >
             <legend className="consultation__legend">Speak in</legend>
-            {LANGUAGES.map((language) => (
+            {OUTPUT_LANGUAGES.map((language) => (
               <label key={language.value} className="consultation__language">
                 <input
                   type="radio"
@@ -186,7 +218,12 @@ export default function DoctorUtteranceForm({
                   : "consultation__mic"
               }
               onClick={handleMicrophone}
-              disabled={busy}
+              // Disabled rather than left to fail at the server. Speech
+              // recognition runs one language at a time, so a mixed recording
+              // has nothing to transcribe it: better to close the door with a
+              // reason than to spend a metered call on a 400 the doctor reads
+              // after they have already spoken.
+              disabled={busy || speakingIsUnavailable}
               data-testid="microphone-button"
             >
               <span className="btn__icon" aria-hidden="true">
@@ -205,6 +242,19 @@ export default function DoctorUtteranceForm({
       {/* FR 1.2 falls back to typing rather than disappearing, because NFR 6
           targets browsers that differ in microphone support. The two reasons
           are told apart because only one of them is fixable by us. */}
+      {/* Said on screen, not left as a greyed out button. A disabled control
+          with no reason beside it is the thing people file bugs about, and
+          mid consultation the doctor needs the alternative in the same glance:
+          type it, or pick one language and speak. */}
+      {speakingIsUnavailable && recorder.isSupported ? (
+        <p className="consultation__note" data-testid="microphone-mixed">
+          Speaking is off while <strong>Both</strong> is selected, because
+          speech recognition handles one language at a time. Type the message,
+          or choose <strong>English</strong> or <strong>Twi</strong> to speak
+          it.
+        </p>
+      ) : null}
+
       {recorder.support === "insecure" ? (
         <p className="consultation__note" data-testid="microphone-insecure">
           The microphone needs a secure connection. Open the app over{" "}

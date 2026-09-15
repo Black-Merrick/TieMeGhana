@@ -44,7 +44,16 @@ def speak_response(
     """
     provider = get_language_provider()
 
-    needs_translation = source_language != output_language
+    # A mixed answer is spoken as written. `source != output` would otherwise
+    # be true for it and send "mixed-en" to the translator, which is a metered
+    # request for a direction that does not exist. The listener hears the
+    # patient's own words, some in each language, which is what a bilingual
+    # clinician is expecting anyway and is the honest rendering of what was
+    # typed. The output language still decides the voice, so there is always a
+    # real one to synthesize with.
+    needs_translation = (
+        source_language is not Language.MIXED and source_language != output_language
+    )
     spoken_text = (
         provider.translate(text, source=source_language, target=output_language)
         if needs_translation

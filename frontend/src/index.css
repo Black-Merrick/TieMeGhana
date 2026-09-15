@@ -949,6 +949,144 @@ body {
   pointer-events: none;
 }
 
+/* The wait, stated on the surface the sign will appear on. A Deaf patient
+   watching a black rectangle cannot tell loading from broken and has no one to
+   ask, so this is feedback rather than decoration. See PlayerStatus.jsx. */
+.player__status {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 1rem;
+  text-align: center;
+  /* Over the video rather than instead of it, so the first frame shows through
+     as soon as there is one and the change is visibly progress. */
+  background: rgba(6, 26, 21, 0.82);
+  backdrop-filter: blur(2px);
+  color: #ffffff;
+  animation: player-status-in 180ms ease-out both;
+}
+
+@keyframes player-status-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.player__status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  /* Keeps the two lines from running to the edges of a narrow phone stage. */
+  max-width: 24rem;
+}
+
+.player__status-title {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.player__status-detail {
+  font-size: 0.85rem;
+  color: #b9d3c9;
+}
+
+/* Three dots in a signing rhythm rather than a spinning ring, which at this
+   size reads as a loading web page. */
+.player__status-pulse {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.player__status-pulse i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--colour-accent);
+  animation: player-status-pulse 1.1s ease-in-out infinite;
+}
+
+.player__status-pulse i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.player__status-pulse i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes player-status-pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-0.3rem);
+  }
+}
+
+.player__status--failed {
+  background: rgba(107, 30, 22, 0.88);
+}
+
+.player__status-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* Motion is the part that says "alive" to someone who is not reading the
+   words, so it is reduced rather than removed: the dots hold still but keep
+   their brightness cycle, and the panel stops sliding in. */
+@media (prefers-reduced-motion: reduce) {
+  .player__status {
+    animation: none;
+  }
+
+  .player__status-pulse i {
+    animation-name: player-status-fade;
+  }
+}
+
+@keyframes player-status-fade {
+  0%,
+  70%,
+  100% {
+    opacity: 0.3;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+/* A phone in a consultation is held close and the stage is short, so the
+   secondary line is dropped before the heading wraps. */
+@media (max-width: 30rem) {
+  .player__status {
+    gap: 0.6rem;
+  }
+
+  .player__status-title {
+    font-size: 0.95rem;
+  }
+
+  .player__status-detail {
+    font-size: 0.8rem;
+  }
+}
+
 .player--empty {
   border: 1px dashed #c8d2ce;
   border-radius: 0.5rem;
@@ -1807,6 +1945,56 @@ body {
   gap: 0.75rem 1rem;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+/* Which voice reads a tapped answer out, FR 5.5. In the header rather than
+   below the body map: it has to be found in seconds by a responder who has
+   never seen the app, and anything under the fold in an emergency is not
+   there at all. Sits between the title and the actions so it is read before
+   the first tap, not after. */
+.triage__voice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 999px;
+  background: var(--colour-surface);
+}
+
+.triage__voice-legend {
+  /* float, because a legend is not a flex item in every browser and would
+     otherwise break out of the pill onto its own line. */
+  float: none;
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--colour-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.triage__voice-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 550;
+  /* Comfortably tappable with one thumb while the other hand is on a patient. */
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+@media (max-width: 40rem) {
+  /* Full width on a phone rather than squeezed beside the title, so the two
+     options stay far enough apart to hit without looking. */
+  .triage__voice {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    border-radius: var(--radius);
+  }
 }
 
 /* Two columns, same reason as the consultation: the device is turned between
