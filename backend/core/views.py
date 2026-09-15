@@ -1,8 +1,40 @@
 from django.db import DatabaseError, connection
 from django.db.migrations.executor import MigrationExecutor
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+
+
+@require_GET
+def ping(request):
+    """
+    Answer that the process is running, touching nothing at all.
+
+    Exists for the keep-alive scheduler. Render's free tier stops the container
+    after about fifteen minutes with no inbound request, and the next visitor
+    waits thirty to sixty seconds for it to start, which on a demo reads as the
+    app being broken. A request every five minutes prevents that.
+
+    It cannot be `/api/health/`, and the difference is the whole point of this
+    view. Health opens a database connection and reads the migration table, so
+    scheduling it every five minutes would hold the Postgres compute awake
+    around the clock as well. On a serverless provider that suspends an idle
+    database, that turns a free allowance sized for real usage into one being
+    spent on nothing but the monitor, and the database is the half that stops
+    the app working when it runs out.
+
+    So this deliberately does not check anything. A liveness probe that
+    verified its dependencies would be a health check, and there is already one
+    of those for when someone actually wants to know. This answers exactly one
+    question: is there a process here to answer.
+
+    A plain Django view rather than a DRF one, and no reference to
+    `request.user` or the session, so nothing lazily opens a connection behind
+    it. A test asserts it runs in zero queries.
+    """
+    return JsonResponse({"status": "awake"})
 
 
 def _pending_migrations() -> list[str]:

@@ -81,6 +81,11 @@ def test_the_api_surface_is_the_one_we_expect():
         "clip-detail",
         "clip-list",
         "health",
+        # The keep-alive liveness probe. Accepts nothing, reads nothing, and
+        # returns a constant, so there is no patient data anywhere near it. It
+        # exists separately from `health` so the five minute schedule does not
+        # also hold the database compute awake; see core/views.py.
+        "ping",
         # Prescription playback, FR 6.1 to 6.4. Both are reachable without an
         # account: the unguessable reference is the capability. Neither can
         # carry patient data, which is asserted in prescriptions/tests.py

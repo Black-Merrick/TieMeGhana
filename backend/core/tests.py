@@ -17,6 +17,45 @@ def test_health_reports_ok_when_database_is_reachable(api_client):
     assert body["database"] == "ok"
 
 
+class TestTheKeepAlivePing:
+    """
+    The endpoint the keep-alive scheduler calls every five minutes.
+
+    Its whole reason for existing apart from `health/` is that it must not
+    reach the database. Health does, and scheduling that around the clock would
+    hold the Postgres compute awake with it, spending a free allowance sized
+    for real usage on the monitor alone.
+    """
+
+    @pytest.mark.django_db
+    def test_it_answers_without_touching_the_database(
+        self, api_client, django_assert_num_queries
+    ):
+        # The assertion that keeps this endpoint honest. Adding anything here
+        # that reads a row, however small, quietly turns a web service
+        # keep-alive into a database keep-alive as well.
+        with django_assert_num_queries(0):
+            response = api_client.get(reverse("ping"))
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "awake"}
+
+    def test_it_answers_with_no_database_configured_at_all(self, client):
+        # No django_db mark, so touching the database would fail the test
+        # outright. A liveness probe that needs its dependencies up is a health
+        # check, and there is already one of those.
+        assert client.get(reverse("ping")).status_code == 200
+
+    @pytest.mark.django_db
+    def test_it_refuses_anything_but_a_get(self, api_client):
+        # Refused, but not always with the same code, and asserting one of them
+        # would be asserting the test client rather than the endpoint. Over
+        # real HTTP the CSRF middleware rejects an unsafe method with 403
+        # before `require_GET` is reached; the test client is CSRF exempt, so
+        # it gets the 405 from the decorator. Either way nothing is accepted.
+        assert api_client.post(reverse("ping")).status_code in (403, 405)
+
+
 @pytest.mark.django_db
 def test_health_reports_degraded_when_database_is_unreachable(api_client, monkeypatch):
     """A green health check with a dead database would be worse than no check."""
