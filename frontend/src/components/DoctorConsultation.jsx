@@ -32,6 +32,13 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
     transcript.record({
       direction: Direction.TO_PATIENT,
       text: caption.transcript,
+      language: caption.source_language,
+      // The Twi the patient actually read. Kept under the same names the
+      // patient's own lines use, so the record can be shown in either language
+      // without the view having to know which side of the conversation a line
+      // came from.
+      translation: caption.caption,
+      translationLanguage: caption.caption_language,
       caption: caption.caption,
     });
   };
@@ -39,9 +46,23 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
   /** FR 4.1 and FR 3.1, the patient's typed reply, spoken and recorded. */
   const replyToDoctor = async ({ text, sourceLanguage }) => {
     const said = await spoken.speak({ text, sourceLanguage, outputLanguage });
-    // Recorded as what the patient wrote, not the translation, because the
-    // record is theirs and should read back in their own words.
-    if (said) transcript.record({ direction: Direction.TO_DOCTOR, text });
+    if (!said) return;
+
+    // Their own words first, because the record is theirs. The translation the
+    // doctor heard is kept beside it rather than instead of it, so the record
+    // reads back in either language.
+    //
+    // It costs nothing to keep: the service produced it a moment ago to speak
+    // it. Translating the record later would mean sending a whole
+    // consultation to a third party, which is the one thing this app promises
+    // never to do, so the moment it is created is the only chance to have it.
+    transcript.record({
+      direction: Direction.TO_DOCTOR,
+      text,
+      language: sourceLanguage,
+      translation: said.translation_applied ? said.spoken_text : undefined,
+      translationLanguage: said.translation_applied ? said.output_language : undefined,
+    });
   };
 
   /* FR 3.1 and 3.4. The patient types or taps, and their answer is spoken
@@ -89,6 +110,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
         />
 
         <TranscriptView
+          defaultLanguage={outputLanguage}
           entries={transcript.entries}
           onDiscard={transcript.discard}
         />

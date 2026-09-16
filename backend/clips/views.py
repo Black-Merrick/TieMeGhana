@@ -5,6 +5,7 @@ from rest_framework.response import Response
 
 from clips.body_locations import BODY_LOCATIONS
 from clips.emergency import CRITICAL_ALERTS
+from clips.emergency_speech import all_spoken_phrases, pending_review
 from clips.models import SignClip
 from clips.serializers import (
     SignClipSerializer,
@@ -63,6 +64,30 @@ class SignClipViewSet(viewsets.ReadOnlyModelViewSet):
                 }
                 for gloss, label, icon in CRITICAL_ALERTS
             ]
+        )
+
+    @action(detail=False, url_path="emergency-speech")
+    def emergency_speech(self, request):
+        """
+        Every phrase Emergency Visual Triage can say, in both languages.
+
+        Emergency mode has no free text, so its whole vocabulary is known in
+        advance and is translated once rather than at the moment of a tap.
+        That is the difference between a tap speaking immediately and one
+        costing two calls to a metered service and about five seconds, which
+        is not an emergency tool. See clips/emergency_speech.py.
+
+        `tw_reviewed` is the part the caller must honour. Unreviewed Twi is
+        served so it can be seen and corrected, never so it can be spoken: the
+        machine returned "Nose" for "Nose" and "Waist a ɔyɛ ɔkwasea" for
+        "Waist", and reading either to a clinician during triage is worse than
+        reading English.
+        """
+        return Response(
+            {
+                "phrases": all_spoken_phrases(),
+                "pending_review": pending_review(),
+            }
         )
 
     @action(detail=False, url_path="body-locations")
