@@ -11,10 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   canSpeak,
+  forgetVoices,
   isSupported,
+  loadVoices,
+  pickVoice,
   speakOnDevice,
-  voiceFor,
 } from "../audio/deviceSpeech.js";
+
+/** The voice list as it is once the browser has finished loading it. */
+const voicesFor = async () => await loadVoices({ timeoutMs: 20 });
 
 const voice = (lang, name = lang) => ({ lang, name });
 
@@ -35,6 +40,7 @@ function withVoices(voices) {
 }
 
 beforeEach(() => {
+  forgetVoices();
   withVoices([voice("en-GB"), voice("en-US"), voice("fr-FR")]);
 });
 
@@ -43,50 +49,98 @@ afterEach(() => {
 });
 
 describe("finding a voice", () => {
-  it("matches on the language, not the region", () => {
+  it("matches on the language, not the region", async () => {
     // A device has en-GB or en-US, never plain "en".
-    expect(voiceFor("en")).toMatchObject({ lang: "en-GB" });
+    expect(pickVoice(await voicesFor(), "en")).toMatchObject({ lang: "en-GB" });
   });
 
-  it("returns nothing when the language is not installed", () => {
-    // Nearly every device has English. Almost none has Twi.
-    expect(voiceFor("tw")).toBeNull();
+  it("returns nothing when the language is not installed", async () => {
+    // espeak-ng, the usual Linux synthesiser, ships 945 English voices and no
+    // Akan at all.
+    expect(pickVoice(await voicesFor(), "tw")).toBeNull();
   });
 
-  it("never falls back to whatever voice happens to be there", () => {
+  it("never falls back to whatever voice happens to be there", async () => {
     // The dangerous case. Reading Twi in a French voice would be confident
     // mispronunciation of clinical words, which is worse than silence.
+    forgetVoices();
     withVoices([voice("fr-FR")]);
 
-    expect(voiceFor("tw")).toBeNull();
-    expect(voiceFor("en")).toBeNull();
+    expect(pickVoice(await voicesFor(), "tw")).toBeNull();
+    expect(pickVoice(await voicesFor(), "en")).toBeNull();
+  });
+});
+
+describe("waiting for the browser to load its voices", () => {
+  /**
+   * The bug this module shipped with. Chrome returns an empty array from
+   * getVoices until it has finished asking the operating system, then fires
+   * voiceschanged. Reading once and believing the answer meant that on a
+   * device which does have voices, the first answer of every session was
+   * refused as though it had none.
+   */
+
+  it("waits for voiceschanged rather than believing an empty first read", async () => {
+    forgetVoices();
+    let voices = [];
+    const listeners = [];
+    vi.stubGlobal("speechSynthesis", {
+      getVoices: () => voices,
+      speak: vi.fn(),
+      cancel: vi.fn(),
+      addEventListener: (_event, fn) => listeners.push(fn),
+    });
+    vi.stubGlobal("SpeechSynthesisUtterance", class {});
+
+    const pending = loadVoices({ timeoutMs: 500 });
+
+    // The browser finishes a moment later, as it actually does.
+    voices = [voice("en-GB")];
+    listeners.forEach((fn) => fn());
+
+    expect(await pending).toHaveLength(1);
+  });
+
+  it("gives up after a moment on a device that genuinely has none", async () => {
+    // Some Linux desktops have speech-dispatcher with nothing behind it. An
+    // empty list is a real answer, so this must not hang waiting for one.
+    forgetVoices();
+    vi.stubGlobal("speechSynthesis", {
+      getVoices: () => [],
+      speak: vi.fn(),
+      cancel: vi.fn(),
+      addEventListener: () => {},
+    });
+    vi.stubGlobal("SpeechSynthesisUtterance", class {});
+
+    expect(await loadVoices({ timeoutMs: 10 })).toEqual([]);
   });
 });
 
 describe("deciding whether the device can help", () => {
-  it("speaks an English answer to an English listener", () => {
-    expect(
+  it("speaks an English answer to an English listener", async () => {
+    await expect(
       canSpeak({ text: "Yes", sourceLanguage: "en", outputLanguage: "en" }),
-    ).toBe(true);
+    ).resolves.toBe(true);
   });
 
-  it("refuses when the answer would need translating first", () => {
+  it("refuses when the answer would need translating first", async () => {
     // It is a voice, not a translator. Twi in, English out, needs the service.
-    expect(
+    await expect(
       canSpeak({ text: "Aane", sourceLanguage: "tw", outputLanguage: "en" }),
-    ).toBe(false);
+    ).resolves.toBe(false);
   });
 
-  it("refuses when there is no voice for the language", () => {
-    expect(
+  it("refuses when there is no voice for the language", async () => {
+    await expect(
       canSpeak({ text: "Aane", sourceLanguage: "tw", outputLanguage: "tw" }),
-    ).toBe(false);
+    ).resolves.toBe(false);
   });
 
-  it("refuses an empty answer", () => {
-    expect(
+  it("refuses an empty answer", async () => {
+    await expect(
       canSpeak({ text: "   ", sourceLanguage: "en", outputLanguage: "en" }),
-    ).toBe(false);
+    ).resolves.toBe(false);
   });
 });
 
@@ -122,6 +176,7 @@ describe("speaking", () => {
   });
 
   it("resolves false when the synthesiser errors", async () => {
+    forgetVoices();
     withVoices([voice("en-GB")]);
     window.speechSynthesis.speak = vi.fn((utterance) => utterance.onerror?.());
 
@@ -136,8 +191,9 @@ describe("a browser with no synthesiser at all", () => {
     vi.unstubAllGlobals();
     vi.stubGlobal("speechSynthesis", undefined);
 
+    forgetVoices();
     expect(isSupported()).toBe(false);
-    expect(voiceFor("en")).toBeNull();
+    expect(await loadVoices()).toEqual([]);
     await expect(
       speakOnDevice({ text: "Yes", outputLanguage: "en" }),
     ).resolves.toBe(false);

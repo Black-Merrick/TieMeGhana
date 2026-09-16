@@ -194,7 +194,10 @@ export default function useSpokenResponse() {
  * silence.
  */
 async function _speakHere(payload) {
-  if (!deviceCanSpeak(payload ?? {})) return false;
+  // Awaited, because the browser fills its voice list asynchronously. Asking
+  // synchronously answers "no voices" for the first moments of every session,
+  // which is exactly when the first answer tends to be given.
+  if (!(await deviceCanSpeak(payload ?? {}))) return false;
 
   return speakOnDevice({
     text: payload.text,
