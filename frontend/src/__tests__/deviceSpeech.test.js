@@ -291,3 +291,75 @@ describe("the hook reaching for it when the service fails", () => {
     expect(window.speechSynthesis.speak).not.toHaveBeenCalled();
   });
 });
+
+describe("choosing the best of the voices that match", () => {
+  /**
+   * A device with nineteen English voices usually has a range, and picking
+   * whichever came first is how a clinician ends up straining to understand a
+   * sentence about their patient.
+   */
+
+  const named = (name, lang = "en-GB", extra = {}) => ({ name, lang, ...extra });
+
+  it("prefers anything over espeak", () => {
+    // espeak is a formant synthesiser. Intelligible, but robotic, and on a
+    // clinical sentence that costs comprehension rather than only charm.
+    const voices = [named("espeak-ng English"), named("Daniel")];
+
+    expect(pickVoice(voices, "en")).toMatchObject({ name: "Daniel" });
+  });
+
+  it("still uses espeak when it is all there is", () => {
+    // Better to be understood with effort than not heard at all. This is the
+    // usual state of a Linux desktop.
+    const voices = [named("espeak-ng English")];
+
+    expect(pickVoice(voices, "en")).toMatchObject({ name: "espeak-ng English" });
+  });
+
+  it("skips the novelty variants espeak exposes", () => {
+    // "English+Half-LifeAnnouncementSystem" is a real entry on a machine with
+    // espeak-ng installed. None of them belong in a consultation.
+    const voices = [
+      named("English+Half-LifeAnnouncementSystem"),
+      named("English+Alex"),
+      named("English"),
+    ];
+
+    expect(pickVoice(voices, "en")).toMatchObject({ name: "English" });
+  });
+
+  it("prefers a local voice over one that needs the network", () => {
+    // This is the fallback for the network service having already failed, so
+    // a voice that also needs the network is a poor second choice.
+    const voices = [
+      named("Google UK English", "en-GB", { localService: false }),
+      named("Daniel", "en-GB", { localService: true }),
+    ];
+
+    expect(pickVoice(voices, "en")).toMatchObject({ name: "Daniel" });
+  });
+
+  it("still refuses a language it has no voice for, however many it has", () => {
+    // The safety property, unchanged by ranking. espeak ships 945 English
+    // voices and no Akan, and reading Twi in an English voice is confident
+    // mispronunciation of clinical words.
+    const voices = [named("Daniel"), named("Fiona", "en-US")];
+
+    expect(pickVoice(voices, "tw")).toBeNull();
+  });
+});
+
+describe("how it is spoken", () => {
+  it("slows a little, because a clinician hears this a handful of times", async () => {
+    forgetVoices();
+    withVoices([voice("en-GB")]);
+
+    await speakOnDevice({ text: "The pain is severe", outputLanguage: "en" });
+
+    const [utterance] = window.speechSynthesis.speak.mock.calls[0];
+    expect(utterance.rate).toBeLessThan(1);
+    // Not a drawl. The answer is being waited on in front of a patient.
+    expect(utterance.rate).toBeGreaterThan(0.8);
+  });
+});

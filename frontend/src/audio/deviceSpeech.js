@@ -33,6 +33,9 @@
 /** How long to wait for the browser to finish loading its voice list. */
 const VOICES_TIMEOUT_MS = 3000;
 
+/** A shade under the default. See the note where it is applied. */
+const SPEAKING_RATE = 0.92;
+
 let cached = null;
 
 /** Whether this browser has a synthesiser at all. */
@@ -92,24 +95,69 @@ export function loadVoices({ timeoutMs = VOICES_TIMEOUT_MS } = {}) {
 }
 
 /**
+ * Voices that are intelligible but not pleasant, preferred last.
+ *
+ * espeak is a formant synthesiser: it is robotic, and on a clinical sentence
+ * that costs comprehension rather than only charm. It is usually the only
+ * thing installed on a Linux desktop, so it is used rather than refused, but
+ * anything else on the device is used ahead of it.
+ *
+ * Phones and laptops mostly ship something better under some other name, and
+ * this is how they get chosen without having to enumerate them all.
+ */
+const LAST_RESORT = /espeak|e-speak|flite|robo/i;
+
+/**
  * A voice for this language from a list, or null.
  *
  * Matched on the primary subtag, so "en-GB" and "en-US" both answer for "en".
  * Never falls through to the list's first entry: the default is whatever the
  * operating system is set to, and reading Twi in it is worse than silence.
+ *
+ * Among the voices that do match, the best sounding one wins. A device with
+ * nineteen English voices usually has a range, and picking whichever came
+ * first in the list is how a clinician ends up straining to understand a
+ * sentence about their patient.
  */
 export function pickVoice(voices, language) {
   if (!language) return null;
 
   const wanted = language.toLowerCase();
+  const matching = (voices ?? []).filter((voice) => {
+    const lang = voice.lang?.toLowerCase() ?? "";
+    return lang === wanted || lang.startsWith(`${wanted}-`);
+  });
 
-  return (
-    (voices ?? []).find((voice) =>
-      voice.lang?.toLowerCase().startsWith(`${wanted}-`),
-    ) ??
-    (voices ?? []).find((voice) => voice.lang?.toLowerCase() === wanted) ??
-    null
+  if (!matching.length) return null;
+
+  // Ranked rather than filtered, so a device with nothing but espeak still
+  // speaks. Better to be understood with effort than not heard at all.
+  const ranked = [...matching].sort(
+    (a, b) => _rank(a) - _rank(b) || _preferPlainName(a) - _preferPlainName(b),
   );
+
+  return ranked[0];
+}
+
+/** Lower is better. */
+function _rank(voice) {
+  const name = voice.name ?? "";
+
+  if (LAST_RESORT.test(name)) return 2;
+  // A local voice is preferred over a network one, because this is the
+  // fallback for the network service having already failed.
+  return voice.localService === false ? 1 : 0;
+}
+
+/**
+ * Prefer a plainly named voice over a novelty one.
+ *
+ * espeak exposes hundreds of variants, and a name carrying a "+" is one of
+ * them: "English+Half-LifeAnnouncementSystem" is a real entry on this
+ * machine's list. None of them belong in a consultation.
+ */
+function _preferPlainName(voice) {
+  return /[+]/.test(voice.name ?? "") ? 1 : 0;
 }
 
 /**
@@ -149,6 +197,17 @@ export async function speakOnDevice({ text, outputLanguage }) {
       const utterance = new window.SpeechSynthesisUtterance(text);
       utterance.voice = voice;
       utterance.lang = voice.lang;
+
+      // Slightly under the default, which is tuned for people who listen to
+      // synthetic speech all day. A clinician hears this a handful of times
+      // and needs to catch a clinical word first time, and espeak in
+      // particular is much easier to follow a little slowed. Not slower than
+      // this: a drawl is its own kind of hard to follow, and the answer is
+      // being waited on in front of a patient.
+      utterance.rate = SPEAKING_RATE;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
       utterance.onend = () => resolve(true);
       utterance.onerror = () => resolve(false);
 
