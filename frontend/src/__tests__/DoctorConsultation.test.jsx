@@ -637,3 +637,81 @@ describe("a refusal caused by the translation, not by the doctor", () => {
     expect(screen.queryByTestId("refused-lookup-text")).not.toBeInTheDocument();
   });
 });
+
+describe("when the translation service runs out", () => {
+  /**
+   * Khaya's free tier answers 403 "Out of call volume quota. Quota will be
+   * replenished in 14:19:29". Production turned that into a 503 for every
+   * caption, and the screen said "try again", which for a spent allowance is
+   * exactly the wrong advice: it comes back in hours.
+   */
+
+  it("still shows the signs, because English needs no translation to reach them", async () => {
+    const response = captionResponse();
+    response.caption_problem = "quota";
+    response.caption = "head";
+    response.caption_language = "en";
+    response.translation_applied = false;
+    captionUtterance.mockResolvedValue(response);
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "head");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("caption-problem")).toBeInTheDocument();
+    });
+    // The point of the change: the exchange happened.
+    expect(screen.queryByTestId("caption-error")).not.toBeInTheDocument();
+  });
+
+  it("says the allowance is spent rather than telling them to retry", async () => {
+    const response = captionResponse();
+    response.caption_problem = "quota";
+    captionUtterance.mockResolvedValue(response);
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "head");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    const notice = await screen.findByTestId("caption-problem");
+    expect(notice).toHaveAttribute("data-problem", "quota");
+    expect(notice).toHaveTextContent(/daily allowance/i);
+    expect(notice).toHaveTextContent(/will not bring it back sooner/i);
+  });
+
+  it("does tell them to try again when it is an outage", async () => {
+    // The other half. One is worth retrying and the other is not, and the
+    // difference is hours.
+    const response = captionResponse();
+    response.caption_problem = "unavailable";
+    captionUtterance.mockResolvedValue(response);
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "head");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    const notice = await screen.findByTestId("caption-problem");
+    expect(notice).toHaveAttribute("data-problem", "unavailable");
+    expect(notice).toHaveTextContent(/may work/i);
+  });
+
+  it("says nothing when the caption was translated", async () => {
+    captionUtterance.mockResolvedValue(captionResponse());
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "head");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => screen.getByTestId("caption"));
+    expect(screen.queryByTestId("caption-problem")).not.toBeInTheDocument();
+  });
+});
