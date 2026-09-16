@@ -21,7 +21,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN python manage.py collectstatic --noinput
+# DJANGO_DEBUG=0 matters here and is not cosmetic. Settings pick the
+# staticfiles backend from DEBUG: with it unset this defaults to development
+# and writes plain files with no staticfiles.json manifest. The container then
+# starts with DJANGO_DEBUG=0, which selects WhiteNoise's manifest backend, and
+# that backend refuses to resolve any name the missing manifest does not
+# contain. Every admin page answers 500, which is the one part of the app a
+# GhSL consultant needs in order to approve clips, and nothing else in the app
+# is affected so the deploy looks healthy.
+#
+# The build must therefore run in the same mode the process will.
+RUN DJANGO_DEBUG=0 DJANGO_SECRET_KEY=build-only-not-a-runtime-secret \
+    python manage.py collectstatic --noinput
 
 # Documentation only: the actual port comes from $PORT at runtime, which is how
 # every container host tells a process where to listen.
