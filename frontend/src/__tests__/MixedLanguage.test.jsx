@@ -1,10 +1,14 @@
 /**
- * Speaking both languages at once, and choosing a voice in emergency mode.
+ * The language controls on the doctor's panel.
  *
- * Code switching is how clinical speech in Ghana actually works: much medical
- * vocabulary has no Twi word, plenty of Twi has no single English one, and a
- * speaker moves between them inside a sentence. Forcing a choice made the
- * doctor declare something untrue, and the translator acted on it confidently.
+ * "Both" was offered here for a while, because code switching is how clinical
+ * speech in Ghana actually works: much medical vocabulary has no Twi word and
+ * a speaker moves between the two inside a sentence. It was removed from the
+ * interface as one control too many to read mid consultation.
+ *
+ * The server still accepts a mixed declaration and the resolver and safety
+ * gate still handle it, which backend tests cover. These only assert what a
+ * clinician is actually offered.
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
@@ -34,64 +38,42 @@ afterEach(() => {
 });
 
 describe("the doctor's input language", () => {
-  it("offers both languages together", async () => {
+  it("offers the two languages the app speaks", async () => {
     render(<DoctorUtteranceForm onSend={vi.fn()} />);
 
     const group = screen.getByTestId("doctor-language");
     expect(group).toHaveTextContent("English");
     expect(group).toHaveTextContent("Twi");
-    expect(group).toHaveTextContent("Both");
   });
 
-  it("sends the mixed declaration with the message", async () => {
-    // The backend needs to know not to translate. Sending "en" for a mixed
-    // sentence is what produced fluent, wrong Twi.
+  it("no longer offers Both", async () => {
+    render(<DoctorUtteranceForm onSend={vi.fn()} />);
+
+    expect(screen.queryByRole("radio", { name: "Both" })).toBeNull();
+  });
+
+  it("sends whichever language was chosen with the message", async () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
     render(<DoctorUtteranceForm onSend={onSend} />);
 
-    await user.click(screen.getByRole("radio", { name: "Both" }));
-    await user.type(
-      screen.getByLabelText(/message for the patient/i),
-      "Take two tablet after food",
-    );
+    await user.click(screen.getByRole("radio", { name: "Twi" }));
+    await user.type(screen.getByLabelText(/message for the patient/i), "Bisa");
     await user.click(screen.getByRole("button", { name: /send to patient/i }));
 
     await waitFor(() =>
-      expect(onSend).toHaveBeenCalledWith({
-        sourceLanguage: "mixed",
-        text: "Take two tablet after food",
-      }),
+      expect(onSend).toHaveBeenCalledWith({ sourceLanguage: "tw", text: "Bisa" }),
     );
   });
 });
 
-describe("the microphone while both languages are selected", () => {
-  it("is disabled, because recognition handles one language at a time", async () => {
+describe("the microphone", () => {
+  it("is available whichever language is chosen", async () => {
+    // It used to be disabled while Both was selected, because speech
+    // recognition handles one language at a time. With Both gone there is no
+    // longer a selection that can turn it off.
     render(<DoctorUtteranceForm onSend={vi.fn()} />);
     expect(screen.getByTestId("microphone-button")).toBeEnabled();
 
-    await user.click(screen.getByRole("radio", { name: "Both" }));
-
-    expect(screen.getByTestId("microphone-button")).toBeDisabled();
-  });
-
-  it("says why, and what to do instead", async () => {
-    // A greyed out control with no reason beside it is the thing people file
-    // bugs about. Mid consultation the alternative has to be in the same
-    // glance.
-    render(<DoctorUtteranceForm onSend={vi.fn()} />);
-
-    await user.click(screen.getByRole("radio", { name: "Both" }));
-
-    const note = screen.getByTestId("microphone-mixed");
-    expect(note).toHaveTextContent(/one language at a time/i);
-    expect(note).toHaveTextContent(/type the message/i);
-  });
-
-  it("comes back when a single language is chosen again", async () => {
-    render(<DoctorUtteranceForm onSend={vi.fn()} />);
-
-    await user.click(screen.getByRole("radio", { name: "Both" }));
     await user.click(screen.getByRole("radio", { name: "Twi" }));
 
     expect(screen.getByTestId("microphone-button")).toBeEnabled();
@@ -100,10 +82,9 @@ describe("the microphone while both languages are selected", () => {
 });
 
 describe("the language answers are spoken in", () => {
-  it("does not offer a mixed voice", async () => {
-    // This picks the voice, and there is no mixed voice. Offering one would
-    // mean choosing English or Twi behind the doctor's back and reporting
-    // whichever was chosen as though they had asked for it.
+  it("offers English and Twi, and nothing else", async () => {
+    // It picks the voice, and there is no mixed voice: offering one would mean
+    // choosing English or Twi behind the doctor's back.
     render(
       <DoctorUtteranceForm
         onSend={vi.fn()}

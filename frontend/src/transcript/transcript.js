@@ -116,14 +116,29 @@ const ATTRIBUTION = {
  * more identifying: a stranger reading a stray transcript would learn whose it
  * was. See ADR 028.
  */
+/** For labelling the second rendering in a saved record. */
+const LANGUAGE_NAMES = { en: "English", tw: "Twi" };
+
 export function transcriptAsText(
   entries = readTranscript(),
   { patientName = "", savedAt = new Date() } = {},
 ) {
-  const lines = entries.map((entry) => {
+  // Both languages, where both were kept. The saved copy is the one a patient
+  // shows to another clinician, who may not share the language the
+  // consultation happened in, and a file that has to be read in a particular
+  // language is a file that fails the person carrying it. Nothing is
+  // translated here: both renderings already exist, from when the line was
+  // spoken or captioned.
+  const lines = entries.flatMap((entry) => {
     const who = entry.direction === Direction.TO_PATIENT ? "Doctor" : "Patient";
     const attribution = ATTRIBUTION[entry.answeredBy] ?? "";
-    return `[${formatStamp(entry.at)}] ${who}: ${entry.text}${attribution}`;
+    const line = `[${formatStamp(entry.at)}] ${who}: ${entry.text}${attribution}`;
+
+    if (!entry.translation || entry.translation === entry.text) return [line];
+
+    // Indented under its own line rather than on it, so the record stays
+    // readable by somebody who only wants one of the two languages.
+    return [line, `${" ".repeat(11)}${LANGUAGE_NAMES[entry.translationLanguage] ?? "Also"}: ${entry.translation}`];
   });
 
   return [

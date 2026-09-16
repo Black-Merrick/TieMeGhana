@@ -375,3 +375,109 @@ describe("the user manual", () => {
     }
   });
 });
+
+describe("the README's screenshots", () => {
+  /**
+   * Broken images on a repository's front page are the first thing anyone
+   * sees, and nothing in a normal build notices them: markdown is not
+   * compiled, so a renamed or deleted screenshot stays a working file path
+   * right up until somebody opens the page.
+   */
+
+  it("all point at files that exist", () => {
+    const readme = read("../README.md");
+    const images = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]);
+
+    expect(images.length).toBeGreaterThan(0);
+
+    const missing = images.filter((path) => {
+      try {
+        readFileSync(resolve(process.cwd(), "..", path));
+        return false;
+      } catch {
+        return true;
+      }
+    });
+
+    expect(missing).toEqual([]);
+  });
+
+  it("show the screens the manual documents, from the same capture", () => {
+    // The README and the manual draw on one set of screenshots, so what the
+    // repository advertises and what the manual explains cannot diverge.
+    const readme = read("../README.md");
+    const captured = JSON.parse(read("../docs/manual/screens.json"));
+
+    for (const screen of captured.screens) {
+      expect(readme).toContain(`docs/manual/shots/${screen.id}.png`);
+    }
+  });
+
+  it("links the manual at the path the build writes it to", () => {
+    const readme = read("../README.md");
+
+    expect(readme).toContain("frontend/public/tie-me-ghana-manual.pdf");
+  });
+
+  it("carries no alt text that would be useless to a screen reader", () => {
+    // A README is read by people who cannot see the screenshots too, and
+    // "screenshot" as alt text tells them nothing at all.
+    const readme = read("../README.md");
+    const alts = [...readme.matchAll(/!\[([^\]]*)\]\([^)]+\)/g)].map((m) => m[1]);
+
+    for (const alt of alts) {
+      expect(alt.length).toBeGreaterThan(20);
+      expect(alt.toLowerCase()).not.toMatch(/^(screenshot|image|picture)$/);
+    }
+  });
+});
+
+describe("the documents agree about translation", () => {
+  /**
+   * Turning the translation service on changed what these documents have to
+   * say: sentences now leave our servers for a third party. Turning it back
+   * off would make them wrong in the other direction.
+   *
+   * Nothing in the frontend can see which provider the deployment runs, so
+   * this cannot verify the setting. What it can do is stop the two documents
+   * drifting apart from each other, and stop the old claim creeping back into
+   * one of them alone.
+   */
+
+  const privacy = () => read("src/legal/PrivacyPolicy.jsx");
+  const terms = () => read("src/legal/TermsOfUse.jsx");
+
+  it("neither still claims translation is switched off", () => {
+    // The sentence that was true under the stub and is now false. A privacy
+    // policy saying nothing leaves the server, while sentences leave it, is
+    // the exact misrepresentation these tests exist to prevent.
+    expect(privacy()).not.toMatch(/switched off/i);
+    expect(terms()).not.toMatch(/switched off/i);
+    expect(privacy()).not.toMatch(/no recording\s+and no text leaves/i);
+  });
+
+  it("the privacy policy names the service and says what reaches it", () => {
+    const text = privacy();
+
+    expect(text).toMatch(/GhanaNLP/);
+    expect(text).toMatch(/Khaya/);
+    expect(text).toMatch(/leaves our servers/i);
+  });
+
+  it("the privacy policy still promises the visit record never leaves", () => {
+    // The one claim that must survive the change, because it is the promise
+    // the whole design rests on and it is still true: the record is assembled
+    // on the device, and only individual sentences are sent for translation.
+    expect(privacy()).toMatch(/never transmitted/i);
+  });
+
+  it("the terms warn that translation is done by machine", () => {
+    expect(terms()).toMatch(/machine translation|done by machine/i);
+  });
+
+  it("the deployment guide warns that switching back breaks them", () => {
+    // So whoever flips the setting is told, in the place they flip it, that
+    // two published documents depend on it.
+    expect(read("../DEPLOY.md")).toMatch(/privacy policy has to say/i);
+  });
+});

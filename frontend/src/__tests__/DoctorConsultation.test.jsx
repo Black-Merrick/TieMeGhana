@@ -580,3 +580,60 @@ describe("the pause before the answer interface", () => {
     });
   });
 });
+
+describe("a refusal caused by the translation, not by the doctor", () => {
+  /**
+   * Type "bisa" in Twi and the app refuses "inquire". Both are correct: bisa
+   * does mean inquire, and the clip library happens to file that sign under
+   * ASK. Without the connection on screen the message is baffling, because it
+   * names a word the doctor never typed.
+   *
+   * The confirmation panel had said this for a while. The refusal is where it
+   * matters more, since a refusal is the moment somebody has to work out what
+   * to write instead.
+   */
+
+  it("says what the typed words were translated to", async () => {
+    const response = captionResponse();
+    response.transcript = "bisa";
+    response.source_language = "tw";
+    response.sign_lookup_text = "inquire";
+    response.sequence.is_safe_to_show = false;
+    response.sequence.unavailable_tokens = ["inquire"];
+    captionUtterance.mockResolvedValue(response);
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "bisa");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("refused-lookup-text")).toBeInTheDocument();
+    });
+
+    const explanation = screen.getByTestId("refused-lookup-text");
+    expect(explanation).toHaveTextContent("bisa");
+    expect(explanation).toHaveTextContent("inquire");
+  });
+
+  it("stays quiet when the doctor typed the words that were matched", async () => {
+    // English input. Repeating the sentence back unchanged would be noise on
+    // the one panel that needs to be read carefully.
+    const response = captionResponse();
+    response.transcript = "no pain";
+    response.sign_lookup_text = "no pain";
+    response.sequence.is_safe_to_show = false;
+    response.sequence.blocking_tokens = ["no"];
+    captionUtterance.mockResolvedValue(response);
+
+    const user = userEvent.setup();
+    render(<DoctorConsultation outputLanguage="en" />);
+
+    await user.type(screen.getByLabelText(/message for the patient/i), "no pain");
+    await user.click(screen.getByRole("button", { name: /send to patient/i }));
+
+    await waitFor(() => screen.getByTestId("utterance-refused"));
+    expect(screen.queryByTestId("refused-lookup-text")).not.toBeInTheDocument();
+  });
+});

@@ -59,3 +59,16 @@ export function fetchResolvableClips() {
 export function fetchClipByGloss(gloss) {
   return apiRequest(`/clips/by-gloss/${encodeURIComponent(gloss)}/`);
 }
+
+/**
+ * Every phrase Emergency Visual Triage can speak, in English and Twi.
+ *
+ * Emergency mode has no free text, FR 5.4, so its whole vocabulary is known in
+ * advance and is translated once on the server rather than at the moment of a
+ * tap. Fetching it here is what lets a tap speak immediately instead of
+ * waiting on a translation call, and what keeps an unreviewed translation from
+ * being read aloud during triage.
+ */
+export function fetchEmergencySpeech() {
+  return apiRequest("/clips/emergency-speech/");
+}

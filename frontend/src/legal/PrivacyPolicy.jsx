@@ -15,7 +15,7 @@ export default function PrivacyPolicy() {
     <article className="legal">
       <header className="legal__header">
         <h2 className="legal__title">Privacy Policy</h2>
-        <p className="legal__updated">Last updated 15 September 2026</p>
+        <p className="legal__updated">Last updated 16 September 2026</p>
       </header>
 
       <section className="legal__summary" aria-labelledby="privacy-summary">
@@ -39,6 +39,11 @@ export default function PrivacyPolicy() {
           <li>
             No advertising, no analytics and no tracking of any kind. The
             patient screens set no cookies at all.
+          </li>
+          <li>
+            Sentences are sent to a translation service to be turned into Twi
+            and read aloud. Nothing identifying goes with them, and the record
+            of the visit is not among them.
           </li>
         </ul>
       </section>
@@ -169,9 +174,12 @@ export default function PrivacyPolicy() {
 
         <h4>Translation and speech</h4>
         <p>
-          When the full service is switched on, three things are sent to
-          GhanaNLP, a Ghanaian language technology provider, through its Khaya
-          service:
+          <strong>
+            This is switched on. Some of what is said in the consultation
+            leaves our servers.
+          </strong>{" "}
+          Three things are sent to GhanaNLP, a Ghanaian language technology
+          provider, through its Khaya service:
         </p>
         <ul>
           <li>
@@ -187,13 +195,22 @@ export default function PrivacyPolicy() {
           or a database.
         </p>
         <p>
-          <strong>
-            In the current pilot this is switched off entirely.
-          </strong>{" "}
-          The app runs a stand in that performs no translation, so no recording
-          and no text leaves our servers. You can tell because the screen
-          labels captions as untranslated and spoken answers as silent rather
-          than pretending otherwise.
+          What is sent is the sentence itself and nothing around it. There is
+          no name attached, no patient number and no identifier of any kind,
+          because the app holds none to attach. GhanaNLP receives a clinical
+          phrase with nothing to say whose it is.
+        </p>
+        <p>
+          <strong>What this means in practice.</strong> A consultation conducted
+          through this app involves a third party processing the words of it.
+          That is the cost of translation working at all, and it is stated here
+          rather than buried, so a hospital can weigh it before deciding to use
+          the app and a patient can be told before it is used on them.
+        </p>
+        <p>
+          The one thing that never leaves is the record of the visit. Questions
+          and answers are assembled and kept on the device, and the sentences
+          sent for translation are not gathered anywhere as a conversation.
         </p>
 
         <h4>Where the app runs</h4>
