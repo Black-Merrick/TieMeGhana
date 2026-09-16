@@ -17,6 +17,21 @@ export default function useSpokenResponse() {
   const [result, setResult] = useState(null);
   const audioRef = useRef(null);
 
+  /**
+   * What is being spoken right now, so it cannot be started twice.
+   *
+   * A ref rather than state, and that is the point. The buttons are disabled
+   * while speaking, but `disabled` only takes effect after React re-renders,
+   * and a second tap landing inside that gap gets through. The result is the
+   * same answer spoken twice over itself, which to a clinician sounds like the
+   * patient said it twice.
+   *
+   * Keyed on the text, not a plain busy flag, so a patient who taps a
+   * different answer while one is still playing is not silently ignored. That
+   * is a correction, and losing it would be worse than overlapping audio.
+   */
+  const speakingRef = useRef(null);
+
   /** Release the previous clip's blob URL, which the browser will not. */
   const release = useCallback(() => {
     const previous = audioRef.current;
@@ -65,11 +80,13 @@ export default function useSpokenResponse() {
       audio.onended = () => {
         setStatus("spoken");
         vibrate(VibrationPattern.AUDIO_FINISHED);
+        speakingRef.current = null;
         release();
       };
 
       audio.onerror = () => {
         setStatus("failed");
+        speakingRef.current = null;
         release();
       };
 
@@ -80,6 +97,7 @@ export default function useSpokenResponse() {
         await audio.play();
       } catch {
         setStatus("failed");
+        speakingRef.current = null;
       }
     },
     [release],
@@ -108,17 +126,26 @@ export default function useSpokenResponse() {
     }
 
     release();
+    speakingRef.current = null;
     setStatus((current) => (current === "idle" ? current : "stopped"));
   }, [release]);
 
   /** Say the last answer again. Nothing to do if there has not been one. */
   const replay = useCallback(async () => {
     if (!result) return;
+    // Asked for deliberately, so it is not caught by the guard above: a doctor
+    // who missed the answer is not double tapping, they want it again.
+    speakingRef.current = null;
     await play(result);
   }, [play, result]);
 
   const speak = useCallback(
     async (payload) => {
+      // The same answer, already on its way. Ignored rather than queued: the
+      // patient tapped twice, they did not say it twice.
+      if (speakingRef.current === payload?.text) return null;
+      speakingRef.current = payload?.text ?? null;
+
       release();
       setStatus("working");
       setResult(null);
@@ -128,6 +155,7 @@ export default function useSpokenResponse() {
         spoken = await speakResponse(payload);
       } catch {
         setStatus("failed");
+        speakingRef.current = null;
         return null;
       }
 

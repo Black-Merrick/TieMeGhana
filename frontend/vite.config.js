@@ -96,6 +96,39 @@ export default defineConfig(({ mode }) => {
           // about a hospital connection, so what is not needed offline should
           // not be downloaded before the app will open.
           globIgnores: ["icon.png", "icon-512.png", "screen.png", "icons.svg"],
+
+          // Addresses the service worker must not answer with the app's own
+          // index.html.
+          //
+          // Workbox registers a navigation fallback so that a deep link into
+          // the app, /p/<reference> from a scanned QR code, works offline and
+          // on a hard refresh. That fallback matches *every* navigation,
+          // including ones that were never app routes, and the failure is
+          // silent and total: the address bar shows the file you asked for and
+          // the browser renders the patient app instead.
+          //
+          // It is invisible from a terminal, because curl has no service
+          // worker, and invisible in development, where these paths are
+          // proxied to Django before a worker sees them. It showed up on a
+          // phone, where the user manual opened as a blank screen.
+          //
+          // The app's own routes are deliberately absent from this list. "/",
+          // "/privacy", "/terms" and "/p/<reference>" must keep falling back to
+          // index.html or a reload of any of them breaks offline.
+          navigateFallbackDenylist: [
+            // Proxied to Django. The admin is how a consultant approves clips,
+            // and answering it with the patient screen is the exact confusion
+            // the dev server proxy exists to prevent.
+            /^\/api\//,
+            /^\/admin\//,
+            /^\/static\//,
+            /^\/media\//,
+            // Real files served from the build, the user manual among them. A
+            // prescription reference is url safe base64 and never contains a
+            // dot, so a dot in the path means a file rather than a route.
+            /\.[a-z0-9]+$/i,
+          ],
+
           runtimeCaching: [
             {
               // Sign videos and medicine photographs, wherever they are served

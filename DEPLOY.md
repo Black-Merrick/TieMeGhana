@@ -103,8 +103,8 @@ connection string as `DATABASE_URL`.
 | `R2_ACCESS_KEY_ID` | from Cloudflare | |
 | `R2_SECRET_ACCESS_KEY` | from Cloudflare | Shown once when the token is made |
 | `R2_PUBLIC_HOST` | `pub-xxxxxxxx.r2.dev` | Host only, no scheme, no trailing slash |
-| `LANGUAGE_PROVIDER` | `stub` | See the note below before changing this |
-| `KHAYA_API_KEY` | your key | Only needed when the line above is `khaya` |
+| `LANGUAGE_PROVIDER` | `khaya` | Live translation. `stub` for a demo that spends nothing. See below |
+| `KHAYA_API_KEY` | your key | Required whenever the line above is `khaya` |
 | `DJANGO_SUPERUSER_USERNAME` | a name | The admin account, created on first start |
 | `DJANGO_SUPERUSER_PASSWORD` | a long password | Checked against Django's validators |
 | `DJANGO_SUPERUSER_EMAIL` | optional | |
@@ -112,12 +112,31 @@ connection string as `DATABASE_URL`.
 **The scheme matters in the two origin variables.** Django ignores a bare
 hostname there silently, so the setting looks configured and does nothing.
 
-**`LANGUAGE_PROVIDER` decides whether real credit is spent.** Khaya's free tier
-is metered, and `auto` picks the real provider whenever a key is present. Left
-on `stub`, the app runs completely and says so on screen: captions are
-untranslated and spoken answers are silence, both labelled as such rather than
-passed off as working. That is ADR 011, and it is the honest state to demo in
-until you want to spend credit deliberately.
+**`LANGUAGE_PROVIDER` decides whether real credit is spent.** Set it to
+`khaya` and translation, transcription and speech are live, which is what the
+deployment now runs. Khaya's free tier is metered, so every captioned
+utterance and every spoken answer costs a call against it.
+
+How many, exactly, because it is worth knowing before a demonstration:
+
+| Action | Calls |
+| --- | --- |
+| A question typed in English | 1, to translate the caption to Twi |
+| A question typed in Twi | 1, to translate the sign lookup to English |
+| A question typed as **Both** | 0, it is passed through untranslated |
+| A dictated question | 1 more, to transcribe the audio |
+| A patient answer read aloud, same language | 1, to synthesize it |
+| A patient answer read aloud, other language | 2, to translate then synthesize |
+
+`stub` forces the development stand in even with a valid key, which is what
+makes it safe to leave the key in place while working on something else: the
+app runs completely, and captions and spoken answers are labelled as
+untranslated rather than passed off as working. That is ADR 011.
+
+**Turning this on changes what the privacy policy has to say,** and it has
+been changed to match. Sentences leave our servers for a third party. If you
+ever switch back to `stub`, those documents become wrong in the other
+direction and need reverting with it.
 
 **The admin account has to come from the environment.** It is how a GhSL
 consultant approves clips, and an unapproved clip never plays, so a deployment

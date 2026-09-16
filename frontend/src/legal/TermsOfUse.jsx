@@ -13,7 +13,7 @@ export default function TermsOfUse() {
     <article className="legal">
       <header className="legal__header">
         <h2 className="legal__title">Terms of Use</h2>
-        <p className="legal__updated">Last updated 15 September 2026</p>
+        <p className="legal__updated">Last updated 16 September 2026</p>
       </header>
 
       <section className="legal__summary" aria-labelledby="terms-summary">
@@ -32,6 +32,10 @@ export default function TermsOfUse() {
           <li>
             It refuses rather than guesses. When a word cannot be signed
             accurately, it says so instead of showing something close.
+          </li>
+          <li>
+            Translation between English and Twi is done by machine, not by a
+            person, and the sentences pass through a third party service.
           </li>
           <li>
             Anyone holding a prescription QR code can see that medicine list.
@@ -102,10 +106,13 @@ export default function TermsOfUse() {
           </li>
         </ul>
         <p>
-          <strong>In the current pilot, translation is switched off.</strong>{" "}
-          Captions are shown untranslated and spoken answers are silent. The
-          screen labels both rather than passing them off as working. Do not
-          demonstrate this app as a working translator.
+          <strong>Translation between English and Twi is machine translation.</strong>{" "}
+          It is performed by GhanaNLP&rsquo;s Khaya service, it is good, and it
+          is not a person. It has no knowledge of the patient, the diagnosis or
+          anything said a moment earlier, and a clinical sentence is exactly the
+          kind it can get subtly wrong. Read the Twi caption before you send it
+          if you read Twi, and treat what comes back the way you would treat
+          any translation nobody in the room has checked.
         </p>
       </section>
 
@@ -212,8 +219,8 @@ export default function TermsOfUse() {
           This app is provided as it is, with no promise that it is accurate,
           available or fit for any particular purpose. That is a plain statement
           of fact for a pilot rather than a way of avoiding responsibility: the
-          sign vocabulary is incomplete, translation is switched off, and the
-          hosting is free.
+          sign vocabulary is incomplete, translation is done by machine, and
+          the hosting is free.
         </p>
         <p>
           To the extent the law allows, the Tie Me Ghana team is not liable for

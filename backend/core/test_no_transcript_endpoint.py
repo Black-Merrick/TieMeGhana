@@ -79,6 +79,10 @@ def test_the_api_surface_is_the_one_we_expect():
         "clip-body-locations",
         "clip-by-gloss",
         "clip-detail",
+        # The fixed phrases emergency mode speaks, in both languages. Reads a
+        # constant table, writes nothing, and carries no patient data: the
+        # whole point is that emergency mode's vocabulary is known in advance.
+        "clip-emergency-speech",
         "clip-list",
         "health",
         # The keep-alive liveness probe. Accepts nothing, reads nothing, and

@@ -594,6 +594,10 @@ ${sections}
     <p>Photograph the medicine, never the patient, and never a label carrying somebody's name.</p>
   </div>
 
+  <h3>Translation leaves our servers</h3>
+  <p>Sentences are sent to GhanaNLP's Khaya service to be turned into Twi and read aloud, and a dictated message is sent as audio to be turned into text. Nothing identifying goes with them, because the app holds nothing to send. The record of the visit is not among them: it is assembled on the device and stays there.</p>
+  <p>It is worth telling a patient that a translation service is involved, in the same way you would mention an interpreter.</p>
+
   <h3>The prescription QR code</h3>
   <p>Anybody who scans the code or holds the link can see that list of medicines. It carries no name, so it says what somebody is taking without saying who, but treat a printed code the way you would treat any prescription slip.</p>
 </section>
@@ -633,8 +637,12 @@ ${sections}
         <td>The pilot server sleeps when unused and takes up to a minute to wake. Open the app a minute before a clinic session.</td>
       </tr>
       <tr>
-        <td>Captions are not translated and spoken answers are silent</td>
-        <td>Expected in this pilot. Translation is switched off and the app says so on screen rather than pretending to work.</td>
+        <td>The Twi caption reads oddly</td>
+        <td>Translation is done by machine, by GhanaNLP's Khaya service. It has no knowledge of the patient or of what was said a moment earlier, so a clinical sentence can come back subtly wrong. Read it before you send it if you read Twi, and rephrase in simpler words if it looks off.</td>
+      </tr>
+      <tr>
+        <td>Nothing is captioned and answers are not read aloud</td>
+        <td>The translation service is unreachable. The app says so and asks you to type instead. Sign videos already on the device still play.</td>
       </tr>
     </tbody>
   </table>

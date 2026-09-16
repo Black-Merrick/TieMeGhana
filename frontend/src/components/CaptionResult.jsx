@@ -99,6 +99,23 @@ function RefusedUtterance({ result }) {
         </p>
       ) : null}
 
+      {/* The refusal names an English word, and with Twi input that is a word
+          the doctor never typed. Without this the message is baffling: type
+          "bisa" and be told "inquire" cannot be signed, with nothing on screen
+          connecting the two.
+
+          The confirmation panel has said this for a while. The refusal is
+          where it matters more, because a refusal is the moment somebody has
+          to work out what to write instead. */}
+      {result.sign_lookup_text !== result.transcript ? (
+        <p className="gate__advice" data-testid="refused-lookup-text">
+          You typed <strong>{result.transcript}</strong>, and signs are keyed on
+          English, so they were matched from{" "}
+          <strong>{result.sign_lookup_text}</strong>. The translation is a
+          synonym the clip library may simply not have under that name.
+        </p>
+      ) : null}
+
       <p className="gate__advice">
         Rephrase using words the library has, or ask the patient in person.
       </p>

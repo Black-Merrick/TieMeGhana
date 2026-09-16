@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { fetchCriticalAlerts } from "../api/clips.js";
+import { fetchCriticalAlerts, fetchEmergencySpeech } from "../api/clips.js";
+import {
+  NO_PHRASES,
+  indexPhrases,
+  phraseToSpeak,
+} from "../emergency/spokenPhrases.js";
 import useSpokenResponse from "../hooks/useSpokenResponse.js";
 import useTranscript from "../hooks/useTranscript.js";
 import { Direction } from "../transcript/transcript.js";
@@ -45,6 +50,13 @@ export default function EmergencyTriage({
   onLeave,
 }) {
   const [alerts, setAlerts] = useState(null);
+
+  // The fixed vocabulary, in both languages, fetched once. Emergency mode has
+  // no free text, so everything it can say is known in advance and is
+  // translated on the server rather than at the moment of a tap. That is what
+  // makes a tap speak in about three seconds rather than five, and what keeps
+  // an unreviewed clinical translation from being read aloud during triage.
+  const [phrases, setPhrases] = useState(NO_PHRASES);
   const [chosen, setChosen] = useState({ pain: null, location: null, alert: null });
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
@@ -68,6 +80,17 @@ export default function EmergencyTriage({
         if (!cancelled) setAlerts([]);
       });
 
+    // Failure here is survivable in the same way: without the vocabulary
+    // every tap is spoken in English, which is the behaviour before this
+    // existed rather than a broken screen.
+    fetchEmergencySpeech()
+      .then((payload) => {
+        if (!cancelled) setPhrases(indexPhrases(payload));
+      })
+      .catch(() => {
+        if (!cancelled) setPhrases(NO_PHRASES);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -85,12 +108,44 @@ export default function EmergencyTriage({
   // the cycle where the patient most needs to see something happening.
   const [lastSaid, setLastSaid] = useState("");
 
-  const announce = (text) => {
+  /**
+   * Speak one tap, using the rendering the server prepared for it.
+   *
+   * `key` names the phrase in the fixed vocabulary; `english` is the label on
+   * screen, used when the server has never heard of that key.
+   *
+   * The source language passed to the server is the language the text is
+   * already in, not the one that was asked for. That is what removes the
+   * translation call: the server has nothing to translate and goes straight to
+   * speech. It is also what keeps an unreviewed phrase honest, because the
+   * chooser hands back English and says so rather than sending Twi nobody has
+   * checked.
+   */
+  const announce = (key, fallbackEnglish) => {
+    const { text, language } = phraseToSpeak(
+      phrases,
+      key,
+      outputLanguage,
+      fallbackEnglish,
+    );
+
     setLastSaid(text);
-    spoken.speak({ text, sourceLanguage: "en", outputLanguage });
+    spoken.speak({ text, sourceLanguage: language, outputLanguage });
+
+    // Recorded as the sentence that was said rather than the label on the
+    // button. A record reading "Head" says where the patient pointed; one
+    // reading "I have a headache" says what they told the clinician, which is
+    // what a record is for.
+    const stored = phrases.byKey?.[key];
     transcript.record({
       direction: Direction.TO_DOCTOR,
-      text,
+      text: stored?.en ?? fallbackEnglish,
+      language: "en",
+      // Only a reviewed translation is kept, for the same reason only a
+      // reviewed one is spoken: a record is read later, by people who were not
+      // in the room to notice it was wrong.
+      translation: stored?.tw_reviewed ? stored.tw : undefined,
+      translationLanguage: stored?.tw_reviewed ? "tw" : undefined,
       answeredBy: "patient",
     });
   };
@@ -211,7 +266,7 @@ export default function EmergencyTriage({
               chosenId={chosen.alert}
               onChoose={(alert) => {
                 setChosen((previous) => ({ ...previous, alert: alert.id }));
-                announce(alert.english_text);
+                announce(alert.id, alert.english_text);
               }}
             />
           </div>
@@ -227,7 +282,7 @@ export default function EmergencyTriage({
                 setChosen((previous) => ({ ...previous, pain: option.level }));
                 // Spoken as words rather than "4 of 5", because a number out
                 // of context tells the clinician nothing they can act on.
-                announce(option.label);
+                announce(`PAIN_${option.level}`, option.label);
               }}
             />
           </div>
@@ -245,7 +300,7 @@ export default function EmergencyTriage({
               chosenId={chosen.location}
               onChoose={(region) => {
                 setChosen((previous) => ({ ...previous, location: region.id }));
-                announce(`Pain in the ${region.label.toLowerCase()}`);
+                announce(region.id, `My ${region.label.toLowerCase()} hurts`);
               }}
             />
           </div>
