@@ -5,74 +5,80 @@ Emergency mode has no typing and no free text, per FR 5.4, so everything it can
 ever say is known in advance: two critical alerts, sixteen body locations and
 five pain levels. Twenty three phrases that will not change.
 
-That fact is worth using. Translating them at the moment of a tap was the
-obvious implementation and it is the wrong one, for three separate reasons:
+Two decisions follow from that, and both were arrived at by measurement rather
+than taste.
 
-- It costs two calls to a metered service per tap, one to translate and one to
-  speak, when one would do.
-- It is slow exactly when speed matters. Measured against the live service, a
-  translation is about 1.6 seconds and a synthesis about 3.1. Nearly five
-  seconds between a patient touching "cannot breathe" and a clinician hearing
-  it is not an emergency tool.
-- It produces unreviewed machine Twi at the moment accuracy matters most, and
-  the machine is visibly unreliable on single clinical words. Asked for
-  "Waist" it returned "Waist a ɔyɛ ɔkwasea", and for "Nose" it returned "Nose".
+**They are whole sentences, not labels.** A tap on the head used to say "Pain
+in the head", and a bare noun is both bad English and bad input to a
+translator. Asked to translate "Waist" the service returned "Waist a ɔyɛ
+ɔkwasea", and "Throat" came back as "Throat na ɔkyerɛwee": the English word
+with unrelated Twi attached. Asked to translate "My waist hurts" it returned
+"M'asensene yɛ me ya", which is a sentence. So each phrase is what a patient
+would actually say, in the first person, using the idiom English has where it
+has one: a headache and a sore throat rather than "pain in the head".
 
-So they are translated once, kept here, and served with the payload. A tap then
-costs one synthesis call and speaks immediately.
+**They are translated once, here, not at the moment of a tap.** Translating
+live cost two calls to a metered service per tap, and about five seconds
+measured end to end, between a patient touching "cannot breathe" and a
+clinician hearing it. Prepared in advance, a tap costs one synthesis call.
 
-**None of this Twi has been reviewed by a Twi speaker.** It was produced by
-GhanaNLP's Khaya service on 16 September 2026 and is recorded verbatim below,
-including where it plainly failed, because hiding a bad translation makes it
-harder to fix rather than safer. `is_usable` decides what may actually be
-spoken, and everything else falls back to English rather than reading nonsense
-to a clinician during triage. Fill in `REVIEWED_BY` when a Twi speaker has been
-through them, at which point the fallback stops applying.
+**None of this Twi has been reviewed by a Twi speaker.** It came from
+GhanaNLP's Khaya service on 16 September 2026 and is recorded verbatim,
+including where it is wrong, because hiding a bad translation makes it harder
+to fix rather than safer. Each phrase carries its own reviewer, and until one
+is named the phrase is spoken in English instead. Two automatic checks run
+regardless, and both catch real failures seen in this very table: a
+translation that kept its English word, and two different phrases that came
+back as the same Twi.
 """
 
-#: key -> (English, Twi, the Twi speaker who checked it)
+#: key -> (what the patient is saying, the Twi for it, who checked the Twi)
 #:
-#: The third element is the whole safety gate. An empty reviewer means the Twi
-#: is machine output nobody has read, and it is served so it can be corrected
-#: but never spoken. Put a name there and that phrase starts being spoken in
-#: Twi; the rest carry on in English until someone does the same for them.
+#: The third element is the safety gate. An empty reviewer means nobody has
+#: read the Twi, so it is served to be corrected and never spoken. Put a name
+#: there and that one phrase starts being spoken in Twi, while the rest carry
+#: on in English: per phrase rather than one switch for the set, because
+#: holding back the ones that are plainly right helps nobody.
 #:
-#: Per phrase rather than one switch for the set, for the same reason each clip
-#: carries its own reviewer: "Ti" for "Head" is plainly right and "Waist a ɔyɛ
-#: ɔkwasea" for "Waist" is plainly not, and holding the good ones back until
-#: every bad one is fixed helps nobody.
+#: Known to be wrong, and waiting for a reviewer rather than a guess:
 #:
-#: Recorded exactly as it came back. Five are obviously wrong and are caught by
-#: `_looks_untranslated`. Two more, CHEST and ARM, look wrong to an English
-#: reader but cannot be judged without Twi, so they wait for a reviewer rather
-#: than for a guess.
+#:   BACK    "Mewɔ akyiwadeɛ" does not appear to mean a backache.
+#:   PAIN_2  and PAIN_3 both came back as "Mete yea kakra", so a little pain
+#:           and moderate pain would say the same thing. Caught automatically.
+#:   ARM     and HAND both came back as "Me nsa yɛ me yaw". Twi may not
+#:           separate them, but a clinician needs to. Caught automatically.
 PHRASES: dict[str, tuple[str, str, str]] = {
     # Critical alerts, FR 5.3.
-    "CANNOT_BREATHE": ("Cannot breathe", "ɔhome ntumi nhome", ""),
-    "PREGNANCY": ("Pregnant", "nyinsɛn", ""),
-    # Body locations, FR 5.2.
-    "HEAD": ("Head", "Ti", ""),
-    "EYE": ("Eye", "Aniwa", ""),
-    "EAR": ("Ear", "Aso", ""),
-    "NOSE": ("Nose", "Nose", ""),
-    "MOUTH": ("Mouth", "Ano", ""),
-    "THROAT": ("Throat", "Throat na ɔkyerɛwee", ""),
-    "NECK": ("Neck", "Neck na ɔkyerɛwee", ""),
-    "CHEST": ("Chest", "Ɔpɔnkɔsotefo", ""),
-    "HEART": ("Heart", "Akoma", ""),
-    "STOMACH": ("Stomach", "Stomach na ɔkyerɛwee", ""),
-    "WAIST": ("Waist", "Waist a ɔyɛ ɔkwasea", ""),
-    "BACK": ("Back", "Akyire", ""),
-    "ARM": ("Arm", "Ahyɛnsodeɛ", ""),
-    "HAND": ("Hand", "Nsa", ""),
-    "LEG": ("Leg", "Nan", ""),
-    "FOOT": ("Foot", "Nansoaa", ""),
+    "CANNOT_BREATHE": ("I cannot breathe", "Mintumi nhome", ""),
+    "PREGNANCY": ("I am pregnant", "Menyinsɛn", ""),
+    # Body locations, FR 5.2. Idiomatic where English has a word for it, the
+    # universal "my X hurts" otherwise.
+    "HEAD": ("I have a headache", "Me ti pae me", ""),
+    "EYE": ("My eye hurts", "M'ani yɛ me ya", ""),
+    "EAR": ("I have an earache", "M'aso mu yɛ me ya", ""),
+    "NOSE": ("My nose hurts", "Me hwene yɛ me ya", ""),
+    "MOUTH": ("My mouth hurts", "M'ano yɛ me ya", ""),
+    "THROAT": ("I have a sore throat", "Me mene mu yɛ me ya", ""),
+    "NECK": ("My neck hurts", "Me kɔn yɛ me yaw", ""),
+    "CHEST": ("I have chest pain", "Me bo yɛ me ya", ""),
+    "HEART": ("I have pain around my heart", "Me yam hyehye me wɔ m'akoma mu", ""),
+    "STOMACH": ("I have a stomachache", "Me yafunu mu yɛ me ya", ""),
+    "WAIST": ("My waist hurts", "M'asensene yɛ me ya", ""),
+    "BACK": ("I have a backache", "Mewɔ akyiwadeɛ", ""),
+    "ARM": ("My arm hurts", "Me nsa yɛ me yaw", ""),
+    "HAND": ("My hand hurts", "Me nsa yɛ me yaw", ""),
+    "LEG": ("My leg hurts", "Me nan yɛ me yaw", ""),
+    "FOOT": ("My foot hurts", "Me nan ase yɛ me yaw", ""),
     # Pain scale, FR 5.1.
-    "PAIN_1": ("No pain", "ɛyeaa biara nni hɔ", ""),
-    "PAIN_2": ("A little pain", "Ɛyaw kakra", ""),
-    "PAIN_3": ("Moderate pain", "ɛyaw a ano nyɛ den", ""),
-    "PAIN_4": ("Severe pain", "ɛyaw a ano yɛ den", ""),
-    "PAIN_5": ("Worst pain", "Ɛyaw a ano yɛ den pa ara", ""),
+    "PAIN_1": ("I have no pain", "Biribiara nni hɔ a ɛyɛ me ya", ""),
+    "PAIN_2": ("I have a little pain", "Mete yea kakra", ""),
+    "PAIN_3": ("I have moderate pain", "Mete yea kakra", ""),
+    "PAIN_4": ("I have severe pain", "Mete yea kɛse", ""),
+    "PAIN_5": (
+        "The pain is the worst I have felt",
+        "Ɛyaw no ne ade a enye koraa a mate nka",
+        "",
+    ),
 }
 
 
@@ -80,45 +86,64 @@ def _looks_untranslated(english: str, twi: str) -> bool:
     """
     Whether the English survived into the Twi, which means nothing happened.
 
-    A crude check that catches a real and repeated failure: asked for a single
-    clinical noun the translator sometimes returns it unchanged, or returns it
-    with a fragment of unrelated Twi attached. "Nose" came back as "Nose", and
-    "Throat" as "Throat na ɔkyerɛwee".
+    Catches a real and repeated failure of the translator on short input: asked
+    for a bare clinical noun it sometimes returned it unchanged, or returned it
+    with a fragment of unrelated Twi attached. Whole sentences do not fail this
+    way, which is most of why the phrases above are sentences, but the check is
+    kept because it costs nothing and the failure was not theoretical.
 
-    It cannot catch a translation that is fluent and wrong, and it is not
-    pretending to. That is what review is for. This only catches the cases
-    where the output is self evidently not a translation, so those never reach
-    a clinician's ear.
+    It cannot catch a translation that is fluent and wrong, and does not
+    pretend to. That is what a reviewer is for.
     """
     if not twi.strip():
         return True
 
-    return any(word.lower() in twi.lower() for word in english.split() if len(word) > 2)
+    return any(word.lower() in twi.lower() for word in english.split() if len(word) > 3)
+
+
+def _collides_with_another_phrase(key: str, twi: str) -> bool:
+    """
+    Whether some other phrase came back as exactly this Twi.
+
+    The dangerous failure, and not a hypothetical one: "I have a little pain"
+    and "I have moderate pain" both returned "Mete yea kakra". Two taps that
+    mean different things must not say the same thing to a clinician, because
+    a patient reporting mild pain and one reporting moderate pain would be
+    indistinguishable, and the clinician would have no way to know.
+
+    Both sides of a collision are withheld rather than one, because there is no
+    way to tell from here which of the two the Twi actually means.
+    """
+    if not twi.strip():
+        return False
+
+    return any(
+        other != key and other_twi.strip() == twi.strip()
+        for other, (_, other_twi, _) in PHRASES.items()
+    )
 
 
 def spoken_phrase(key: str) -> dict:
     """
     One phrase, with both renderings and whether the Twi may be spoken.
 
-    `is_usable` is the safety gate for speech, and it is deliberately
-    conservative: a phrase is only speakable in Twi once a reviewer has signed
-    the set off and the automatic check has not flagged it. Until then the
-    caller speaks English, which a Twi speaking clinician understands as a
-    limitation rather than mishearing as a symptom.
+    `tw_reviewed` is the gate, and it is deliberately conservative: a reviewer
+    must have named themselves, the English must not have survived into the
+    Twi, and no other phrase may share that Twi. The automatic checks stay on
+    after review as a second pair of eyes, because a reviewer who signs off two
+    pain levels that say the same thing has made a mistake worth catching.
     """
     english, twi, reviewed_by = PHRASES[key]
-    flagged = _looks_untranslated(english, twi)
+    untranslated = _looks_untranslated(english, twi)
+    collides = _collides_with_another_phrase(key, twi)
 
     return {
         "key": key,
         "en": english,
         "tw": twi,
-        # Both conditions, and the automatic one still applies after review: a
-        # reviewer who signs off a phrase that kept its English word has made a
-        # mistake, and the cheap check is worth keeping as a second pair of
-        # eyes.
-        "tw_reviewed": bool(reviewed_by.strip()) and not flagged,
-        "tw_looks_untranslated": flagged,
+        "tw_reviewed": bool(reviewed_by.strip()) and not untranslated and not collides,
+        "tw_looks_untranslated": untranslated,
+        "tw_collides": collides,
         "reviewed_by": reviewed_by,
     }
 

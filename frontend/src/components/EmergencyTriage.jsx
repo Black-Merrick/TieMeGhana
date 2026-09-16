@@ -122,20 +122,29 @@ export default function EmergencyTriage({
    * chooser hands back English and says so rather than sending Twi nobody has
    * checked.
    */
-  const announce = (key, english) => {
-    const { text, language } = phraseToSpeak(phrases, key, outputLanguage, english);
+  const announce = (key, fallbackEnglish) => {
+    const { text, language } = phraseToSpeak(
+      phrases,
+      key,
+      outputLanguage,
+      fallbackEnglish,
+    );
 
     setLastSaid(text);
     spoken.speak({ text, sourceLanguage: language, outputLanguage });
 
-    // Both renderings are kept, because the record is read afterwards and may
-    // be read by somebody who does not share the language it was spoken in.
-    // The second one costs nothing here: the server already prepared it.
+    // Recorded as the sentence that was said rather than the label on the
+    // button. A record reading "Head" says where the patient pointed; one
+    // reading "I have a headache" says what they told the clinician, which is
+    // what a record is for.
     const stored = phrases.byKey?.[key];
     transcript.record({
       direction: Direction.TO_DOCTOR,
-      text: english,
+      text: stored?.en ?? fallbackEnglish,
       language: "en",
+      // Only a reviewed translation is kept, for the same reason only a
+      // reviewed one is spoken: a record is read later, by people who were not
+      // in the room to notice it was wrong.
       translation: stored?.tw_reviewed ? stored.tw : undefined,
       translationLanguage: stored?.tw_reviewed ? "tw" : undefined,
       answeredBy: "patient",
@@ -303,7 +312,7 @@ export default function EmergencyTriage({
               chosenId={chosen.location}
               onChoose={(region) => {
                 setChosen((previous) => ({ ...previous, location: region.id }));
-                announce(region.id, `Pain in the ${region.label.toLowerCase()}`);
+                announce(region.id, `My ${region.label.toLowerCase()} hurts`);
               }}
             />
           </div>

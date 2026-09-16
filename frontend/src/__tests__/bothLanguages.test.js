@@ -8,7 +8,7 @@
  * mean a five second wait and unreviewed clinical Twi.
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   NO_PHRASES,
@@ -264,5 +264,76 @@ describe("the saved copy carries both languages", () => {
     );
 
     expect(text.match(/Fa paracetamol/g)).toHaveLength(1);
+  });
+});
+
+describe("not speaking the same answer twice", () => {
+  // jsdom has no blob URL registry, so releasing one throws there. Stubbed
+  // rather than guarded in the hook: revokeObjectURL exists in every browser,
+  // and an unhandled rejection in the suite hides real ones.
+  beforeEach(() => {
+    if (typeof URL.revokeObjectURL !== "function") {
+      URL.revokeObjectURL = () => {};
+    }
+  });
+
+  /**
+   * The buttons are disabled while an answer is being spoken, but `disabled`
+   * only takes effect after React re-renders, and a second tap landing inside
+   * that gap gets through. The result is the same answer spoken over itself,
+   * which to a clinician sounds like the patient said it twice.
+   */
+
+  it("ignores a second request for the answer already being spoken", async () => {
+    const { renderHook, act } = await import("@testing-library/react");
+    const speech = await import("../api/speech.js");
+    const { default: useSpokenResponse } = await import(
+      "../hooks/useSpokenResponse.js"
+    );
+
+    const spoken = {
+      spoken_text: "Aane",
+      audio_base64: "UklGRgAAAABXQVZF",
+      audio_media_type: "audio/wav",
+    };
+    const call = vi.spyOn(speech, "speakResponse").mockResolvedValue(spoken);
+    vi.spyOn(speech, "audioUrlFrom").mockReturnValue("blob:fake");
+
+    const { result } = renderHook(() => useSpokenResponse());
+
+    await act(async () => {
+      // Two taps, no await between them, which is what a double tap is.
+      result.current.speak({ text: "Yes", sourceLanguage: "en", outputLanguage: "tw" });
+      result.current.speak({ text: "Yes", sourceLanguage: "en", outputLanguage: "tw" });
+    });
+
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("still accepts a different answer straight after", async () => {
+    // A patient correcting themselves. Losing that would be worse than
+    // overlapping audio, so the guard is keyed on the text rather than being a
+    // plain busy flag.
+    const { renderHook, act } = await import("@testing-library/react");
+    const speech = await import("../api/speech.js");
+    const { default: useSpokenResponse } = await import(
+      "../hooks/useSpokenResponse.js"
+    );
+
+    const call = vi.spyOn(speech, "speakResponse").mockResolvedValue({
+      spoken_text: "x",
+      audio_base64: "UklGRgAAAABXQVZF",
+      audio_media_type: "audio/wav",
+    });
+    vi.spyOn(speech, "audioUrlFrom").mockReturnValue("blob:fake");
+
+    const { result } = renderHook(() => useSpokenResponse());
+
+    await act(async () => {
+      result.current.speak({ text: "Yes", sourceLanguage: "en", outputLanguage: "tw" });
+      result.current.speak({ text: "No", sourceLanguage: "en", outputLanguage: "tw" });
+    });
+
+    expect(call).toHaveBeenCalledTimes(2);
   });
 });

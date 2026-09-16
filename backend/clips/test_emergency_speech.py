@@ -30,13 +30,26 @@ class TestTheVocabularyIsComplete:
         for level in range(1, 6):
             assert f"PAIN_{level}" in emergency_speech.PHRASES
 
-    def test_the_english_matches_the_source_of_truth(self):
-        # Two copies of a label drifting apart would mean the screen showing
-        # one thing and the app saying another.
-        for gloss, label, _ in CRITICAL_ALERTS:
-            assert emergency_speech.PHRASES[gloss][0] == label
-        for gloss, label in BODY_LOCATIONS:
-            assert emergency_speech.PHRASES[gloss][0] == label
+    def test_every_phrase_is_a_sentence_not_a_label(self):
+        # A tap on the head used to say "Pain in the head". A bare noun is bad
+        # English and worse input to a translator: asked for "Waist" the
+        # service returned "Waist a ɔyɛ ɔkwasea", and for "Throat" it returned
+        # "Throat na ɔkyerɛwee". Sentences fixed every one of those.
+        for key, (english, _, _) in emergency_speech.PHRASES.items():
+            assert len(english.split()) >= 3, f"{key}: {english!r} is a label"
+            assert english[0].isupper(), key
+
+    def test_every_phrase_is_what_the_patient_would_say(self):
+        # First person, because the patient is the one speaking. A record
+        # reading "Head" says where they pointed; "I have a headache" says what
+        # they told the clinician.
+        for key, (english, _, _) in emergency_speech.PHRASES.items():
+            assert english.startswith(("I ", "My ", "The ")), f"{key}: {english!r}"
+
+    def test_nothing_says_paining_me(self):
+        # Not standard English, and the form a translator handles worst.
+        for key, (english, _, _) in emergency_speech.PHRASES.items():
+            assert "paining" not in english.lower(), key
 
 
 class TestUnreviewedTwiIsNotSpeakable:
@@ -94,6 +107,26 @@ class TestUnreviewedTwiIsNotSpeakable:
         assert not emergency_speech._looks_untranslated("Ear", "Aso")
         assert not emergency_speech._looks_untranslated("Eye", "Aniwa")
 
+    def test_two_phrases_must_not_say_the_same_thing(self):
+        # The dangerous failure, and a real one: "I have a little pain" and "I
+        # have moderate pain" both came back as "Mete yea kakra". A clinician
+        # hearing the same sentence for two different pain levels has no way to
+        # know which the patient meant, so both sides are withheld.
+        collided = {
+            phrase["key"]
+            for phrase in emergency_speech.all_spoken_phrases()
+            if phrase["tw_collides"]
+        }
+
+        assert {"PAIN_2", "PAIN_3"} <= collided
+        assert all(
+            not emergency_speech.spoken_phrase(key)["tw_reviewed"] for key in collided
+        )
+
+    def test_a_collision_is_not_reported_for_an_empty_translation(self):
+        # Every unfilled phrase would otherwise collide with every other one.
+        assert not emergency_speech._collides_with_another_phrase("HEAD", "")
+
     def test_the_known_failures_are_all_caught(self):
         flagged = {
             phrase["key"]
@@ -101,7 +134,10 @@ class TestUnreviewedTwiIsNotSpeakable:
             if phrase["tw_looks_untranslated"]
         }
 
-        assert {"NOSE", "THROAT", "NECK", "STOMACH", "WAIST"} <= flagged
+        # Nothing should fail this any more: these were all bare nouns, and
+        # they are sentences now. The check stays because the failure was not
+        # theoretical and costs nothing to keep.
+        assert flagged == set(), flagged
 
 
 @pytest.mark.django_db
@@ -116,8 +152,8 @@ class TestTheEndpoint:
         phrases = api_client.get(reverse("clip-emergency-speech")).json()["phrases"]
         head = next(p for p in phrases if p["key"] == "HEAD")
 
-        assert head["en"] == "Head"
-        assert head["tw"] == "Ti"
+        assert head["en"] == "I have a headache"
+        assert head["tw"] == "Me ti pae me"
         assert "tw_reviewed" in head
 
     def test_it_reports_what_is_pending_review(self, api_client):
@@ -129,12 +165,14 @@ class TestTheEndpoint:
 
     def test_unreviewed_twi_is_still_served_so_it_can_be_corrected(self, api_client):
         # Withholding a bad translation would make it harder to fix rather
-        # than safer. It is served, flagged, and not spoken.
+        # than safer. It is served, flagged, and not spoken. PAIN_2 is the
+        # clearest case: its Twi is the same as PAIN_3's.
         phrases = api_client.get(reverse("clip-emergency-speech")).json()["phrases"]
-        nose = next(p for p in phrases if p["key"] == "NOSE")
+        pain = next(p for p in phrases if p["key"] == "PAIN_2")
 
-        assert nose["tw"] == "Nose"
-        assert nose["tw_reviewed"] is False
+        assert pain["tw"] == "Mete yea kakra"
+        assert pain["tw_collides"] is True
+        assert pain["tw_reviewed"] is False
 
     def test_it_needs_no_database_row(self, api_client):
         # The whole point: emergency mode's vocabulary is a constant, so this

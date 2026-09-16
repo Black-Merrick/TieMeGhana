@@ -3,13 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import EmergencyTriage from "../components/EmergencyTriage.jsx";
-import { fetchCriticalAlerts } from "../api/clips.js";
+import { fetchCriticalAlerts, fetchEmergencySpeech } from "../api/clips.js";
 import { speakResponse } from "../api/speech.js";
 import { readTranscript } from "../transcript/transcript.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCriticalAlerts: vi.fn() };
+  return {
+    ...actual,
+    fetchCriticalAlerts: vi.fn(),
+    fetchEmergencySpeech: vi.fn(),
+  };
 });
 vi.mock("../api/speech.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -68,9 +72,29 @@ function speech(text) {
   };
 }
 
+/**
+ * The fixed vocabulary, as the server serves it.
+ *
+ * Emergency mode has no free text, so every phrase it can say is translated
+ * once on the server rather than at the moment of a tap. Nothing here is
+ * reviewed, which is the real state: the Twi is machine output and is served
+ * so it can be corrected, never so it can be spoken.
+ */
+const PHRASES = {
+  phrases: [
+    { key: "CANNOT_BREATHE", en: "I cannot breathe", tw: "Mintumi nhome", tw_reviewed: false },
+    { key: "PREGNANCY", en: "I am pregnant", tw: "Menyinsɛn", tw_reviewed: false },
+    { key: "HEAD", en: "I have a headache", tw: "Me ti pae me", tw_reviewed: false },
+    { key: "STOMACH", en: "I have a stomachache", tw: "Me yafunu mu yɛ me ya", tw_reviewed: false },
+    { key: "PAIN_4", en: "I have severe pain", tw: "Mete yea kɛse", tw_reviewed: false },
+  ],
+  pending_review: ["CANNOT_BREATHE", "PREGNANCY", "HEAD", "STOMACH", "PAIN_4"],
+};
+
 beforeEach(() => {
   localStorage.clear();
   fetchCriticalAlerts.mockResolvedValue(ALERTS);
+  fetchEmergencySpeech.mockResolvedValue(PHRASES);
   speakResponse.mockImplementation(async ({ text }) => speech(text));
   vi.stubGlobal("navigator", { ...navigator, vibrate: vi.fn() });
   vi.stubGlobal("URL", {
@@ -139,7 +163,7 @@ describe("critical alerts, FR 5.3", () => {
 
     await waitFor(() => {
       expect(speakResponse).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Cannot breathe", outputLanguage: "tw" }),
+        expect.objectContaining({ text: "I cannot breathe", outputLanguage: "tw" }),
       );
     });
   });
@@ -216,14 +240,17 @@ describe("critical alerts, FR 5.3", () => {
 });
 
 describe("body map, FR 5.2", () => {
-  it("speaks where the pain is when a region is tapped", async () => {
+  it("speaks what the patient would say, not the label on the button", async () => {
+    // "Pain in the stomach" is not how anybody says this, and a bare label is
+    // worse input to a translator: asked for "Waist" the service returned
+    // "Waist a ɔyɛ ɔkwasea". Sentences fixed every one of those.
     renderTriage();
 
     await userEvent.click(screen.getByTestId("body-part-STOMACH"));
 
     await waitFor(() => {
       expect(speakResponse).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Pain in the stomach" }),
+        expect.objectContaining({ text: "I have a stomachache" }),
       );
     });
   });
@@ -240,7 +267,7 @@ describe("body map, FR 5.2", () => {
 
     await waitFor(() => {
       expect(speakResponse).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Pain in the head" }),
+        expect.objectContaining({ text: "I have a headache" }),
       );
     });
   });
@@ -306,8 +333,10 @@ describe("the transcript, FR 4.1", () => {
 
     await waitFor(() => {
       const texts = readTranscript().map((entry) => entry.text);
-      expect(texts).toContain("Severe pain");
-      expect(texts).toContain("Pain in the head");
+      // The record says what they told the clinician rather than where they
+      // pointed, because that is what a record is read for afterwards.
+      expect(texts).toContain("I have severe pain");
+      expect(texts).toContain("I have a headache");
     });
   });
 });
@@ -725,5 +754,97 @@ describe("choosing the voice answers are read in, FR 5.5", () => {
     await settle();
 
     expect(screen.getByTestId("triage-voice")).not.toHaveTextContent("Both");
+  });
+});
+
+describe("speaking a tap without translating it first", () => {
+  /**
+   * Emergency mode's vocabulary is fixed, so it is translated once on the
+   * server rather than at the moment of a tap. Translating live cost two calls
+   * to a metered service and about five seconds, measured, between a patient
+   * touching "cannot breathe" and a clinician hearing it.
+   */
+
+  it("sends the language the text is already in, so nothing is translated", async () => {
+    // The mechanism. Passing "en" as the source for English text means the
+    // server has nothing to translate and goes straight to speech: one call
+    // rather than two.
+    renderTriage({ outputLanguage: "en" });
+    await settle();
+
+    await userEvent.click(screen.getByTestId("body-part-HEAD"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "I have a headache", sourceLanguage: "en" }),
+      );
+    });
+  });
+
+  it("speaks English when the Twi has not been reviewed", async () => {
+    // The safety gate. Asked for "Waist" the translator returned "Waist a ɔyɛ
+    // ɔkwasea", and two pain levels came back identical. Reading either to a
+    // clinician during triage is worse than reading English.
+    renderTriage({ outputLanguage: "tw" });
+    await settle();
+
+    await userEvent.click(screen.getByTestId("body-part-HEAD"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "I have a headache", sourceLanguage: "en" }),
+      );
+    });
+  });
+
+  it("speaks the reviewed Twi once somebody has checked it", async () => {
+    fetchEmergencySpeech.mockResolvedValue({
+      phrases: [
+        { key: "HEAD", en: "I have a headache", tw: "Me ti pae me", tw_reviewed: true },
+      ],
+      pending_review: [],
+    });
+
+    renderTriage({ outputLanguage: "tw" });
+    await settle();
+
+    await userEvent.click(screen.getByTestId("body-part-HEAD"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "Me ti pae me", sourceLanguage: "tw" }),
+      );
+    });
+  });
+
+  it("says once why answers are being read in English", async () => {
+    // A responder who asked for Twi and keeps hearing English needs to know
+    // why, and the honest answer is that nobody has checked the translations.
+    renderTriage({ outputLanguage: "tw" });
+    await settle();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("twi-pending-review")).toBeInTheDocument(),
+    );
+  });
+
+  it("stays quiet about it when English was asked for", async () => {
+    renderTriage({ outputLanguage: "en" });
+    await settle();
+
+    expect(screen.queryByTestId("twi-pending-review")).not.toBeInTheDocument();
+  });
+
+  it("still speaks when the vocabulary cannot be fetched", async () => {
+    // Offline, or the request failed. Every tap falls back to the label, which
+    // is how emergency mode behaved before any of this existed.
+    fetchEmergencySpeech.mockRejectedValue(new Error("offline"));
+
+    renderTriage({ outputLanguage: "tw" });
+    await settle();
+
+    await userEvent.click(screen.getByTestId("body-part-HEAD"));
+
+    await waitFor(() => expect(speakResponse).toHaveBeenCalled());
   });
 });
