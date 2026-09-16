@@ -431,3 +431,53 @@ describe("the README's screenshots", () => {
     }
   });
 });
+
+describe("the documents agree about translation", () => {
+  /**
+   * Turning the translation service on changed what these documents have to
+   * say: sentences now leave our servers for a third party. Turning it back
+   * off would make them wrong in the other direction.
+   *
+   * Nothing in the frontend can see which provider the deployment runs, so
+   * this cannot verify the setting. What it can do is stop the two documents
+   * drifting apart from each other, and stop the old claim creeping back into
+   * one of them alone.
+   */
+
+  const privacy = () => read("src/legal/PrivacyPolicy.jsx");
+  const terms = () => read("src/legal/TermsOfUse.jsx");
+
+  it("neither still claims translation is switched off", () => {
+    // The sentence that was true under the stub and is now false. A privacy
+    // policy saying nothing leaves the server, while sentences leave it, is
+    // the exact misrepresentation these tests exist to prevent.
+    expect(privacy()).not.toMatch(/switched off/i);
+    expect(terms()).not.toMatch(/switched off/i);
+    expect(privacy()).not.toMatch(/no recording\s+and no text leaves/i);
+  });
+
+  it("the privacy policy names the service and says what reaches it", () => {
+    const text = privacy();
+
+    expect(text).toMatch(/GhanaNLP/);
+    expect(text).toMatch(/Khaya/);
+    expect(text).toMatch(/leaves our servers/i);
+  });
+
+  it("the privacy policy still promises the visit record never leaves", () => {
+    // The one claim that must survive the change, because it is the promise
+    // the whole design rests on and it is still true: the record is assembled
+    // on the device, and only individual sentences are sent for translation.
+    expect(privacy()).toMatch(/never transmitted/i);
+  });
+
+  it("the terms warn that translation is done by machine", () => {
+    expect(terms()).toMatch(/machine translation|done by machine/i);
+  });
+
+  it("the deployment guide warns that switching back breaks them", () => {
+    // So whoever flips the setting is told, in the place they flip it, that
+    // two published documents depend on it.
+    expect(read("../DEPLOY.md")).toMatch(/privacy policy has to say/i);
+  });
+});
