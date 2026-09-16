@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 
 import { Direction, transcriptAsText } from "../transcript/transcript.js";
-import {
-  RECORD_LANGUAGES,
-  renderEntry,
-  someEntriesUntranslated,
-} from "../transcript/rendering.js";
 
 /**
  * The patient's record of the consultation, SRS FR 4.1 to FR 4.3.
@@ -16,14 +11,7 @@ import {
  * family member or pastor along purely to interpret, so it has to be visibly
  * the patient's own.
  */
-export default function TranscriptView({
-  entries,
-  onDiscard,
-  // Defaults to whichever language answers are read aloud in, because that is
-  // the one the person holding the device has already said they understand.
-  defaultLanguage = "en",
-}) {
-  const [language, setLanguage] = useState(defaultLanguage);
+export default function TranscriptView({ entries, onDiscard }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [naming, setNaming] = useState(false);
   const [patientName, setPatientName] = useState("");
@@ -143,33 +131,6 @@ export default function TranscriptView({
         </div>
       </div>
 
-      {/* Both languages were kept when each line was written, so this only
-          chooses between them. Nothing is sent anywhere to switch, which is
-          the point: translating the record on demand would mean handing a
-          whole consultation to a third party. */}
-      <fieldset className="transcript__languages" data-testid="record-language">
-        <legend className="transcript__languages-legend">Show in</legend>
-        {RECORD_LANGUAGES.map((option) => (
-          <label key={option.value} className="transcript__language">
-            <input
-              type="radio"
-              name="record-language"
-              value={option.value}
-              checked={language === option.value}
-              onChange={() => setLanguage(option.value)}
-            />
-            {option.label}
-          </label>
-        ))}
-      </fieldset>
-
-      {someEntriesUntranslated(entries, language) ? (
-        <p className="transcript__untranslated" data-testid="record-untranslated">
-          Some lines are shown as they were written. They have no translation
-          saved, so showing one would mean inventing it.
-        </p>
-      ) : null}
-
       {/* Scrollable per FR 4.3, so a long consultation stays readable without
           pushing the controls off screen. */}
       <ol className="transcript__list" data-testid="transcript-list">
@@ -181,7 +142,7 @@ export default function TranscriptView({
             <span className="transcript__who">
               {entry.direction === Direction.TO_PATIENT ? "Doctor" : "You"}
             </span>
-            <TranscriptLine entry={entry} language={language} />
+            <span className="transcript__text">{entry.text}</span>
 
             {/* FR 2.7's distinction, shown rather than only stored. A nod was
                 confirmed by the doctor, a tap came from the patient, and the
@@ -317,26 +278,4 @@ function formatTime(iso) {
   return Number.isNaN(at.getTime())
     ? ""
     : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/**
- * One recorded line, in the language the reader chose.
- *
- * A line with no saved translation is shown as it was written and marked,
- * rather than hidden. A record missing half its lines would be worse than one
- * that is honest about which are untranslated.
- */
-function TranscriptLine({ entry, language }) {
-  const { text, available, shownIn } = renderEntry(entry, language);
-
-  return (
-    <span className="transcript__text">
-      {text}
-      {available ? null : (
-        <span className="transcript__original" title="No translation was saved">
-          {shownIn === "tw" ? "Twi" : "English"}
-        </span>
-      )}
-    </span>
-  );
 }

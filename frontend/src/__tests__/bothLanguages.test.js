@@ -1,93 +1,28 @@
 /**
- * The record in both languages, and emergency speech without a live call.
+ * The saved record in both languages, and emergency speech without a live call.
  *
- * Two features with one idea behind them: both renderings of a line already
- * exist at the moment it is created, so keep them rather than asking for them
- * again later. Asking again would mean sending a consultation to a third
- * party, which this app promises never to do, and in an emergency it would
- * mean a five second wait and unreviewed clinical Twi.
+ * One idea behind both: both renderings of a line already exist at the moment
+ * it is created, so keep them rather than asking for them again later. Asking
+ * again would mean sending a consultation to a third party, which this app
+ * promises never to do, and in an emergency it would mean a five second wait
+ * and unreviewed clinical Twi.
+ *
+ * The on screen toggle that chose between them was removed. The saved copy
+ * still carries both, which is where it matters: that is the file a patient
+ * hands to another clinician who may not share the language the consultation
+ * happened in.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   NO_PHRASES,
-  anyFallsBackToEnglish,
   indexPhrases,
   phraseToSpeak,
 } from "../emergency/spokenPhrases.js";
-import {
-  renderEntry,
-  someEntriesUntranslated,
-} from "../transcript/rendering.js";
 
 const reviewed = (key, en, tw) => ({ key, en, tw, tw_reviewed: true });
 const unreviewed = (key, en, tw) => ({ key, en, tw, tw_reviewed: false });
-
-describe("showing a recorded line in a chosen language", () => {
-  it("shows the original when it is already in that language", () => {
-    const entry = { text: "Where does it hurt", language: "en" };
-
-    expect(renderEntry(entry, "en")).toMatchObject({
-      text: "Where does it hurt",
-      available: true,
-    });
-  });
-
-  it("shows the saved translation when there is one", () => {
-    // Kept when the line was written, because the service had just produced it
-    // to caption or speak it. Nothing is sent to switch between them.
-    const entry = {
-      text: "Where does it hurt",
-      language: "en",
-      translation: "Ɛhe na ɛyɛ wo ya",
-      translationLanguage: "tw",
-    };
-
-    expect(renderEntry(entry, "tw")).toMatchObject({
-      text: "Ɛhe na ɛyɛ wo ya",
-      available: true,
-    });
-  });
-
-  it("falls back to the original, marked, when no translation was saved", () => {
-    // A record missing half its lines would be worse than one that is honest
-    // about which are untranslated.
-    const entry = { text: "Cannot breathe", language: "en" };
-
-    expect(renderEntry(entry, "tw")).toMatchObject({
-      text: "Cannot breathe",
-      available: false,
-      shownIn: "en",
-    });
-  });
-
-  it("shows a line recorded before this existed as it is", () => {
-    // No language on the entry means it predates the change. Guessing which
-    // language it was in would be inventing something.
-    const entry = { text: "appear" };
-
-    expect(renderEntry(entry, "tw")).toMatchObject({
-      text: "appear",
-      available: true,
-    });
-  });
-
-  it("reports when some lines cannot be shown in the chosen language", () => {
-    const entries = [
-      { text: "one", language: "en", translation: "baako", translationLanguage: "tw" },
-      { text: "Cannot breathe", language: "en" },
-    ];
-
-    expect(someEntriesUntranslated(entries, "tw")).toBe(true);
-    expect(someEntriesUntranslated(entries, "en")).toBe(false);
-  });
-
-  it("survives an empty record", () => {
-    expect(someEntriesUntranslated([], "tw")).toBe(false);
-    expect(someEntriesUntranslated(undefined, "tw")).toBe(false);
-  });
-});
 
 describe("choosing what an emergency tap says", () => {
   const phrases = indexPhrases({
@@ -164,26 +99,6 @@ describe("reading a malformed vocabulary", () => {
     const phrases = indexPhrases({ phrases: [{ en: "Head" }, reviewed("HEAD", "Head", "Ti")] });
 
     expect(Object.keys(phrases.byKey)).toEqual(["HEAD"]);
-  });
-});
-
-describe("telling the responder why they are hearing English", () => {
-  it("says so when Twi was asked for and something falls back", () => {
-    const phrases = indexPhrases({ phrases: [], pending_review: ["NOSE"] });
-
-    expect(anyFallsBackToEnglish(phrases, "tw")).toBe(true);
-  });
-
-  it("stays quiet when English was asked for", () => {
-    const phrases = indexPhrases({ phrases: [], pending_review: ["NOSE"] });
-
-    expect(anyFallsBackToEnglish(phrases, "en")).toBe(false);
-  });
-
-  it("stays quiet when nothing is pending", () => {
-    const phrases = indexPhrases({ phrases: [], pending_review: [] });
-
-    expect(anyFallsBackToEnglish(phrases, "tw")).toBe(false);
   });
 });
 

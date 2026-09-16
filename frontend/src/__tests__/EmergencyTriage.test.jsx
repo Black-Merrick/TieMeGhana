@@ -817,24 +817,6 @@ describe("speaking a tap without translating it first", () => {
     });
   });
 
-  it("says once why answers are being read in English", async () => {
-    // A responder who asked for Twi and keeps hearing English needs to know
-    // why, and the honest answer is that nobody has checked the translations.
-    renderTriage({ outputLanguage: "tw" });
-    await settle();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("twi-pending-review")).toBeInTheDocument(),
-    );
-  });
-
-  it("stays quiet about it when English was asked for", async () => {
-    renderTriage({ outputLanguage: "en" });
-    await settle();
-
-    expect(screen.queryByTestId("twi-pending-review")).not.toBeInTheDocument();
-  });
-
   it("still speaks when the vocabulary cannot be fetched", async () => {
     // Offline, or the request failed. Every tap falls back to the label, which
     // is how emergency mode behaved before any of this existed.

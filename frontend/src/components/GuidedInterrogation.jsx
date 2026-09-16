@@ -182,7 +182,6 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
         </DoctorUtteranceForm>
 
         <TranscriptView
-          defaultLanguage={outputLanguage}
           entries={transcript.entries}
           onDiscard={transcript.discard}
         />

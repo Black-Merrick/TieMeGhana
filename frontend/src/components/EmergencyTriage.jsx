@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { fetchCriticalAlerts, fetchEmergencySpeech } from "../api/clips.js";
 import {
   NO_PHRASES,
-  anyFallsBackToEnglish,
   indexPhrases,
   phraseToSpeak,
 } from "../emergency/spokenPhrases.js";
@@ -222,17 +221,6 @@ export default function EmergencyTriage({
           </button>
         </div>
       </div>
-
-      {/* Said once, quietly, rather than after every tap. A responder who asked
-          for Twi and keeps hearing English needs to know why, and the honest
-          answer is that nobody has checked the translations yet. */}
-      {anyFallsBackToEnglish(phrases, outputLanguage) ? (
-        <p className="notice notice--warn" data-testid="twi-pending-review">
-          <strong>Some answers are read in English.</strong> The Twi for those
-          taps has not been checked by a Twi speaker yet, and an unchecked
-          clinical translation is not read aloud.
-        </p>
-      ) : null}
 
       {/* What was said, at the top rather than in a panel below the fold: the
           patient cannot hear whether anything reached the doctor, so the one

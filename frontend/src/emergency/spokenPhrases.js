@@ -57,9 +57,3 @@ export function phraseToSpeak(phrases, key, wanted, fallbackEnglish) {
 
   return { text: english, language: "en", fellBackToEnglish: true };
 }
-
-/** Whether any phrase would be spoken in English despite Twi being asked for. */
-export function anyFallsBackToEnglish(phrases, wanted) {
-  if (wanted !== "tw") return false;
-  return (phrases?.pendingReview?.length ?? 0) > 0;
-}

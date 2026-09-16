@@ -110,7 +110,6 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
         />
 
         <TranscriptView
-          defaultLanguage={outputLanguage}
           entries={transcript.entries}
           onDiscard={transcript.discard}
         />
