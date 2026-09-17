@@ -1,11 +1,13 @@
 {% extends "admin/change_list.html" %}
 
-{# Two ways footage gets into the library, and they exist for different
-   people. Bulk upload works from any browser, so it is what the app depends
-   on once deployed, on hosting with no shell and no persistent disk. Folder
-   import only does anything with direct filesystem access, which in practice
-   means a local development machine, so it is kept for the convenience of
-   pointing it at a folder without opening a terminal. #}
+{% comment %}
+Two ways footage gets into the library, and they exist for different
+people. Bulk upload works from any browser, so it is what the app depends
+on once deployed, on hosting with no shell and no persistent disk. Folder
+import only does anything with direct filesystem access, which in practice
+means a local development machine, so it is kept for the convenience of
+pointing it at a folder without opening a terminal.
+{% endcomment %}
 
 {% block object-tools-items %}
   <li>

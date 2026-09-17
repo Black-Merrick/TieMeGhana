@@ -122,7 +122,13 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Searched before every app's own templates, which is what lets
+        # templates/admin/base_site.html below override Django's own template
+        # of the same name regardless of INSTALLED_APPS order. Relying on app
+        # order for that would work today only because "django.contrib.admin"
+        # happens to be listed first, and would silently stop working the
+        # moment it was not.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
