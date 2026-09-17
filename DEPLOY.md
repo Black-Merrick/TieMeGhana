@@ -150,6 +150,15 @@ set `DJANGO_SUPERUSER_FORCE_RESET=1`, redeploy, then unset it: that is the only
 recovery route on a platform with no shell, and left set it resets the password
 every time.
 
+**Getting footage onto this deployment is also a browser action, not a shell
+one.** `manage.py import_clips` and `manage.py upload_media` both need a
+terminal on the machine, which is exactly what this platform does not have.
+The admin's **Bulk upload clips** button, under GhSL clips, takes video files
+straight from whoever is logged in and saves them to R2 through the same
+storage configuration the running app already uses, so no separate `R2_*`
+credentials or local command are needed to get footage in once the service is
+live. See [SETUP_GUIDE.md](SETUP_GUIDE.md#reviewing-and-approving-clips).
+
 A password Django's validators refuse is reported in the deploy log and no
 account is made. The service still starts, because refusing to boot would take
 a working consultation screen down over a password.

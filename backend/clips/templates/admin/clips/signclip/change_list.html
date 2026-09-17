@@ -1,14 +1,22 @@
 {% extends "admin/change_list.html" %}
 
-{# A button for importing filmed footage, because the person adding clips in a
-   hospital will not have a terminal and `manage.py import_clips` is not a
-   realistic instruction for them. POST, since importing replaces footage and
-   resets approvals. #}
+{# Two ways footage gets into the library, and they exist for different
+   people. Bulk upload works from any browser, so it is what the app depends
+   on once deployed, on hosting with no shell and no persistent disk. Folder
+   import only does anything with direct filesystem access, which in practice
+   means a local development machine, so it is kept for the convenience of
+   pointing it at a folder without opening a terminal. #}
 
 {% block object-tools-items %}
   <li>
+    <a href="{% url 'admin:clips_signclip_bulk_upload' %}" class="addlink">
+      Bulk upload clips
+    </a>
+  </li>
+  <li>
     <form method="post" action="{% url 'admin:clips_signclip_import_footage' %}"
-          style="display:inline">
+          style="display:inline"
+          title="Only works with direct filesystem access to this server, e.g. local development.">
       {% csrf_token %}
       <button type="submit" class="addlink" style="border:0;background:none;cursor:pointer">
         Import footage folder
