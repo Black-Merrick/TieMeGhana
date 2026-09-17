@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { WHERE_DOES_IT_HURT, fetchBodyLocations } from "../api/clips.js";
 import useCaption from "../hooks/useCaption.js";
 import AnswerOptionGrid from "./AnswerOptionGrid.jsx";
+import CaptionProblem from "./CaptionProblem.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
 import SpeakingOverlay from "./SpeakingOverlay.jsx";
@@ -204,6 +205,10 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
             Could not reach the language service. Try again, or ask the patient
             in person.
           </p>
+        ) : null}
+
+        {result?.caption_problem ? (
+          <CaptionProblem problem={result.caption_problem} />
         ) : null}
 
         {result ? (

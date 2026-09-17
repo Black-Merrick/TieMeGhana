@@ -87,6 +87,10 @@ class CaptionResponseSerializer(serializers.Serializer):
     # needs it because a stub transcript is fabricated, not just untranslated.
     transcript_source = serializers.CharField()
     translation_applied = serializers.BooleanField()
+    # Why the caption is untranslated, when it is. The interface needs to tell
+    # a spent daily allowance apart from an outage, because only one of them is
+    # worth trying again.
+    caption_problem = serializers.CharField(allow_blank=True)
     language_provider = serializers.CharField()
     sequence = SignSequenceSerializer()
 

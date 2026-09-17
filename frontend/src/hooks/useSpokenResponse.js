@@ -1,6 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 
 import { audioUrlFrom, speakResponse } from "../api/speech.js";
+import {
+  canSpeak as deviceCanSpeak,
+  speakOnDevice,
+  stopDevice,
+} from "../audio/deviceSpeech.js";
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
 
 /**
@@ -112,6 +117,8 @@ export default function useSpokenResponse() {
    * failure in another costume.
    */
   const stop = useCallback(() => {
+    // The device may be the one talking, so both are silenced.
+    stopDevice();
     const audio = audioRef.current;
     if (audio) {
       // Cleared first: pausing fires nothing, but a stalled element can still
@@ -154,7 +161,15 @@ export default function useSpokenResponse() {
       try {
         spoken = await speakResponse(payload);
       } catch {
-        setStatus("failed");
+        // The service could not produce audio. Before giving up, see whether
+        // this device can say it itself.
+        //
+        // Added after a spent daily allowance stopped every answer being
+        // spoken. Captions had something to degrade to, because signs need no
+        // translation to resolve. Speech had nothing, and an answer nobody
+        // hears is an answer nobody receives.
+        const saidHere = await _speakHere(payload);
+        setStatus(saidHere ? "spoken" : "failed");
         speakingRef.current = null;
         return null;
       }
@@ -167,4 +182,25 @@ export default function useSpokenResponse() {
   );
 
   return { status, result, speak, replay, stop, canReplay: result !== null };
+}
+
+/**
+ * Last resort: have the device read the answer out.
+ *
+ * Only where it can be honest about it. The device cannot translate, so the
+ * text must already be in the language the listener asked for, and it cannot
+ * invent a voice, so one has to exist. Reading Twi in an English voice would
+ * be confident mispronunciation of clinical words, which is worse than
+ * silence.
+ */
+async function _speakHere(payload) {
+  // Awaited, because the browser fills its voice list asynchronously. Asking
+  // synchronously answers "no voices" for the first moments of every session,
+  // which is exactly when the first answer tends to be given.
+  if (!(await deviceCanSpeak(payload ?? {}))) return false;
+
+  return speakOnDevice({
+    text: payload.text,
+    outputLanguage: payload.outputLanguage,
+  });
 }

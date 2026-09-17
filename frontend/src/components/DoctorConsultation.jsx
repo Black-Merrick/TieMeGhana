@@ -1,3 +1,4 @@
+import CaptionProblem from "./CaptionProblem.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
 import PatientReply from "./PatientReply.jsx";
@@ -132,6 +133,10 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
             Could not reach the language service. Try again, or type the message
             for the patient to read.
           </p>
+        ) : null}
+
+        {result?.caption_problem ? (
+          <CaptionProblem problem={result.caption_problem} />
         ) : null}
 
         {result ? (

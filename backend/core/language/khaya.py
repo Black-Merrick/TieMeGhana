@@ -18,7 +18,12 @@ an interface.
 import requests
 from django.conf import settings
 
-from core.language.base import Language, LanguageError, LanguageProvider
+from core.language.base import (
+    Language,
+    LanguageError,
+    LanguageProvider,
+    LanguageQuotaExceeded,
+)
 
 DEFAULT_BASE_URL = "https://translation-api.ghananlp.org"
 
@@ -35,6 +40,21 @@ API_KEY_HEADER = "Ocp-Apim-Subscription-Key"
 # the entire pipeline, so a single call gets well under that and the caller
 # falls back to typing if it expires.
 REQUEST_TIMEOUT_SECONDS = 4
+
+
+def _is_quota_exhausted(response) -> bool:
+    """
+    Whether this refusal is a spent allowance rather than a broken request.
+
+    Khaya answers 403 with a body naming the quota and when it returns. Matched
+    on the message as well as the status, because 403 is also what a revoked or
+    wrong key would produce, and those need a completely different answer from
+    whoever is holding the phone.
+    """
+    if response.status_code != 403:
+        return False
+
+    return "quota" in response.text.lower()
 
 
 def _refuse_unless_a_real_language(**languages: Language) -> None:
@@ -138,6 +158,14 @@ class KhayaLanguageProvider(LanguageProvider):
             raise LanguageError(f"Khaya request to {path} failed: {error}") from error
 
         if not response.ok:
+            if _is_quota_exhausted(response):
+                # Reachable, credential fine, allowance spent. The caller needs
+                # to say something different from "try again", because the
+                # replenishment is measured in hours.
+                raise LanguageQuotaExceeded(
+                    f"Khaya quota exhausted for {path}: {response.text}"
+                )
+
             raise LanguageError(
                 f"Khaya returned {response.status_code} for {path}: {response.text}"
             )
