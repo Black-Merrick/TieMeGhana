@@ -144,3 +144,58 @@ class TestNoAdminTemplateHasAMultiLineDjangoComment:
             "line, which Django does not support: "
             f"{offenders}. Use {{% comment %}}...{{% endcomment %}} instead."
         )
+
+
+class TestAdminLoginTrustsTheDevProxyOrigin:
+    """
+    The dev server proxies /admin to Django, so the browser's Origin header is
+    whichever port Vite is running on while Django sees its own. CSRF checks
+    that the two agree unless the browser's origin is explicitly trusted, and
+    Django's CSRF_TRUSTED_ORIGINS has no wildcard for a port, only for
+    subdomains, so there is no pattern that covers "any dev port" on its own.
+
+    Vite's default is 5173, and it silently increments to the next free one
+    when that port is taken, which happens the moment two projects are running
+    locally. A hardcoded pair of ports is exactly the kind of fix that looks
+    complete and breaks again the next time that happens, with a CSRF message
+    that never mentions a port mismatch at all.
+    """
+
+    def test_a_range_of_likely_dev_ports_is_trusted_not_just_5173(self):
+        from django.conf import settings
+
+        # 5183 is not the Vite default. It is what this project's dev server
+        # actually ran on for an entire working session, because 5173 was
+        # already taken by another project on the same machine, which is
+        # precisely the situation this range exists to survive.
+        assert "http://localhost:5183" in settings.CSRF_TRUSTED_ORIGINS
+        assert "http://localhost:5183" in settings.CORS_ALLOWED_ORIGINS
+
+    def test_the_range_is_wide_enough_to_matter(self):
+        from django.conf import settings
+
+        # Not asserting an exact count, which would make this the test that
+        # breaks every time the range is retuned. Asserting the shape: enough
+        # ports that a couple of concurrent Vite projects will not walk past
+        # the end of it.
+        dev_ports = {
+            origin
+            for origin in settings.CSRF_TRUSTED_ORIGINS
+            if origin.startswith(("http://localhost:", "http://127.0.0.1:"))
+        }
+        assert len(dev_ports) >= 40
+
+    def test_an_explicit_env_value_is_not_widened_by_the_dev_range(self, monkeypatch):
+        # The generated range is a fallback for when nothing is configured,
+        # used as env_origins()'s default argument. A deployment that sets
+        # CORS_ALLOWED_ORIGINS or CSRF_TRUSTED_ORIGINS explicitly, which every
+        # real deployment does, must get exactly what it asked for and nothing
+        # the fallback would have added.
+        from config.settings import _DEV_ORIGINS, env_origins
+
+        monkeypatch.setenv("CSRF_TRUSTED_ORIGINS", "https://tiemeghana.netlify.app")
+
+        result = env_origins("CSRF_TRUSTED_ORIGINS", _DEV_ORIGINS)
+
+        assert result == ["https://tiemeghana.netlify.app"]
+        assert "http://localhost:5183" not in result

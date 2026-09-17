@@ -332,9 +332,24 @@ REST_FRAMEWORK = {
 #
 # 5174 is included because Vite moves to the next free port when 5173 is taken,
 # which happens routinely on a machine running more than one project.
-_DEV_ORIGINS = (
-    "http://localhost:5173,http://127.0.0.1:5173,"
-    "http://localhost:5174,http://127.0.0.1:5174"
+# Vite's own default is 5173, and it auto-increments to the next free port
+# rather than failing when that one is taken, silently, with nothing printed
+# beyond its own startup banner. Anyone running more than one Vite project on
+# the same machine lands on an arbitrary nearby port sooner or later, and a
+# hardcoded pair of ports breaks again the moment that happens: the admin
+# login fails CSRF checking with a message that never mentions the port
+# mismatch, because CSRF_TRUSTED_ORIGINS has no wildcard for ports, only for
+# subdomains, so there is no pattern that could have covered this instead.
+#
+# A generated range is the fix rather than a longer hardcoded list, because
+# the actual requirement is "some free port near 5173", which is exactly what
+# a range expresses and a fixed list of guesses does not. 30 ports is well
+# past anything a few concurrent projects would reach.
+_DEV_PORT_RANGE = range(5173, 5203)
+_DEV_ORIGINS = ",".join(
+    f"http://{host}:{port}"
+    for port in _DEV_PORT_RANGE
+    for host in ("localhost", "127.0.0.1")
 )
 
 
