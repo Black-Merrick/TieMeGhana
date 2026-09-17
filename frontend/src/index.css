@@ -462,6 +462,18 @@ body {
     min-height: 2.75rem;
   }
 
+  /* One line each, like a native tab bar rather than a row of wrapping web
+     buttons. "New patient" is the widest label and is what wraps first;
+     shrinking the type a step keeps all three level instead of letting one
+     button grow taller than the others. */
+  .shell__new-patient,
+  .shell__prescribe,
+  .install__button {
+    font-size: 0.76rem;
+    padding: 0 0.5rem;
+    white-space: nowrap;
+  }
+
   .install__button {
     width: 100%;
     justify-content: center;
@@ -3583,6 +3595,21 @@ body {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.25rem;
   }
+
+  /* Tighter again than the 15rem/11rem a wider tablet-portrait screen gets:
+     at that size the head-then-body pair alone still ran to about 780px on a
+     360-to-400px phone, most of two screens of scrolling on the single most
+     time-critical screen in the app. An svg with a viewBox keeps its tap
+     regions proportional to the drawing, so this narrows height to match
+     rather than shrinking targets out of proportion with the rest of the
+     screen. */
+  .body__face {
+    max-width: 8.5rem;
+  }
+
+  .body__figure {
+    max-width: 11.5rem;
+  }
 }
 
 /* Installing the app, NFR 5. Offered between patients, where nobody is mid
@@ -3997,19 +4024,41 @@ body {
   color: var(--colour-muted);
 }
 
+/* A pill, filled when chosen, rather than a bare browser checkbox: the same
+   language the language toggle and the answer cards already use. The
+   checkbox itself stays a real, focusable checkbox; only its surroundings
+   change. */
 .dose__time {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
   cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.dose__time:has(input:checked) {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary);
+  color: #fff;
 }
 
 .dose__time input {
   accent-color: var(--colour-primary);
   width: 1.05rem;
   height: 1.05rem;
+}
+
+.dose__time:has(input:checked) input {
+  accent-color: #fff;
 }
 
 /* The sentence the patient will get, while it can still be changed. A row of
@@ -4379,12 +4428,17 @@ body {
 }
 
 /* On a phone it spans the width above the thumb bar rather than floating in a
-   corner, where it would cover a control. */
+   corner, where it would cover a control. Lifted clear of the bottom, by the
+   same amount .shell reserves for the fixed topbar__actions bar: a fixed
+   toast and a fixed action bar both pinned to the viewport edge would
+   otherwise sit in the same band regardless of scroll position, and on a
+   short page (the literacy check, before a visit starts) that band is also
+   where the legal footer lands. */
 @media (max-width: 34rem) {
   .setup {
     left: 0.75rem;
     right: 0.75rem;
-    bottom: 0.75rem;
+    bottom: 5.5rem;
     width: auto;
   }
 }
