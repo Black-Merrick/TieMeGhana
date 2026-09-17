@@ -238,6 +238,11 @@ class TestCaptionProviderFailure:
     ):
         # The doctor needs to know to type instead, so a provider outage must
         # not surface as a generic 500 that looks like our bug.
+        #
+        # Twi input, and that matters. With English there is nothing to
+        # translate for the sign lookup, so the signs resolve anyway and the
+        # request now succeeds with an untranslated caption. Twi is the case
+        # where translation failing really does leave nothing to show.
         from core.language.base import LanguageError
         from core.language.stub import StubLanguageProvider
 
@@ -248,7 +253,7 @@ class TestCaptionProviderFailure:
 
         response = api_client.post(
             reverse("caption"),
-            {"source_language": "en", "text": "head"},
+            {"source_language": "tw", "text": "ti"},
             format="json",
         )
 
@@ -291,6 +296,10 @@ class TestCaptionFailureIsDiagnosable:
         # The doctor gets a short message, but the provider's own error has to
         # reach a log or a failure cannot be diagnosed without spending
         # metered credit to reproduce it.
+        #
+        # Twi input, because that is the case where a translation failure is
+        # still fatal. English input now degrades to an untranslated caption
+        # and keeps the signs.
         from core.language.base import LanguageError
         from core.language.stub import StubLanguageProvider
 
@@ -302,7 +311,7 @@ class TestCaptionFailureIsDiagnosable:
         with caplog.at_level("WARNING", logger="consultations.views"):
             api_client.post(
                 reverse("caption"),
-                {"source_language": "en", "text": "head"},
+                {"source_language": "tw", "text": "ti"},
                 format="json",
             )
 
@@ -321,7 +330,7 @@ class TestCaptionFailureIsDiagnosable:
 
         response = api_client.post(
             reverse("caption"),
-            {"source_language": "en", "text": "patient has HIV"},
+            {"source_language": "tw", "text": "patient has HIV"},
             format="json",
         )
 
@@ -340,7 +349,7 @@ class TestTranscriptSource:
     def test_typed_input_is_reported_as_typed(self, api_client, alphabet):
         response = api_client.post(
             reverse("caption"),
-            {"source_language": "en", "text": "head"},
+            {"source_language": "tw", "text": "ti"},
             format="json",
         )
 

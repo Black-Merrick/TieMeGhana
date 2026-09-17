@@ -59,6 +59,20 @@ class LanguageError(RuntimeError):
     """
 
 
+class LanguageQuotaExceeded(LanguageError):
+    """
+    The provider is reachable and the credential is good, but the allowance is
+    spent.
+
+    Kept apart from a general `LanguageError` because the two need opposite
+    advice and the difference is hours long. An outage is worth retrying in a
+    moment. A spent quota is not: Khaya's free tier answers 403 with "Out of
+    call volume quota. Quota will be replenished in 14:19:29", and telling a
+    clinician mid consultation to try again is sending them to do it for the
+    rest of the day.
+    """
+
+
 class LanguageProvider(ABC):
     """
     Speech recognition, translation, and speech synthesis for one backend.
