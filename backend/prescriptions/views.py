@@ -1,13 +1,14 @@
 """Prescription endpoints, SRS FR 6.1 to FR 6.4."""
 
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, throttle_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from prescriptions.models import Prescription
 from prescriptions.serializers import IssuePrescriptionSerializer, PlaylistSerializer
 from prescriptions.services import build_playlist, issue_prescription
+from prescriptions.throttling import PrescriptionIssueThrottle
 
 
 @api_view(["POST"])
@@ -15,6 +16,10 @@ from prescriptions.services import build_playlist, issue_prescription
 # of each medicine. JSON is kept for the case with no images, which is what the
 # tests and any scripted use send.
 @parser_classes([MultiPartParser, FormParser, JSONParser])
+# ADR 044's known limitation: issuing creates a row for anyone who can reach
+# it, unauthenticated by design. See PrescriptionIssueThrottle for why a rate
+# limit rather than an account.
+@throttle_classes([PrescriptionIssueThrottle])
 def issue(request):
     """
     Issue a prescription and return its playlist, FR 6.1.

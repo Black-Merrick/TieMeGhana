@@ -1826,3 +1826,59 @@ The setup has one step that fails confusingly and is therefore called out in
 Uploads succeed without it, nothing errors, and every video and photograph
 404s, because writing goes to the authenticated endpoint and reading goes to a
 different public host.
+
+
+## ADR 051: Prescription issuing is rate limited, not authenticated
+
+**Context.** ADR 044 named a known limitation and left it open: issuing has no
+account to check, so anyone who can reach the API can create a `Prescription`
+row. Not a disclosure, since each is only readable by its own unguessable
+reference, but nothing bounded how many a script could create.
+
+**Decision.** `PrescriptionIssueThrottle`, a small `AnonRateThrottle`
+subclass with a fixed `scope`, caps issuing at 60 requests an hour per IP,
+applied only to `POST /api/prescriptions/`.
+
+**Why a rate limit and not an account.** ADR 036 and ADR 044 already settled
+this for the whole doctor facing API: none of these endpoints read
+`request.user`, and an account on the issuing side would sit awkwardly next
+to a replay side that must stay accountless, since FR 6.2 is a Deaf patient
+replaying their own prescription at home, weeks later, with nothing to have
+lost. A rate limit protects the thing actually at risk, storage being filled
+by a script, without adding a login screen to a walk up hospital device.
+
+**Why not `ScopedRateThrottle`.** That is DRF's usual tool for a per view
+rate, and it reads `view.throttle_scope` off the view at request time. DRF's
+`@api_view` decorator, which is what turns `issue()` from a function into a
+view, does not forward that attribute from the function to the `APIView` it
+builds: it forwards `renderer_classes`, `parser_classes`,
+`authentication_classes`, `throttle_classes`, and `permission_classes`, and
+stops there. Setting `.throttle_scope` on the function would silently
+throttle nothing. `PrescriptionIssueThrottle` sets `scope` directly on the
+class instead, the same way `AnonRateThrottle` itself does, so there is no
+attribute to forget to forward.
+
+**A trap worth naming for whoever tests this next.** `SimpleRateThrottle`
+reads `THROTTLE_RATES` as a **class attribute**, set once from
+`api_settings.DEFAULT_THROTTLE_RATES` the first time `rest_framework.throttling`
+is imported, not as a live property. A test that changes the rate with
+`settings.REST_FRAMEWORK = {...}` (or `@override_settings`) changes what
+`django.conf.settings.REST_FRAMEWORK` holds, correctly, and does nothing at
+all to the throttle, because by the time most tests run, some earlier test has
+already triggered the one-time import and frozen the original value. It cost
+real time to trace: the failure looks exactly like the throttle not applying,
+and depends on test order, which is why it passed in isolation and failed in
+the full file. The tests for this instead set `.rate` directly with
+`monkeypatch.setattr(PrescriptionIssueThrottle, "rate", "3/hour", raising=False)`,
+which `SimpleRateThrottle.__init__` reads before it ever touches
+`THROTTLE_RATES`, so it is not exposed to the same staleness. Production is
+unaffected either way: `DEFAULT_THROTTLE_RATES` is set once at process start
+and never changes underneath a running deployment.
+
+**In cache, not the database.** No `CACHES` setting is configured, so this
+runs on Django's default `LocMemCache`, per process and cleared on restart.
+Adequate for what this defends against, a script hammering one process, and
+consistent with treating the limit as a storage nuisance mitigation rather
+than a security boundary; a multi worker deployment would want a shared cache
+for the limit to hold across workers, which is deployment configuration, not
+a reason to hold off shipping the limit itself.

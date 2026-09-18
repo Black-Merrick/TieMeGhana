@@ -4,6 +4,7 @@ import pytest
 from django.urls import reverse
 
 from prescriptions.models import Prescription, PrescriptionItem, new_reference
+from prescriptions.throttling import PrescriptionIssueThrottle
 
 pytestmark = pytest.mark.django_db
 
@@ -182,6 +183,61 @@ class TestIssuing:
 
         assert body["is_fully_signable"] is False
         assert body["unsignable_positions"] == [1]
+
+
+class TestIssuingIsRateLimited:
+    """
+    ADR 044's known limitation, mitigated rather than left undocumented:
+    issuing has no account to check, so a runaway script is bounded by a rate
+    limit instead. See PrescriptionIssueThrottle.
+
+    Rate changed here with `monkeypatch.setattr(..., "rate", ...)`, not
+    `settings.REST_FRAMEWORK`. DRF's `SimpleRateThrottle.THROTTLE_RATES` is a
+    class attribute read once, the first time `rest_framework.throttling` is
+    imported, and never rereads `settings` after that: a `settings` override
+    changes what `django.conf.settings.REST_FRAMEWORK` holds, but the class
+    attribute other tests already froze earlier in the run keeps pointing at
+    the old dict. Setting `.rate` directly skips that dict lookup entirely, per
+    `SimpleRateThrottle.__init__`, so it is not exposed to the same staleness.
+    """
+
+    def test_issuing_past_the_limit_is_refused(self, api_client, monkeypatch):
+        # A rate low enough to hit in a handful of requests, not the real
+        # sixty an hour, so the test is fast and unambiguous about which
+        # request tripped it.
+        monkeypatch.setattr(PrescriptionIssueThrottle, "rate", "3/hour", raising=False)
+
+        statuses = [
+            api_client.post(
+                reverse("prescription-issue"),
+                {"items": [one_item(medicine=f"Medicine {i}")]},
+                format="json",
+            ).status_code
+            for i in range(4)
+        ]
+
+        assert statuses == [201, 201, 201, 429]
+
+    def test_the_playlist_is_not_throttled(self, api_client, monkeypatch):
+        # Only issuing creates a row. A patient replaying their own
+        # prescription, possibly many times as they rewatch one step, must
+        # never be the request that gets rate limited.
+        monkeypatch.setattr(PrescriptionIssueThrottle, "rate", "1/hour", raising=False)
+
+        reference = issue(api_client)["reference"]
+        # That one issue already spent the only request this hour allows.
+        second_issue = api_client.post(
+            reverse("prescription-issue"),
+            {"items": [one_item()]},
+            format="json",
+        )
+        assert second_issue.status_code == 429
+
+        for _ in range(5):
+            response = api_client.get(
+                reverse("prescription-playlist", args=[reference])
+            )
+            assert response.status_code == 200
 
 
 class TestReplay:

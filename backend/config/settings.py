@@ -325,6 +325,13 @@ REST_FRAMEWORK = {
     # If the API ever does authenticate a user, this comes back and the
     # frontend has to send X-CSRFToken with it.
     "DEFAULT_AUTHENTICATION_CLASSES": [],
+    # Only prescription issuing carries a scope, via PrescriptionIssueThrottle.
+    # Every other endpoint resolves text to clips, translates, or reads data
+    # already keyed by an unguessable reference, so there is nothing there for
+    # a rate limit to protect, per ADR 036 and ADR 044. 60 an hour is generous
+    # for one hospital device's realistic clinical use and still bounds how
+    # many rows a runaway script can create before someone notices.
+    "DEFAULT_THROTTLE_RATES": {"prescription-issue": "60/hour"},
 }
 
 # The PWA is served from a separate origin in development, so the Vite dev
