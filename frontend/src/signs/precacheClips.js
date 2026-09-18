@@ -51,6 +51,31 @@ const CONCURRENCY = 3;
 const QUOTA_HEADROOM = 0.8;
 
 /**
+ * Fetch order, not filtering: everything still gets warmed, but a patient who
+ * taps something in the first few seconds should find the clip most likely to
+ * be needed already there.
+ *
+ * PROMPT is what the app itself asks before a doctor has done anything, the
+ * FR 2.1 literacy check among them, so it is the first thing that can
+ * possibly be on screen. ALERT is Emergency Triage, FR 5, the single most
+ * time critical path in the app. LETTER is the fingerspelling alphabet: FR 1.6
+ * and the whole reasoning in BACKLOG.md's filming list, twenty six clips that
+ * cover every content word and medicine name the library has no sign for, so
+ * they are reused across almost every free text message. PHRASE and WORD are
+ * everything else, the long tail that a given consultation may never touch.
+ *
+ * A kind missing from this list sorts last rather than throwing, so a clip
+ * kind added later degrades to "warmed in whatever order the API returned it"
+ * instead of breaking the warm up.
+ */
+const KIND_PRIORITY = ["prompt", "alert", "letter", "phrase", "word"];
+
+function priority(kind) {
+  const index = KIND_PRIORITY.indexOf(kind);
+  return index === -1 ? KIND_PRIORITY.length : index;
+}
+
+/**
  * Download every resolvable clip into the media cache.
  *
  * Resolves to a summary rather than throwing, because there is no caller who
@@ -86,7 +111,10 @@ export async function precacheClips({ signal, onProgress } = {}) {
 
   const urls = [
     ...new Set(
-      clips.map((clip) => clip?.video_url).filter((url) => typeof url === "string" && url),
+      [...clips]
+        .sort((a, b) => priority(a?.kind) - priority(b?.kind))
+        .map((clip) => clip?.video_url)
+        .filter((url) => typeof url === "string" && url),
     ),
   ];
 

@@ -9,7 +9,7 @@ vi.mock("../api/clips.js", () => ({ fetchResolvableClips: vi.fn() }));
 
 const { fetchResolvableClips } = await import("../api/clips.js");
 
-const CLIP = (gloss, url) => ({ id: gloss, gloss, video_url: url });
+const CLIP = (gloss, url, kind = "word") => ({ id: gloss, gloss, kind, video_url: url });
 
 /** A cache double that records what was put in it. */
 function fakeCache(existing = []) {
@@ -163,6 +163,80 @@ describe("warming the clip cache", () => {
     fetchResolvableClips.mockResolvedValue([]);
 
     await expect(precacheClips()).resolves.toMatchObject({ supported: false });
+  });
+});
+
+describe("warming the highest value clips first", () => {
+  // Not a filter, an order. Everything still gets warmed; a patient who taps
+  // something in the first few seconds should find the most likely clip
+  // already there. See KIND_PRIORITY's own reasoning for why these four
+  // kinds go first.
+  it("fetches a system prompt before an ordinary word sign", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("HEAD", "https://cdn.example/clips/head.mp4", "word"),
+      CLIP("LITERACY_CHECK", "https://cdn.example/clips/literacy.mp4", "prompt"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    const order = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(order.indexOf("https://cdn.example/clips/literacy.mp4")).toBeLessThan(
+      order.indexOf("https://cdn.example/clips/head.mp4"),
+    );
+  });
+
+  it("fetches an emergency alert before an ordinary word sign", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("HEAD", "https://cdn.example/clips/head.mp4", "word"),
+      CLIP("CANNOT_BREATHE", "https://cdn.example/clips/breathe.mp4", "alert"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    const order = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(order.indexOf("https://cdn.example/clips/breathe.mp4")).toBeLessThan(
+      order.indexOf("https://cdn.example/clips/head.mp4"),
+    );
+  });
+
+  it("fetches the fingerspelling alphabet before an ordinary word sign", async () => {
+    // FR 1.6, reused across almost every free text message, so the letters
+    // are worth having on the device before any specific word is.
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("HEAD", "https://cdn.example/clips/head.mp4", "word"),
+      CLIP("A", "https://cdn.example/clips/a.mp4", "letter"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    const order = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(order.indexOf("https://cdn.example/clips/a.mp4")).toBeLessThan(
+      order.indexOf("https://cdn.example/clips/head.mp4"),
+    );
+  });
+
+  it("does not let an unrecognised kind jump the queue", async () => {
+    // A clip kind added later degrades to "warmed in API order" rather than
+    // silently winning every race by defaulting to the front.
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("MYSTERY", "https://cdn.example/clips/mystery.mp4", "not-a-real-kind"),
+      CLIP("HELLO", "https://cdn.example/clips/hello.mp4", "prompt"),
+    ]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    const order = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(order.indexOf("https://cdn.example/clips/hello.mp4")).toBeLessThan(
+      order.indexOf("https://cdn.example/clips/mystery.mp4"),
+    );
   });
 });
 

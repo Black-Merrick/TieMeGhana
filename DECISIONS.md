@@ -1882,3 +1882,58 @@ consistent with treating the limit as a storage nuisance mitigation rather
 than a security boundary; a multi worker deployment would want a shared cache
 for the limit to hold across workers, which is deployment configuration, not
 a reason to hold off shipping the limit itself.
+
+
+## ADR 052: The clip warm up fetches by kind, prompt and alert and letter first
+
+**Context.** `precacheClips` (ADR unnumbered at the time, see the module's
+own docstring) already downloads every resolvable clip into the service
+worker's cache in the background after the app opens, so the first time a
+sign is needed it does not wait on a hospital connection. It fetched them in
+whatever order `GET /api/clips/` returned, which is insertion order, not
+importance order. On a small library that is invisible. On the full 102 gloss
+library the filming list in `BACKLOG.md` describes, it means a doctor who
+taps something in the first few seconds of a consultation is only as likely
+to find that specific clip already warm as its position in an arbitrary list.
+
+**Decision.** The list is sorted by `kind` before the fetch queue is built,
+`prompt` first, then `alert`, then `letter`, then `phrase`, then `word`.
+Nothing is filtered or skipped: every resolvable clip is still warmed, this
+only changes which ones land in the first few completed downloads.
+
+**Why this order.** `PROMPT` is what the app itself asks before a doctor has
+done anything, FR 2.1's literacy check among them, so it is the first thing
+that can possibly be on screen. `ALERT` is Emergency Triage, FR 5, the single
+most time critical path in the app, and per ADR 040 it should work within
+seconds of being opened. `LETTER` is the fingerspelling alphabet: 26 clips
+that, per the filming list's own reasoning, cover every content word and
+medicine name the library has no sign of its own for, so they are reused
+across nearly every free text message rather than triggered by one specific
+question. `PHRASE` and `WORD` are the long tail: real, needed, but any one of
+them is far less likely to be the very next tap than the other four
+categories combined.
+
+**Why not something cleverer, like actual usage frequency.** There is no
+usage data yet, the app has not shipped. A kind based order is available from
+data the clip already carries, needs no new field, no telemetry, and no
+tuning, and it is right for the reason stated above rather than by
+construction from a metric nobody has collected. A frequency based reordering
+is a reasonable thing to build once real consultations produce real numbers
+to base it on.
+
+**A kind this does not recognise sorts last, not first.** A `KIND_PRIORITY`
+list not covering a value defaults to "after everything named", proven by a
+test with an invented kind string. The alternative, defaulting to the front,
+would mean a typo or a future kind nobody updated this list for silently wins
+every race for bandwidth ahead of the categories this was actually written to
+prioritise.
+
+**What this does not do.** It does not make an individual clip download
+faster: that is bounded by file size and the connection, not by JavaScript.
+It does not change first paint, since the warm up already ran off the main
+render path per the existing idle deferral, measured for real at about 59ms
+after navigation in a live headless browser, nowhere near the 5 second
+`requestIdleCallback` timeout that exists only as a worst case fallback. What
+it changes is the order in which a small, concurrency limited pipe fills, so
+the clips most likely to be asked for first are the ones most likely to have
+already arrived.
