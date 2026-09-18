@@ -217,7 +217,7 @@ A new feature reuses one of these. It does not invent a sixth.
 
 | NFR | Requirement | How we verify it | Status |
 | --- | --- | --- | --- |
-| 1 | Speech to sign video within 5 seconds for an average sentence | Timed instrumentation on the pipeline, measured under throttled network | `todo` |
+| 1 | Speech to sign video within 5 seconds for an average sentence | Timed instrumentation on the pipeline, measured under throttled network | `wip` |
 | 2 | Every interactive element satisfies Feedback and Affordance at minimum | Per screen checklist against SRS §4 before a screen is called finished | `todo` |
 | 3 | Vibration degrades gracefully where unsupported, never fails silently | Unit test with the Vibration API absent | `done` |
 | 4 | Transcript never transmitted without explicit patient action | Satisfied by architecture, asserted by a test that walks every route and fails if one could carry a transcript | `done` |
@@ -231,6 +231,26 @@ critical alert when the device cannot vibrate": the highest stakes pattern in
 the vocabulary, EMERGENCY_ALERT, previously had no test proving the alert
 itself survives losing vibration, only that the vibration call happens.
 `YesNoChoice.test.jsx` already covered the same shape for TAP_SELECTION.
+
+NFR 1, wip 2026-09-18. The instrumentation itself is done:
+`consultations/services.py`'s `build_caption` now times itself with
+`perf_counter`, logs the duration on every request including a failed one,
+and returns it as `pipeline_ms` on the response, proven to be a real reading
+rather than a placeholder by a test that makes the provider sleep 200ms and
+checks the number moved. Also verified for real under a throttled network:
+headless Chrome against the real dev server, `Network.emulateNetworkConditions`
+set to Chrome's own "Slow 3G" preset (400ms latency, 400 Kbps), a reasonable
+stand-in for a Ghanaian hospital connection. A full caption round trip,
+client to server and back, landed at 465ms, of which the server's own
+pipeline was 8 to 50ms; the rest is the throttle. That leaves roughly 90% of
+the five second budget unspent by anything this app's own code controls.
+
+What is still open, and by choice rather than oversight: that number is
+against `LANGUAGE_PROVIDER=stub`, which does no real translation or ASR.
+Getting the genuine end to end figure means at least one live Khaya call,
+and Khaya's free tier is metered, so that has been left for a deliberate,
+minimal, explicitly requested check rather than spent without asking, per
+standing project practice.
 
 NFR 5, done 2026-09-18, verified for real rather than assumed from
 `vite.config.js`: `npm run build`, then `vite preview`, then a headless

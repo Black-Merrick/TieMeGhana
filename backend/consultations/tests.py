@@ -6,6 +6,8 @@ GhSL clips that render it. It is the headline demo, so its response shape is a
 contract the frontend depends on and is asserted directly.
 """
 
+import time
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -175,6 +177,99 @@ class TestCaptionFromTypedText:
         body = response.json()
         assert body["translation_applied"] is True
         assert body["caption"] == body["transcript"]
+
+
+@pytest.mark.django_db
+class TestThePipelineIsTimed:
+    """
+    NFR 1's five second budget, made measurable rather than assumed.
+
+    `pipeline_ms` is a real elapsed time reading, not a placeholder, which the
+    slow provider below exists to prove: a value that never moved would still
+    make every other assertion here pass.
+    """
+
+    def test_a_response_reports_how_long_the_pipeline_took(self, api_client, alphabet):
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "head hurts"},
+            format="json",
+        )
+
+        pipeline_ms = response.json()["pipeline_ms"]
+        assert isinstance(pipeline_ms, int)
+        assert pipeline_ms >= 0
+        # The stub does no I/O at all, so a real provider outage or a slow
+        # network is the only thing that could push this anywhere near the
+        # five second budget. Generous, not tight: the point is catching a
+        # pipeline that regressed to doing real work per request, not timing
+        # the stub to the millisecond.
+        assert pipeline_ms < 1000
+
+    def test_the_reading_is_real_elapsed_time_not_a_placeholder(
+        self, api_client, alphabet, monkeypatch
+    ):
+        from core.language.base import LanguageProvider
+
+        class SlowStub(LanguageProvider):
+            name = "slow-stub"
+
+            def transcribe(self, audio, *, language, content_type=None):
+                return "spoken words"
+
+            def translate(self, text, *, source, target):
+                # Long enough to be unmistakable against scheduler jitter, and
+                # nowhere near NFR 1's own five second budget.
+                time.sleep(0.2)
+                return text
+
+            def synthesize(self, text, *, language):
+                return b"audio"
+
+        monkeypatch.setattr(
+            "consultations.services.get_language_provider", lambda: SlowStub()
+        )
+
+        response = api_client.post(
+            reverse("caption"),
+            {"source_language": "en", "text": "head hurts"},
+            format="json",
+        )
+
+        # One translate call is on the path for English input: the caption to
+        # Twi. Loose lower bound, not an exact one, because CI schedulers are
+        # not real time and a tight assertion would be flaky rather than
+        # meaningful.
+        assert response.json()["pipeline_ms"] >= 150
+
+    def test_a_failed_pipeline_still_logs_its_duration(
+        self, api_client, alphabet, monkeypatch, caplog
+    ):
+        # The finally block's whole reason to exist: a request that fails
+        # partway through is exactly the one a developer chasing a slow or
+        # broken demo needs the duration of, and it never reaches the
+        # response body that the other two tests read from.
+        from core.language import LanguageError
+        from core.language.stub import StubLanguageProvider
+
+        def fail(self, text, *, source, target):
+            raise LanguageError("simulated outage")
+
+        monkeypatch.setattr(StubLanguageProvider, "translate", fail)
+
+        with caplog.at_level("INFO", logger="consultations.services"):
+            api_client.post(
+                reverse("caption"),
+                # Twi input needs the English translation to resolve signs at
+                # all, so this is the case that actually raises rather than
+                # degrading, per build_caption's own docstring.
+                {"source_language": "tw", "text": "wo tiri"},
+                format="json",
+            )
+
+        assert any(
+            "Caption pipeline finished in" in message for message in caplog.messages
+        )
 
 
 @pytest.mark.django_db
