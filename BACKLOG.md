@@ -221,7 +221,7 @@ A new feature reuses one of these. It does not invent a sixth.
 | 2 | Every interactive element satisfies Feedback and Affordance at minimum | Per screen checklist against SRS §4 before a screen is called finished | `todo` |
 | 3 | Vibration degrades gracefully where unsupported, never fails silently | Unit test with the Vibration API absent | `done` |
 | 4 | Transcript never transmitted without explicit patient action | Satisfied by architecture, asserted by a test that walks every route and fails if one could carry a transcript | `done` |
-| 5 | Usable under intermittent connectivity, core vocabulary cached | Service worker cache verified with the network offline in devtools | `todo` |
+| 5 | Usable under intermittent connectivity, core vocabulary cached | Service worker cache verified with the network offline in devtools | `done` |
 | 6 | Works on current Chrome, Safari, Firefox, on Android and iOS | Manual device pass before submission | `todo` |
 
 NFR 3, done 2026-09-18: `frontend/src/__tests__/vibration.test.js` covers the
@@ -231,6 +231,22 @@ critical alert when the device cannot vibrate": the highest stakes pattern in
 the vocabulary, EMERGENCY_ALERT, previously had no test proving the alert
 itself survives losing vibration, only that the vibration call happens.
 `YesNoChoice.test.jsx` already covered the same shape for TAP_SELECTION.
+
+NFR 5, done 2026-09-18, verified for real rather than assumed from
+`vite.config.js`: `npm run build`, then `vite preview`, then a headless
+Chrome session driven over the DevTools protocol, the same technique used for
+the mobile layout pass. First load online, confirmed
+`navigator.serviceWorker.controller` is set and `caches.open(...)` holds all
+12 precached entries. Then `Network.emulateNetworkConditions({offline:
+true})`, the same switch DevTools' own offline checkbox flips, and reloaded:
+`/` still rendered the full literacy check screen, and a prescription deep
+link the phone had never cached (`/p/abc123...`) rendered the app shell and a
+plain "no connection" message rather than a blank page or the browser's own
+offline error page. `serviceWorkerRouting.test.js` already covers the
+routing rules that make this possible as a permanent regression test; this
+was the one part of NFR 5 that only a real service worker in a real browser
+can prove, which is why it stayed a manual verification rather than growing a
+vitest test of its own.
 
 ---
 
