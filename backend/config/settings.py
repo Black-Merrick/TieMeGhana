@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     "clips",
     "consultations",
     "prescriptions",
+    "pairing",
 ]
 
 MIDDLEWARE = [
@@ -305,6 +306,18 @@ MEDIA_ROOT = BASE_DIR / "media"
 # the footage one, find nothing, and report success.
 FOOTAGE_DIR = Path(os.environ.get("FOOTAGE_DIR", "").strip() or BASE_DIR / "footage")
 
+# Uploaded clips are compressed to a small H.264 MP4 before they are stored, see
+# clips/compression.py. On unless CLIP_COMPRESSION says otherwise, for a machine
+# that has no ffmpeg to spare or a reviewer who must keep the exact recording.
+CLIP_COMPRESSION_ENABLED = os.environ.get(
+    "CLIP_COMPRESSION", "on"
+).strip().lower() not in {
+    "off",
+    "0",
+    "false",
+    "no",
+}
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -331,7 +344,15 @@ REST_FRAMEWORK = {
     # a rate limit to protect, per ADR 036 and ADR 044. 60 an hour is generous
     # for one hospital device's realistic clinical use and still bounds how
     # many rows a runaway script can create before someone notices.
-    "DEFAULT_THROTTLE_RATES": {"prescription-issue": "60/hour"},
+    #
+    # pairing-create is a second, smaller scope, PairingCreateThrottle. Only
+    # minting a fresh code is limited; the offer/answer polling two already
+    # paired devices do is deliberately left alone, per ADR 053.
+    "DEFAULT_THROTTLE_RATES": {
+        "prescription-issue": "60/hour",
+        "pairing-create": "30/hour",
+        "pairing-resume": "240/hour",
+    },
 }
 
 # The PWA is served from a separate origin in development, so the Vite dev

@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/", include("clips.urls")),
     path("api/", include("consultations.urls")),
     path("api/", include("prescriptions.urls")),
+    path("api/", include("pairing.urls")),
 ]
 
 # GhSL clips are served by Django only in development. In deployment they are
