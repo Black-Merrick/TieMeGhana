@@ -14,6 +14,7 @@
  */
 
 import { VISIT_MAX_AGE_MS } from "../visit/visit.js";
+import { isPrescriptionReference } from "../prescription/currentPrescription.js";
 import { isResumeToken } from "./token.js";
 
 const HOST_KEY = "tiemeghana.host-resume";
@@ -71,7 +72,12 @@ export function clearHostResume() {
 }
 
 /**
- * The patient's phone: `{ token, path, emergency, ended }`, or null.
+ * The patient's phone: `{ token, path, emergency, prescription,
+ * prescriptionOpen, ended }`, or null.
+ *
+ * `prescription` is the reference of the prescription the doctor issued to this
+ * phone, and `prescriptionOpen` whether the patient was looking at it, so a
+ * reload comes back to their medicines and not to the conversation behind them.
  *
  * `emergency` is whether the doctor had emergency mode open, so a reload comes
  * back to that screen and not to the consultation behind it while the doctor's
@@ -88,12 +94,17 @@ export function loadGuestResume(now = Date.now()) {
     token: saved.token,
     path: PATHS.has(saved.path) ? saved.path : null,
     emergency: saved.emergency === true,
+    prescription: isPrescriptionReference(saved.prescription) ? saved.prescription : null,
+    prescriptionOpen: saved.prescriptionOpen === true,
     ended: saved.ended === true,
   };
 }
 
 /** Merges into what is there, keeping when it began. */
-export function saveGuestResume({ token, path, emergency, ended }, now = Date.now()) {
+export function saveGuestResume(
+  { token, path, emergency, prescription, prescriptionOpen, ended },
+  now = Date.now(),
+) {
   const before = read(GUEST_KEY, now);
   const nextToken = isResumeToken(token) ? token : before?.token;
   if (!nextToken) return null;
@@ -103,6 +114,15 @@ export function saveGuestResume({ token, path, emergency, ended }, now = Date.no
     path: PATHS.has(path) ? path : (before?.path ?? null),
     emergency:
       typeof emergency === "boolean" ? emergency : before?.emergency === true,
+    prescription: isPrescriptionReference(prescription)
+      ? prescription
+      : isPrescriptionReference(before?.prescription)
+        ? before.prescription
+        : null,
+    prescriptionOpen:
+      typeof prescriptionOpen === "boolean"
+        ? prescriptionOpen
+        : before?.prescriptionOpen === true,
     ended: ended === undefined ? before?.ended === true : ended === true,
     startedAt: before?.token === nextToken ? before.startedAt : now,
   };

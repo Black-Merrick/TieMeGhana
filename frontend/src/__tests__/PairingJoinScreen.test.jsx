@@ -248,7 +248,7 @@ describe("learning the way back", () => {
     render(<PairingJoinScreen />);
 
     await waitFor(() =>
-      expect(loadGuestResume()).toEqual({ token: TOKEN, path: "literate", emergency: false, ended: false }),
+      expect(loadGuestResume()).toEqual({ token: TOKEN, path: "literate", emergency: false, prescription: null, prescriptionOpen: false, ended: false }),
     );
   });
 

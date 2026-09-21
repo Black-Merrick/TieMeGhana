@@ -4,9 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
 import { closePairing, createPairing, endPairing, registerResume } from "../api/pairing.js";
-import { fetchPlaylist } from "../api/prescriptions.js";
+import { fetchPlaylist, issuePrescription } from "../api/prescriptions.js";
 import { loadDeviceMode, saveDeviceMode } from "../pairing/deviceMode.js";
 import { loadLastQuestion, saveLastQuestion } from "../pairing/lastQuestion.js";
+import { loadSentPrescription, saveSentPrescription } from "../pairing/sentPrescription.js";
 import { loadHostResume, saveHostResume } from "../pairing/resume.js";
 import { saveDoctorRole } from "../pairing/role.js";
 import { loadScreen, saveScreen } from "../visit/screen.js";
@@ -37,7 +38,7 @@ vi.mock("../api/clips.js", async (importOriginal) => {
 });
 vi.mock("../api/prescriptions.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchPlaylist: vi.fn() };
+  return { ...actual, fetchPlaylist: vi.fn(), issuePrescription: vi.fn() };
 });
 
 /**
@@ -418,6 +419,132 @@ describe("emergency mode with the patient's phone attached", () => {
 
     expect(createPairing).not.toHaveBeenCalled();
     expect(screen.queryByTestId("device-choice")).not.toBeInTheDocument();
+  });
+});
+
+describe("a prescription issued with the patient's phone attached", () => {
+  const REFERENCE = "abc123XYZ_-def456ghi";
+
+  function issued(reference = REFERENCE) {
+    return {
+      reference,
+      video_url: null,
+      is_fully_signable: true,
+      unsignable_positions: [],
+      items: [],
+    };
+  }
+
+  async function pairedVisit() {
+    saveDeviceMode("paired");
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    saveHostResume(TOKEN);
+    connection = PeerState.CONNECTED;
+    render(<App />);
+    await screen.findByTestId("literacy-path");
+    await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "path" })));
+  }
+
+  async function issueOne() {
+    issuePrescription.mockResolvedValue(issued());
+    await userEvent.click(screen.getByTestId("enter-prescription"));
+    await userEvent.type(await screen.findByTestId("medicine-0"), "Paracetamol");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await screen.findByTestId("prescription-issued");
+  }
+
+  const lastState = () =>
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type !== "speaking")
+      .at(-1);
+
+  it("is given to the phone the moment it is issued, as its reference and nothing else", async () => {
+    await pairedVisit();
+    send.mockClear();
+
+    await issueOne();
+
+    await waitFor(() => expect(lastState()).toMatchObject({ prescription: REFERENCE }));
+    const sent = JSON.stringify(send.mock.calls.map(([message]) => message));
+    expect(sent).toContain(REFERENCE);
+    expect(sent).not.toContain("Paracetamol");
+    expect(loadSentPrescription()).toBe(REFERENCE);
+  });
+
+  it("tells the doctor it is on the phone", async () => {
+    await pairedVisit();
+
+    await issueOne();
+
+    expect(screen.getByTestId("issued-on-phone")).toBeInTheDocument();
+  });
+
+  it("stays on the phone when the doctor presses Done, since it is the patient's to keep", async () => {
+    await pairedVisit();
+    await issueOne();
+    await userEvent.click(screen.getByTestId("leave-prescription"));
+    await screen.findByRole("button", { name: /send to patient/i });
+    send.mockClear();
+
+    // Any later state message still carries it.
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+
+    await waitFor(() => expect(lastState()).toMatchObject({ type: "emergency", prescription: REFERENCE }));
+    expect(loadSentPrescription()).toBe(REFERENCE);
+  });
+
+  it("is given to a phone that comes back, or reloads", async () => {
+    saveSentPrescription(REFERENCE);
+
+    await pairedVisit();
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "path", prescription: REFERENCE }),
+    );
+  });
+
+  it("is sent with the question that is sent again, so the last message the phone reads has it", async () => {
+    saveSentPrescription(REFERENCE);
+    saveLastQuestion({ type: "question", path: "literate", result: { transcript: "x" } });
+
+    await pairedVisit();
+
+    await waitFor(() =>
+      expect(lastState()).toMatchObject({ type: "question", resent: true, prescription: REFERENCE }),
+    );
+  });
+
+  it("is forgotten when the next patient starts, and the phone is told the visit ended", async () => {
+    saveSentPrescription(REFERENCE);
+    await pairedVisit();
+
+    await userEvent.click(screen.getByTestId("new-patient"));
+
+    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: "ended" }));
+    expect(loadSentPrescription()).toBeNull();
+  });
+
+  it("is not sent when nothing has been issued", async () => {
+    await pairedVisit();
+
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ prescription: expect.anything() }));
+  });
+
+  it("is not something a shared device does anything about", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+    await screen.findByTestId("literacy-path");
+
+    issuePrescription.mockResolvedValue(issued());
+    await userEvent.click(screen.getByTestId("enter-prescription"));
+    await userEvent.type(await screen.findByTestId("medicine-0"), "Paracetamol");
+    await userEvent.click(screen.getByTestId("issue-prescription"));
+    await screen.findByTestId("prescription-issued");
+
+    expect(send).not.toHaveBeenCalled();
+    expect(loadSentPrescription()).toBeNull();
+    expect(screen.queryByTestId("issued-on-phone")).not.toBeInTheDocument();
   });
 });
 

@@ -44,6 +44,11 @@ import {
   saveDeviceMode,
 } from "./pairing/deviceMode.js";
 import { clearLastQuestion, loadLastQuestion } from "./pairing/lastQuestion.js";
+import {
+  clearSentPrescription,
+  loadSentPrescription,
+  saveSentPrescription,
+} from "./pairing/sentPrescription.js";
 import { loadRole, saveDoctorRole } from "./pairing/role.js";
 import { PeerState } from "./webrtc/peerChannel.js";
 import { referenceFromPath } from "./api/prescriptions.js";
@@ -205,17 +210,43 @@ export default function App() {
   // doctor's device could not follow would let the patient tap into a screen
   // nobody is listening to. So the phone follows what the doctor can see.
   const [emergencyShown, setEmergencyShown] = useState(false);
+
+  // The prescription issued to the patient's phone, by its reference, which is
+  // all the phone is ever sent: it fetches the medicines itself, as after
+  // scanning the code. Kept apart from the prescription on this screen, which is
+  // forgotten when the doctor presses Done, because the phone's copy is the
+  // patient's to keep. It rides on every state message below, so a phone that
+  // reloads, or comes back after a drop, is given it again. Sent to the phone
+  // exactly as it sends the path: on connecting, and whenever it changes.
+  const [sentPrescription, setSentPrescription] = useState(() => loadSentPrescription());
+  const issueToPhone = (reference) => {
+    saveSentPrescription(reference);
+    setSentPrescription(loadSentPrescription() ?? reference);
+  };
+
   const mirroredEmergency = emergency && emergencyShown;
   const literacyPath = visit?.literacyPath ?? null;
   useEffect(() => {
     if (!paired || !patientConnected) return;
     const resume = session.token ?? undefined;
+    // Undefined when there is none, so the field is left off the wire.
+    const prescription = sentPrescription ?? undefined;
 
     if (!literacyPath) {
       if (mirroredEmergency) {
-        session.channel.send({ type: "emergency", emergency: true, resume });
+        session.channel.send({
+          type: "emergency",
+          emergency: true,
+          resume,
+          prescription,
+        });
       } else if (resume) {
-        session.channel.send({ type: "resume", resume, emergency: mirroredEmergency });
+        session.channel.send({
+          type: "resume",
+          resume,
+          emergency: mirroredEmergency,
+          prescription,
+        });
       }
       return;
     }
@@ -225,6 +256,7 @@ export default function App() {
       path: literacyPath,
       resume,
       emergency: mirroredEmergency,
+      prescription,
     });
     if (mirroredEmergency) {
       session.channel.send({
@@ -232,6 +264,7 @@ export default function App() {
         path: literacyPath,
         resume,
         emergency: true,
+        prescription,
       });
       return;
     }
@@ -243,13 +276,22 @@ export default function App() {
         path: literacyPath,
         resume,
         emergency: false,
+        prescription,
         resent: true,
       });
     }
     // `send` is stable for the life of a connection; the connection itself
     // is what this is keyed on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paired, patientConnected, literacyPath, mirroredEmergency, session.code, session.token]);
+  }, [
+    paired,
+    patientConnected,
+    literacyPath,
+    mirroredEmergency,
+    sentPrescription,
+    session.code,
+    session.token,
+  ]);
 
   // The literacy check, which is what the app opens into before a visit
   // exists. `visit` alone would be enough, since the prescription builder is
@@ -360,6 +402,8 @@ export default function App() {
     // still on screen, waiting for them to answer it.
     clearCurrentExchange();
     clearLastQuestion();
+    clearSentPrescription();
+    setSentPrescription(null);
     clearScreen();
 
     // The next patient is asked about their phone afresh. Turning the mode off
@@ -581,7 +625,13 @@ export default function App() {
         </Suspense>
       ) : prescribing && visit ? (
         <Suspense fallback={<ScreenLoader label="Opening the prescription" />}>
-          <PrescriptionBuilder onLeave={() => setPrescribing(false)} />
+          <PrescriptionBuilder
+            onLeave={() => setPrescribing(false)}
+            // In a paired visit the phone is given the prescription the moment
+            // it is issued. See ADR 053.
+            onIssued={paired ? issueToPhone : null}
+            patientPhone={paired ? (patientConnected ? "connected" : "away") : null}
+          />
         </Suspense>
       ) : visit ? (
         paired ? (

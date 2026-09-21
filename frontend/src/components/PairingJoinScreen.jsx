@@ -6,7 +6,7 @@ import {
   loadGuestResume,
   saveGuestResume,
 } from "../pairing/resume.js";
-import { announcedEmergency } from "../pairing/announcedScreen.js";
+import { announcedEmergency, announcedPath } from "../pairing/announcedScreen.js";
 import { isResumeToken } from "../pairing/token.js";
 import { PeerRole, PeerState } from "../webrtc/peerChannel.js";
 import PatientDevice from "./PatientDevice.jsx";
@@ -78,10 +78,7 @@ export default function PairingJoinScreen({ onLeave }) {
     // The way back, and which screen it was for. Carried on every message the
     // doctor's device sends when it connects, because the connection hands a
     // component only the newest one.
-    const path =
-      message.type === "path" || message.type === "question" || message.type === "emergency"
-        ? message.path
-        : undefined;
+    const path = announcedPath(message);
     const emergency = announcedEmergency(message);
     if (isResumeToken(message.resume) || path || emergency !== undefined) {
       const next = saveGuestResume({ token: message.resume, path, emergency });
@@ -95,12 +92,7 @@ export default function PairingJoinScreen({ onLeave }) {
           before.emergency === next.emergency &&
           before.ended === next.ended
             ? before
-            : {
-                token: next.token,
-                path: next.path,
-                emergency: next.emergency,
-                ended: next.ended,
-              },
+            : { ...before, token: next.token, path: next.path, emergency: next.emergency, ended: next.ended },
         );
       }
     }
@@ -193,6 +185,8 @@ export default function PairingJoinScreen({ onLeave }) {
         channel={channel}
         path={saved?.path ?? null}
         emergency={saved?.emergency === true}
+        prescription={saved?.prescription ?? null}
+        prescriptionOpen={saved?.prescriptionOpen === true}
         ended={over}
         offline={!connected && !over}
         onLeave={leaveConsultation}

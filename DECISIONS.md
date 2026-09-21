@@ -2311,6 +2311,59 @@ browser by making that file unreachable. Now:
 - **`send` no longer throws** when the data channel refuses a message. It is
   called from effects, where a throw unmounts the app.
 
+**Addendum: the prescription is given to the patient's phone.**
+
+When the doctor issues a prescription in a paired visit, it is on the patient's
+phone: the medicines to play, their videos to save, and the QR code. Before,
+the patient had to scan a code off the doctor's screen with the same phone the
+doctor was already connected to.
+
+- **Only the reference is sent.** It identifies nobody (ADR 044) and the server
+  already holds the prescription behind it. The phone fetches the medicines by
+  it and opens the same screen a scanned code opens (`PrescriptionPlayback`), so
+  the medicines, the replay, the offline caching (FR 6.2) and the saving are one
+  implementation, and a clip a consultant withdraws stops playing here too
+  (ADR 043). Nothing about the consultation crosses the connection that did not
+  before.
+- **It rides on every state message** (`prescription` beside `emergency`, on
+  `path`, `question`, `emergency` and `resume`), for the reason `emergency`
+  does: the connection hands a screen only the newest message. The doctor's
+  device keeps the reference apart from the prescription on its own screen
+  (`tiemeghana.sent-prescription`), which is forgotten when the doctor presses
+  Done, because the phone's copy is the patient's to keep. It is sent on every
+  connect and when it changes, and forgotten when the next patient starts.
+- **It opens once, then stays out of the way.** A reference the phone has not
+  seen opens the medicines. The same one sent again on a reconnect changes
+  nothing, so a patient who went back to the conversation is not pulled off it
+  each time the connection blips; a different one (the doctor issued another)
+  opens. A bar at the top of every other screen ("Your medicines are ready")
+  is the way back. Where the patient was is remembered, so a reload comes back
+  to the medicines or to the conversation as they left it. Emergency mode takes
+  precedence and the medicines are there when it is over. When the consultation
+  ends the medicines stay, and say so: they are the one thing the patient takes
+  home, and the doctor pressing New patient must not take them away.
+- **The doctor is told** whether it is on the phone ("It is on the patient's
+  phone now") or not ("The phone is not connected... they can also scan this
+  code"). A reload on the issued screen gives the phone it again.
+- **Saving works across origins now.** `<a download>` is honoured only for a
+  file on the page's own origin. The clips live on the storage bucket, so on the
+  deployed site the tap merely opened the video. Saving now fetches the file,
+  makes a blob on this origin, and saves that (`saveFile`), which needs the
+  bucket's CORS to allow the site, as offline replay already does. Each save
+  says what became of it (saving, saved and where to look, or could not be saved
+  here with a link to open the video), and gives up after 45 seconds rather than
+  saying "Saving" for ever on a stalled connection. The plain link remains for
+  when scripting is off.
+
+Verified in two real browsers: the medicines open on the phone within 100 ms of
+issuing; the video plays; a real click saves `my-prescription.mp4`, byte for byte,
+to the phone's downloads; the phone keeps it through the doctor pressing Done,
+either device reloading, and the visit ending. One limit of the test: this
+library has too few signs to stitch a medicine, so the phone's copy of the
+playlist was given real video files; the issuing, the sending and the phone's
+screens were real. Cross-origin saving was checked against another local
+origin; the deployed bucket needs its CORS policy on, as in DEPLOY.md.
+
 **Known limits, stated rather than hidden.**
 
 - A reload is rejoined by itself, but only while the visit lives, at most four

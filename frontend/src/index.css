@@ -5091,3 +5091,81 @@ body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* The prescription on the patient's own phone. */
+.medicines-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.9rem;
+  max-width: 46rem;
+  margin: 0 auto 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #b9dccd;
+  border-left: 4px solid var(--colour-primary, #0a4a3a);
+  border-radius: var(--radius);
+  background: #eaf6f0;
+}
+
+.medicines-bar__text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.medicines-bar__open {
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--colour-primary, #0a4a3a);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prescription-guest {
+  display: grid;
+  gap: 1rem;
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.prescription-guest__back {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--colour-border, #c9d6d1);
+  border-radius: var(--radius);
+  background: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prescription-guest__ended {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 4px solid var(--colour-amber);
+  border-radius: var(--radius);
+  background: var(--colour-amber-soft);
+}
+
+.prescription-guest__share {
+  text-align: center;
+}
+
+.save__status {
+  margin: 0.4rem 0 0.9rem;
+  font-size: 0.95rem;
+}
+
+.save__status--done {
+  color: #0a4a3a;
+  font-weight: 600;
+}
+
+.save__status--failed {
+  color: #7a1f14;
+}
