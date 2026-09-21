@@ -111,6 +111,18 @@ export default function useSpeechFeedback(channel) {
   }, [channel, release]);
 
   /**
+   * Let go of an answer the doctor's device is not going to speak, because it
+   * had already been answered some other way. Nothing is left waiting, and
+   * nothing is claimed about it.
+   */
+  const cancel = useCallback(() => {
+    pending.current = false;
+    release();
+    setStatus("idle");
+    setText("");
+  }, [release]);
+
+  /**
    * A new turn from the doctor. The last answer's confirmation was about that
    * answer, and left up it would read as confirmation of the next one. An
    * answer still on its way is left alone.
@@ -126,5 +138,5 @@ export default function useSpeechFeedback(channel) {
   const busy =
     status === "working" || status === "playing" || (holding && status === "spoken");
 
-  return { status, text, busy, begin, replay, stop, reset };
+  return { status, text, busy, begin, replay, stop, reset, cancel };
 }

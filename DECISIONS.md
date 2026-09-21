@@ -1995,10 +1995,11 @@ these two devices directly" and offers to try again or to carry on with one
 shared device. It never quietly falls back to sending the consultation some
 other way.
 
-**Who answers what (FR 2.7).** A Yes/No question is the *doctor's*
-confirmation of the patient's answer, so it stays on the doctor's device, as
-it does on one shared device. A where-does-it-hurt question is the patient's
-own tap, so the body-location grid is on the patient's phone. On the literate
+**Who answers what (FR 2.7).** *Revised: see the addendum on Yes and No
+below.* A Yes/No question was first the *doctor's* confirmation of the
+patient's answer, kept on the doctor's device as on one shared device, and only
+a where-does-it-hurt question was the patient's own tap, so the body-location
+grid is on the patient's phone. On the literate
 path the patient types or taps a reply on their phone, and it is **spoken on
 the doctor's device** (FR 3.5), where the doctor is listening; the audio never
 crosses the wire, only `{text, sourceLanguage}` does, and the doctor's device
@@ -2363,6 +2364,45 @@ library has too few signs to stitch a medicine, so the phone's copy of the
 playlist was given real video files; the issuing, the sending and the phone's
 screens were real. Cross-origin saving was checked against another local
 origin; the deployed bucket needs its CORS policy on, as in DEPLOY.md.
+
+**Addendum: the patient taps Yes and No on their own phone.**
+
+The first version left Yes/No to the doctor's device, on a reading of FR 2.7 as
+the doctor confirming what they observed. In use that left the patient holding a
+phone that said "the doctor is confirming what they observed" and offered
+nothing to tap, while the doctor's own screen said the patient could tap.
+Corrected: the phone shows the same Yes and No control (SRS section 4.4) for
+every non-location question, and the doctor's buttons stay for what the doctor
+sees a patient do, a nod or a shake of the head. FR 2.7's point survives because
+the record says who answered: a phone's tap is recorded as `answeredBy: patient`
+and the doctor's as `doctor`, so a transcript still cannot imply the patient
+tapped something they did not.
+
+- **Whichever comes first is the answer.** Each question the doctor's device
+  sends carries an `id`, and a tap says which question it is `for`. The doctor's
+  device accepts it only while that question is still the open one (the one it
+  keeps for a returning phone, cleared the moment either device answers it), and
+  only for the values Yes and No. Anything else, a tap on a question already
+  answered, or one from before a reload, is not recorded and is answered with
+  `{type:"answered", stale:true}` so the phone does not sit on "sending".
+- **The other device is told.** When a question is answered by either device the
+  doctor's device sends `{type:"answered", id}`, after the report of the answer
+  being spoken and not on top of it (the connection hands a screen only the
+  newest of two messages that arrive together), and the phone stops offering it.
+  A tap that came too late is cancelled on the phone, with nothing claimed
+  about it.
+- **The same feedback as every other answer** (section 4.2): the tap shown as
+  sent at once, the talking face while the doctor's device speaks it, the
+  vibrations, and the answer spoken on the doctor's device (FR 3.5). A phone
+  reloaded on a waiting question is offered Yes and No again from the question
+  sent again, and its tap counts. A question from an older device with no `id` is
+  not offered, since there is nothing to say a tap is for.
+
+Verified in two real browsers on the guided path: Yes and No appear on the phone
+after the question; the patient's tap is spoken on the doctor's device and
+recorded as the patient's on both; the doctor recording a nod first takes the
+buttons off the phone and the phone records nothing of its own; a reload of the
+phone with a question waiting offers them again and the tap counts.
 
 **Known limits, stated rather than hidden.**
 

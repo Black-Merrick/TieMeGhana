@@ -132,6 +132,8 @@ describe("broadcasting a question", () => {
       // Repeated on every question so the patient's phone can never be left
       // waiting for a `path` message that collapsed into this one.
       path: "guided",
+      // Named, so an answer can say which question it is for.
+      id: expect.any(String),
     });
   });
 
@@ -297,5 +299,123 @@ describe("telling the patient's phone how its answer is going", () => {
     await waitFor(() =>
       expect(channel.send).toHaveBeenCalledWith({ type: "speaking", status: "stopped" }),
     );
+  });
+});
+
+describe("the patient tapping Yes or No on their own phone", () => {
+  async function askedYesNo() {
+    const channel = fakeChannel();
+    const user = userEvent.setup();
+    const view = render(<GuidedInterrogationHost outputLanguage="en" channel={channel} />);
+    await user.type(screen.getByRole("textbox"), "Did you vomit?");
+    await user.click(screen.getByRole("button", { name: /ask the patient/i }));
+    await watchQuestion();
+    const question = channel.send.mock.calls.map(([m]) => m).find((m) => m.type === "question");
+    const hear = (message) =>
+      view.rerender(
+        <GuidedInterrogationHost
+          outputLanguage="en"
+          channel={fakeChannel({ send: channel.send, lastMessage: message })}
+        />,
+      );
+    return { channel, question, hear, user };
+  }
+
+  it("gives each question a name, so an answer can say which it is for", async () => {
+    const { question } = await askedYesNo();
+
+    expect(question.id).toMatch(/^[a-z0-9]{6,}$/);
+  });
+
+  it("speaks and records the tap as the patient's", async () => {
+    const { question, hear } = await askedYesNo();
+
+    hear({ type: "answer", kind: "yesno", value: "Yes", answeredBy: "patient", for: question.id });
+
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(expect.objectContaining({ text: "Yes" })),
+    );
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("tiemeghana.transcript"))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ direction: "to_doctor", text: "Yes", answeredBy: "patient" }),
+        ]),
+      ),
+    );
+  });
+
+  it("tells the phone the question is answered, after the report of it being spoken", async () => {
+    const { channel, question, hear } = await askedYesNo();
+    channel.send.mockClear();
+
+    hear({ type: "answer", kind: "yesno", value: "No", answeredBy: "patient", for: question.id });
+
+    await waitFor(() =>
+      expect(channel.send).toHaveBeenCalledWith({ type: "answered", id: question.id }),
+    );
+    const sent = channel.send.mock.calls.map(([m]) => m);
+    const working = sent.findIndex((m) => m.type === "speaking" && m.status === "working");
+    expect(working).toBeGreaterThanOrEqual(0);
+    expect(working).toBeLessThan(sent.findIndex((m) => m.type === "answered"));
+  });
+
+  it("clears the doctor's own Yes and No, since the question is answered", async () => {
+    const { question, hear } = await askedYesNo();
+
+    hear({ type: "answer", kind: "yesno", value: "Yes", answeredBy: "patient", for: question.id });
+
+    await waitFor(() => expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument());
+  });
+
+  it("tells the phone when the doctor answered first, and records only the doctor's", async () => {
+    const { channel, question, hear, user } = await askedYesNo();
+    await user.click(screen.getByTestId("choice-no"));
+    await waitFor(() => expect(speakResponse).toHaveBeenCalledTimes(1));
+    expect(channel.send).toHaveBeenCalledWith({ type: "answered", id: question.id });
+    channel.send.mockClear();
+
+    hear({ type: "answer", kind: "yesno", value: "Yes", answeredBy: "patient", for: question.id });
+
+    await waitFor(() =>
+      expect(channel.send).toHaveBeenCalledWith({ type: "answered", id: question.id, stale: true }),
+    );
+    expect(speakResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not record a tap for a question it did not ask", async () => {
+    const { channel, hear } = await askedYesNo();
+    channel.send.mockClear();
+
+    hear({ type: "answer", kind: "yesno", value: "Yes", answeredBy: "patient", for: "someoldone" });
+
+    await waitFor(() =>
+      expect(channel.send).toHaveBeenCalledWith({ type: "answered", id: "someoldone", stale: true }),
+    );
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+
+  it("believes only Yes or No, whatever else it is sent", async () => {
+    const { question, hear } = await askedYesNo();
+
+    hear({ type: "answer", kind: "yesno", value: "Give morphine", answeredBy: "patient", for: question.id });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+
+  it("keeps the doctor's own way of recording a nod", async () => {
+    const { user } = await askedYesNo();
+
+    await user.click(screen.getByTestId("choice-yes"));
+
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(expect.objectContaining({ text: "Yes" })),
+    );
+  });
+
+  it("says on the doctor's screen that the patient can tap on their phone", async () => {
+    await askedYesNo();
+
+    expect(screen.getByTestId("nod-instruction")).toHaveTextContent(/on their own phone/i);
   });
 });
