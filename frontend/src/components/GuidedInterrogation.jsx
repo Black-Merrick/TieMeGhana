@@ -35,6 +35,11 @@ import { Direction } from "../transcript/transcript.js";
  * Two things are deliberately absent. The patient is never shown a text input,
  * per section 4.3. And there is no camera based gesture detection, per FR 2.6:
  * a nod is observed by the doctor in person and confirmed by them here.
+ *
+ * This is the one shared device, passed between doctor and patient. When the
+ * patient has their own phone the same path runs as two screens instead, see
+ * GuidedInterrogationHost and GuidedInterrogationGuest, chosen by App before
+ * the literacy check rather than from in here. See ADR 053.
  */
 
 const ANSWERED_BY = { PATIENT: "patient", DOCTOR: "doctor" };

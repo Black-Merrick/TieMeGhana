@@ -10,8 +10,11 @@ import { Direction, transcriptAsText } from "../transcript/transcript.js";
  * delete it. The abstract's point is that this reduces the pressure to bring a
  * family member or pastor along purely to interpret, so it has to be visibly
  * the patient's own.
+ *
+ * `onOwnPhone` is for a patient's own phone in a paired visit, where the
+ * privacy line has to say how long the record really stays. See ADR 053.
  */
-export default function TranscriptView({ entries, onDiscard }) {
+export default function TranscriptView({ entries, onDiscard, onOwnPhone = false }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [naming, setNaming] = useState(false);
   const [patientName, setPatientName] = useState("");
@@ -76,7 +79,13 @@ export default function TranscriptView({ entries, onDiscard }) {
         <div>
           <h2 className="transcript__title">Your record of this consultation</h2>
           <p className="transcript__privacy" data-testid="transcript-privacy">
-            Kept on this device only. Deleted automatically when the visit ends.
+            {/* The shared device's copy goes when the next patient starts. A
+                patient's own phone has no such moment: nothing there ends the
+                visit for them, and it is theirs. Saying "deleted
+                automatically" of a record that stays would be untrue. */}
+            {onOwnPhone
+              ? "Kept on this phone only. It stays here until you delete it."
+              : "Kept on this device only. Deleted automatically when the visit ends."}
           </p>
         </div>
 

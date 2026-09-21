@@ -71,7 +71,7 @@ export default function CaptionResult({ result, onShown, answers = null }) {
     );
   }
 
-  return <ShownUtterance result={result} answers={answers} />;
+  return <CaptionStage result={result} answers={answers} />;
 }
 
 /** The sentence cannot be signed without changing what it means. */
@@ -200,7 +200,13 @@ function ConfirmUtterance({ result, onShow }) {
  */
 const ANSWER_DELAY_MS = 650;
 
-function ShownUtterance({ result, answers }) {
+/**
+ * Exported as `CaptionStage` for the patient's own device in two-device
+ * mode: `GuidedInterrogationGuest` receives a result only after it has
+ * already cleared the doctor's gate above, so it renders this directly
+ * rather than duplicating its watched-state and replay logic.
+ */
+export function CaptionStage({ result, answers }) {
   // Whether the patient has watched the question through to the end. Held per
   // utterance, so a new question starts unwatched however the last one ended.
   const [watched, setWatched] = useState(false);
