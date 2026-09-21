@@ -131,10 +131,11 @@ export default defineConfig(({ mode }) => {
 
           runtimeCaching: [
             {
-              // Sign videos and medicine photographs, wherever they are served
-              // from, FR 6.2.
+              // Sign videos, FR 6.2.
               //
-              // Matched on the file rather than on a path prefix. The rule
+              // Matched on the file rather than on a path prefix, with or
+              // without a `/media/` in front: a bucket serves `/clips/x.mp4`
+              // and Django or nginx serve `/media/clips/x.mp4`. The rule
               // used to be /\/media\/clips\/, which was correct while media
               // was served by Django from MEDIA_URL and silently stopped
               // matching anything when it moved to a bucket under ADR 050: the
@@ -142,20 +143,57 @@ export default defineConfig(({ mode }) => {
               // /media/ segment in it. Nothing failed. Offline replay simply
               // stopped working, which is exactly the kind of quiet regression
               // a cache rule invites.
-              urlPattern: ({ url }) =>
-                /\.(mp4|webm|jpg|jpeg|png)$/i.test(url.pathname) &&
-                /^\/(clips|stitched|medicines)\//.test(url.pathname),
+              //
+              // But not every request for one. A video element on a page asks
+              // a cross origin server for a clip in `no-cors` mode, and a
+              // service worker that answers that request can only ever pass on
+              // an opaque response, which it cannot cut into the byte ranges
+              // the element then asks for. Real Chrome, real bucket: through
+              // this rule the clip stalled or failed with "the sign video did
+              // not load"; with the service worker out of the way it played
+              // every time. So a cross origin `no-cors` request is not this
+              // rule's to answer, and the browser makes it as if there were no
+              // service worker. Same origin requests, and cross origin ones
+              // made with CORS (the warm up's), are ordinary and are cached.
+              urlPattern: ({ url, request, sameOrigin }) =>
+                /\.(mp4|webm)$/i.test(url.pathname) &&
+                /^\/(media\/)?(clips|stitched)\//.test(url.pathname) &&
+                (sameOrigin || request.mode !== "no-cors"),
               handler: "CacheFirst",
               options: {
-                cacheName: "ghsl-media",
+                // Versioned: see MEDIA_CACHE in signs/precacheClips.js, which
+                // this must equal, and why the old name was abandoned.
+                cacheName: "ghsl-media-v2",
                 expiration: {
                   maxEntries: 300,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
-                // 0 as well as 200: a cross origin response the page did not
-                // ask CORS for is opaque and reports status 0, and refusing to
-                // cache those would leave the bucket's files uncached on any
-                // browser that fetched them without CORS.
+                // 200 only. An opaque response (status 0) is never kept, and a
+                // 206 is not either: a partial body cached as though it were
+                // the whole file is another way to the same failure.
+                cacheableResponse: { statuses: [200] },
+                // What lets a whole file that was cached answer the byte range
+                // a video element asks for, instead of returning all of it to
+                // a request for part.
+                rangeRequests: true,
+              },
+            },
+            {
+              // Medicine photographs, FR 6.2. Kept apart from the videos
+              // because an opaque response is fine for a picture: an image
+              // element wants the whole file and never a range, so the
+              // cross origin no-cors responses that must not be kept for
+              // videos are kept here, and status 0 is accepted on purpose.
+              urlPattern: ({ url }) =>
+                /\.(jpg|jpeg|png)$/i.test(url.pathname) &&
+                /^\/(media\/)?medicines\//.test(url.pathname),
+              handler: "CacheFirst",
+              options: {
+                cacheName: "ghsl-images",
+                expiration: {
+                  maxEntries: 300,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
                 cacheableResponse: { statuses: [0, 200] },
               },
             },

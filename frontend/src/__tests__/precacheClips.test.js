@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { crossOriginFor, forgetMediaCors } from "../signs/mediaCors.js";
 import { MEDIA_CACHE, precacheClips } from "../signs/precacheClips.js";
 
 vi.mock("../api/clips.js", () => ({ fetchResolvableClips: vi.fn() }));
@@ -22,11 +23,12 @@ function fakeCache(existing = []) {
 }
 
 function installCaches(cache) {
-  globalThis.caches = { open: vi.fn(async () => cache) };
+  globalThis.caches = { open: vi.fn(async () => cache), delete: vi.fn(async () => true) };
   return cache;
 }
 
 beforeEach(() => {
+  forgetMediaCors();
   vi.restoreAllMocks();
   delete globalThis.caches;
   delete globalThis.navigator.storage;
@@ -44,6 +46,40 @@ describe("the media cache name", () => {
     const config = readFileSync(resolve(process.cwd(), "vite.config.js"), "utf8");
 
     expect(config).toContain(`cacheName: "${MEDIA_CACHE}"`);
+  });
+
+  it("is not the one an earlier version filled with clips it could not play", () => {
+    expect(MEDIA_CACHE).not.toBe("ghsl-media");
+  });
+});
+
+describe("what the service worker will keep", () => {
+  const config = () => readFileSync(resolve(process.cwd(), "vite.config.js"), "utf8");
+  const videoRule = () =>
+    config().slice(config().indexOf("Sign videos, FR 6.2"), config().indexOf("Medicine photographs"));
+
+  it("never keeps an opaque response for a video, which cannot be played from", () => {
+    // The bug: [0, 200] stored status 0, and the player said "the sign video did
+    // not load" for every clip that had been cached that way.
+    expect(videoRule()).toMatch(/cacheableResponse:\s*\{\s*statuses:\s*\[200\]\s*\}/);
+    expect(videoRule()).not.toMatch(/statuses:\s*\[0,\s*200\]/);
+  });
+
+  it("answers a byte range from a whole cached file", () => {
+    expect(videoRule()).toMatch(/rangeRequests:\s*true/);
+  });
+
+  it("leaves a cross origin no-cors request for a video to the browser", () => {
+    // What a service worker cannot do well: pass on an opaque response to a
+    // range request. Left alone, the clip plays as it does with no worker.
+    expect(videoRule()).toMatch(/\(sameOrigin \|\| request\.mode !== "no-cors"\)/);
+  });
+
+  it("keeps medicine photographs apart, where an opaque response is fine", () => {
+    const photos = config().slice(config().indexOf("Medicine photographs"));
+
+    expect(photos).toContain('cacheName: "ghsl-images"');
+    expect(photos).toMatch(/statuses:\s*\[0,\s*200\]/);
   });
 });
 
@@ -97,21 +133,129 @@ describe("warming the clip cache", () => {
     expect(summary.warmed).toBe(1);
   });
 
-  it("falls back to an opaque fetch when the bucket sends no CORS headers", async () => {
+  describe("a bucket that sends no CORS headers", () => {
+    // What made "the sign video did not load": the clip was fetched opaquely
+    // and stored, and a video element cannot play from an opaque response.
     const url = "https://cdn.example/clips/ask.mp4";
+    const noCors = () =>
+      vi.fn(async (_url, options) => {
+        if (options?.mode !== "no-cors") throw new TypeError("Failed to fetch");
+        return { ok: false, status: 0, type: "opaque" };
+      });
+
+    it("does not store an opaque response, which cannot be played", async () => {
+      const cache = installCaches(fakeCache());
+      fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+      globalThis.fetch = noCors();
+
+      const summary = await precacheClips();
+
+      expect(cache.stored.size).toBe(0);
+      expect(summary).toMatchObject({ unstorable: 1, warmed: 0, failed: 0 });
+    });
+
+    it("never asks for the clip opaquely at all", async () => {
+      installCaches(fakeCache());
+      fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+      globalThis.fetch = noCors();
+
+      await precacheClips();
+
+      expect(globalThis.fetch).not.toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ mode: "no-cors" }),
+      );
+    });
+
+    it("does not go on fetching the rest of that server's clips for nothing", async () => {
+      installCaches(fakeCache());
+      fetchResolvableClips.mockResolvedValue([
+        CLIP("ASK", url),
+        CLIP("ABOUT", "https://cdn.example/clips/about.mp4"),
+        CLIP("HURT", "https://cdn.example/clips/hurt.mp4"),
+      ]);
+      globalThis.fetch = noCors();
+
+      const summary = await precacheClips();
+
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(summary.unstorable).toBe(3);
+    });
+
+    it("says nothing is being saved, rather than showing a bar that ends in \"ready\"", async () => {
+      installCaches(fakeCache());
+      fetchResolvableClips.mockResolvedValue([
+        CLIP("ASK", url),
+        CLIP("ABOUT", "https://cdn.example/clips/about.mp4"),
+      ]);
+      globalThis.fetch = noCors();
+
+      const seen = [];
+      await precacheClips({ onProgress: (update) => seen.push(update) });
+
+      expect(seen).toEqual([{ total: 0, completed: 0, done: true }]);
+    });
+
+    it("still warms the clips that are on a server that does allow it", async () => {
+      const cache = installCaches(fakeCache());
+      const ok = "https://ok.example/clips/ok.mp4";
+      fetchResolvableClips.mockResolvedValue([CLIP("ASK", url), CLIP("OK", ok)]);
+      globalThis.fetch = vi.fn(async (target) => {
+        if (target.startsWith("https://cdn.example")) throw new TypeError("Failed to fetch");
+        return { ok: true, status: 200 };
+      });
+
+      const summary = await precacheClips();
+
+      expect(summary).toMatchObject({ warmed: 1, unstorable: 1 });
+      expect(cache.stored.has(ok)).toBe(true);
+    });
+  });
+
+  it("does not take a failure on its own server for a missing CORS policy", async () => {
+    // Same origin needs no CORS. A failure there is a failure.
     const cache = installCaches(fakeCache());
-    fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
-    globalThis.fetch = vi.fn(async (_url, options) => {
-      if (options?.mode !== "no-cors") throw new TypeError("Failed to fetch");
-      return { ok: false, status: 0, type: "opaque" };
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", "/media/clips/ask.mp4")]);
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError("network down");
     });
 
     const summary = await precacheClips();
 
-    // Counted apart from a clean warm up, because an opaque response hides its
-    // status: a 404 and a video look identical from here.
-    expect(summary).toMatchObject({ unverified: 1, warmed: 0, failed: 0 });
-    expect(cache.stored.has(url)).toBe(true);
+    expect(summary).toMatchObject({ failed: 1, unstorable: 0 });
+    expect(cache.stored.size).toBe(0);
+  });
+
+  it("deletes the cache an earlier version filled with clips it could not play", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", "https://cdn.example/clips/ask.mp4")]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    expect(globalThis.caches.delete).toHaveBeenCalledWith("ghsl-media");
+  });
+
+  it("does that even when there is nothing to warm", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([]);
+
+    await precacheClips();
+
+    expect(globalThis.caches.delete).toHaveBeenCalledWith("ghsl-media");
+  });
+
+  it("survives that delete failing", async () => {
+    installCaches(fakeCache());
+    globalThis.caches.delete = vi.fn(async () => {
+      throw new Error("blocked");
+    });
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", "https://cdn.example/clips/ask.mp4")]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    const summary = await precacheClips();
+
+    expect(summary.warmed).toBe(1);
   });
 
   it("does not cache a clip the server reports as missing", async () => {
@@ -255,7 +399,9 @@ describe("reporting progress to the interface", () => {
     const seen = [];
     await precacheClips({ onProgress: (update) => seen.push(update) });
 
-    expect(seen[0]).toEqual({ total: 1, completed: 0, done: false });
+    // The first report comes once the first download has answered whether this
+    // server lets clips be kept at all, so it already counts that one.
+    expect(seen[0]).toEqual({ total: 1, completed: 1, done: false });
     expect(seen.at(-1)).toEqual({ total: 1, completed: 1, done: true });
   });
 
@@ -318,5 +464,64 @@ describe("reporting progress to the interface", () => {
     globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
 
     await expect(precacheClips()).resolves.toMatchObject({ warmed: 1 });
+  });
+});
+
+describe("telling the player what the server allows", () => {
+  const url = "https://cdn.example/clips/ask.mp4";
+
+  it("records a server that answered a CORS request as allowing it", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    expect(crossOriginFor(url)).toBe("anonymous");
+  });
+
+  it("records one that refused as not, so the player does not ask it that way", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    await precacheClips();
+
+    expect(crossOriginFor(url)).toBeUndefined();
+  });
+
+  it("keeps a yes alive on a visit with nothing left to download", async () => {
+    // Most visits: everything is already cached, so no fetch is made, and the
+    // record would lapse if only fetching renewed it.
+    installCaches(fakeCache([url]));
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+    globalThis.fetch = vi.fn();
+
+    await precacheClips();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(crossOriginFor(url)).toBe("anonymous");
+  });
+
+  it("does not count an error status as the server refusing CORS", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", url)]);
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 }));
+
+    await precacheClips();
+
+    expect(crossOriginFor(url)).toBe("anonymous");
+  });
+
+  it("records nothing for the app's own server", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([CLIP("ASK", "/media/clips/ask.mp4")]);
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200 }));
+
+    await precacheClips();
+
+    expect(crossOriginFor("/media/clips/ask.mp4")).toBeUndefined();
   });
 });

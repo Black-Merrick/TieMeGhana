@@ -23,6 +23,7 @@
  */
 
 import { fetchResolvableClips } from "../api/clips.js";
+import { recordMediaCors } from "./mediaCors.js";
 
 /**
  * The cache the service worker serves media from.
@@ -32,11 +33,36 @@ import { fetchResolvableClips } from "../api/clips.js";
  * clip is still fetched from the network, with no error anywhere to say so. A
  * test asserts the two match, because this project has already had one cache
  * rule stop matching in silence when media moved to a bucket.
+ *
+ * Versioned, and the version is the point. The first version of this cache
+ * accepted opaque responses, and a browser cannot play a video out of one: the
+ * clip was in the cache, the service worker served it, and the player said
+ * "the sign video did not load", on every device that had ever warmed it, for
+ * as long as the entry lived. Renaming the cache is what abandons those
+ * entries; `retireLegacyCaches` is what deletes them.
  */
-export const MEDIA_CACHE = "ghsl-media";
+export const MEDIA_CACHE = "ghsl-media-v2";
+
+/** Cache names this app once used and must not leave behind. */
+export const LEGACY_MEDIA_CACHES = ["ghsl-media"];
 
 /** How many clips to fetch at once. */
 const CONCURRENCY = 3;
+
+/**
+ * Delete the caches an earlier version of this app filled with clips it could
+ * not play. Best effort, and cheap when there is nothing there.
+ */
+async function retireLegacyCaches() {
+  for (const name of LEGACY_MEDIA_CACHES) {
+    try {
+      await caches.delete(name);
+    } catch {
+      // Nothing to delete, or storage is blocked. Neither changes what happens
+      // next.
+    }
+  }
+}
 
 /**
  * Leave this much of the storage quota unused.
@@ -81,17 +107,21 @@ function priority(kind) {
  * Resolves to a summary rather than throwing, because there is no caller who
  * should stop what they are doing over this. `warmed` counts clips newly put
  * in the cache, `alreadyCached` ones that were there already, `failed` ones
- * that could not be fetched, and `unverified` those stored as opaque responses
- * whose status could not be read.
+ * that could not be fetched, and `unstorable` those on a server that sends no
+ * CORS headers, whose responses the page cannot read and so cannot keep in a
+ * form a video can play from. Those are left to the browser's own HTTP cache,
+ * which the server's Cache-Control already feeds, and are not counted as saved.
  */
 export async function precacheClips({ signal, onProgress } = {}) {
-  const idle = { warmed: 0, alreadyCached: 0, failed: 0, unverified: 0 };
+  const idle = { warmed: 0, alreadyCached: 0, failed: 0, unstorable: 0 };
 
   if (typeof caches === "undefined") {
     // Every non secure context, and some private browsing modes. Not an error:
     // the app runs, clips are fetched when they are played.
     return { ...idle, supported: false };
   }
+
+  await retireLegacyCaches();
 
   let clips;
   try {
@@ -137,8 +167,13 @@ export async function precacheClips({ signal, onProgress } = {}) {
   const summary = { ...idle, supported: true };
 
   for (const url of urls) {
-    if (await isCached(cache, url)) summary.alreadyCached += 1;
-    else missing.push(url);
+    if (await isCached(cache, url)) {
+      summary.alreadyCached += 1;
+      // Only a response fetched with CORS is ever stored, so being here means
+      // the server allowed it when it was. Keeps the record alive on the visits
+      // that have nothing left to download, which are most of them.
+      recordMediaCors(url, true);
+    } else missing.push(url);
   }
 
   if (!missing.length) {
@@ -146,11 +181,40 @@ export async function precacheClips({ signal, onProgress } = {}) {
     return summary;
   }
 
-  const total = missing.length;
-  let completed = 0;
-  onProgress?.({ total, completed, done: false });
+  // Checked before the first download as well as between the rest, so a device
+  // already close to its quota is not asked to store even one.
+  if (await isQuotaNearlyFull()) return summary;
 
+  // The first download is done on its own, before the rest are started, because
+  // it answers a question the rest depend on: does this server let the page
+  // keep what it sends? If it does not, every other clip from the same place
+  // has the same answer, and starting a progress bar for downloads that cannot
+  // be kept would tell the clinician "ready to use offline" when it is not.
+  const blocked = new Set();
   const queue = [...missing];
+  const first = queue.shift();
+
+  const firstOutcome = await warmOne(cache, first, signal, blocked);
+  summary[firstOutcome] += 1;
+
+  const remaining = queue.filter((url) => {
+    if (!blocked.has(originOf(url))) return true;
+    summary.unstorable += 1;
+    return false;
+  });
+  queue.length = 0;
+  queue.push(...remaining);
+
+  const counted = firstOutcome === "unstorable" ? 0 : 1;
+  const total = counted + queue.length;
+
+  if (total === 0) {
+    onProgress?.({ total: 0, completed: 0, done: true });
+    return summary;
+  }
+
+  let completed = counted;
+  onProgress?.({ total, completed, done: false });
 
   const worker = async () => {
     while (queue.length) {
@@ -164,10 +228,10 @@ export async function precacheClips({ signal, onProgress } = {}) {
       }
 
       const url = queue.shift();
-      const outcome = await warmOne(cache, url, signal);
+      const outcome = await warmOne(cache, url, signal, blocked);
       summary[outcome] += 1;
 
-      completed += 1;
+      if (outcome !== "unstorable") completed += 1;
       onProgress?.({ total, completed, done: false });
     }
   };
@@ -190,18 +254,40 @@ async function isCached(cache, url) {
   }
 }
 
+/** The origin a clip is served from, or null when the url cannot be read. */
+function originOf(url) {
+  try {
+    return new URL(url, globalThis.location?.href).origin;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Put one clip in the cache, reporting which of the four outcomes happened.
+ * Put one clip in the cache, reporting which of the outcomes happened.
  *
- * A same origin clip is fetched normally and its status checked. A cross origin
- * one is attempted with CORS first, so a real status can be read and a 404 is
- * not stored as though it were a video. Only if that fails is it refetched
- * opaquely, which works without the bucket's CORS policy but makes any response
- * at all look like success.
+ * The response has to be one the page can read, which means the server allowed
+ * it: same origin, or cross origin with CORS headers. That is how a 404 is told
+ * from a video, and, more to the point, how a full 200 response ends up in the
+ * cache, which the service worker can then serve byte ranges out of.
+ *
+ * A cross origin server that sends no CORS headers makes the fetch throw. The
+ * way out that used to be here was to fetch again with `no-cors` and store the
+ * opaque result. That is what broke playback: an opaque response cannot be cut
+ * into the byte ranges a video element asks for, so the clip sat in the cache
+ * and would not play. It is not stored now. The origin is remembered as
+ * unable, so its other clips are not fetched for nothing, and the browser's
+ * ordinary HTTP cache, fed by the server's own Cache-Control, is left to keep
+ * them. Turning CORS on for the bucket is what turns this back into a warm up.
  */
-async function warmOne(cache, url, signal) {
+async function warmOne(cache, url, signal, blocked) {
+  const origin = originOf(url);
+  if (origin && blocked.has(origin)) return "unstorable";
+
   try {
     const response = await fetch(url, { signal, credentials: "omit" });
+    // The server answered a CORS request, whatever it answered: it allows it.
+    recordMediaCors(url, true);
     if (!response.ok) return "failed";
     await cache.put(url, response);
     return "warmed";
@@ -209,17 +295,15 @@ async function warmOne(cache, url, signal) {
     if (signal?.aborted) return "failed";
   }
 
-  // No CORS headers on the bucket. Still cacheable, and the service worker's
-  // rule accepts status 0 for exactly this reason, but the response is opaque:
-  // a 404 and a video are indistinguishable from here, so it is counted apart
-  // rather than reported as a clean warm up.
-  try {
-    const opaque = await fetch(url, { mode: "no-cors", signal, credentials: "omit" });
-    await cache.put(url, opaque);
-    return "unverified";
-  } catch {
-    return "failed";
-  }
+  const crossOrigin = origin !== null && origin !== globalThis.location?.origin;
+  if (!crossOrigin) return "failed";
+
+  // The fetch threw, and for a server on another origin that is what a missing
+  // CORS policy looks like. The player is told, so it asks for this server's
+  // clips the way that works.
+  recordMediaCors(url, false);
+  blocked.add(origin);
+  return "unstorable";
 }
 
 /** Whether the origin is close enough to its storage quota to stop writing. */
