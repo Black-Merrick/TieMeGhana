@@ -179,6 +179,57 @@ describe("useSpokenResponse", () => {
     expect(result.current.status).toBe("failed");
   });
 
+  it("reports a blocked sound as blocked, not as failed, and can play it on the next touch", async () => {
+    // A browser holds back sound until the page has been touched. A doctor's
+    // device reloaded since it was last tapped, speaking a reply from the
+    // patient's phone, is exactly that. The answer is not lost.
+    let attempts = 0;
+    class BlockedOnce extends FakeAudio {
+      play() {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error("play() failed because the user didn't interact");
+          error.name = "NotAllowedError";
+          return Promise.reject(error);
+        }
+        return super.play();
+      }
+    }
+    vi.stubGlobal("Audio", BlockedOnce);
+    const { result } = renderHook(() => useSpokenResponse());
+
+    await act(async () => {
+      await result.current.speak({ text: "Yes", sourceLanguage: "en", outputLanguage: "en" });
+    });
+    expect(result.current.status).toBe("blocked");
+    expect(result.current.canReplay).toBe(true);
+
+    await act(async () => {
+      await result.current.replay();
+    });
+
+    expect(result.current.status).toBe("playing");
+    expect(speakResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("still calls any other refusal to play a failure", async () => {
+    class Refused extends FakeAudio {
+      play() {
+        const error = new Error("no decoder");
+        error.name = "NotSupportedError";
+        return Promise.reject(error);
+      }
+    }
+    vi.stubGlobal("Audio", Refused);
+    const { result } = renderHook(() => useSpokenResponse());
+
+    await act(async () => {
+      await result.current.speak({ text: "Yes", sourceLanguage: "en", outputLanguage: "en" });
+    });
+
+    expect(result.current.status).toBe("failed");
+  });
+
   it("releases the audio url once playback finishes", async () => {
     // A blob url is held until revoked, so leaking one per answer would grow
     // memory across a long consultation.

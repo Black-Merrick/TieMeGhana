@@ -81,6 +81,25 @@ describe("reading the record", () => {
       /this device only/i,
     );
   });
+
+  it("says the shared device's record is deleted when the visit ends", () => {
+    render(<TranscriptView entries={entries} onDiscard={vi.fn()} />);
+
+    expect(screen.getByTestId("transcript-privacy")).toHaveTextContent(
+      /deleted automatically when the visit ends/i,
+    );
+  });
+
+  it("does not promise that on a patient's own phone, where nothing ends the visit", () => {
+    // Saying a record is deleted automatically when it is not would be the
+    // one untrue thing a privacy line can say. ADR 053.
+    render(<TranscriptView entries={entries} onDiscard={vi.fn()} onOwnPhone />);
+
+    const line = screen.getByTestId("transcript-privacy");
+    expect(line).toHaveTextContent(/this phone only/i);
+    expect(line).toHaveTextContent(/until you delete it/i);
+    expect(line).not.toHaveTextContent(/deleted automatically/i);
+  });
 });
 
 describe("deleting the record", () => {

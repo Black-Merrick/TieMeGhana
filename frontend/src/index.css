@@ -462,6 +462,18 @@ body {
     min-height: 2.75rem;
   }
 
+  /* One line each, like a native tab bar rather than a row of wrapping web
+     buttons. "New patient" is the widest label and is what wraps first;
+     shrinking the type a step keeps all three level instead of letting one
+     button grow taller than the others. */
+  .shell__new-patient,
+  .shell__prescribe,
+  .install__button {
+    font-size: 0.76rem;
+    padding: 0 0.5rem;
+    white-space: nowrap;
+  }
+
   .install__button {
     width: 100%;
     justify-content: center;
@@ -3583,6 +3595,21 @@ body {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.25rem;
   }
+
+  /* Tighter again than the 15rem/11rem a wider tablet-portrait screen gets:
+     at that size the head-then-body pair alone still ran to about 780px on a
+     360-to-400px phone, most of two screens of scrolling on the single most
+     time-critical screen in the app. An svg with a viewBox keeps its tap
+     regions proportional to the drawing, so this narrows height to match
+     rather than shrinking targets out of proportion with the rest of the
+     screen. */
+  .body__face {
+    max-width: 8.5rem;
+  }
+
+  .body__figure {
+    max-width: 11.5rem;
+  }
 }
 
 /* Installing the app, NFR 5. Offered between patients, where nobody is mid
@@ -3997,19 +4024,41 @@ body {
   color: var(--colour-muted);
 }
 
+/* A pill, filled when chosen, rather than a bare browser checkbox: the same
+   language the language toggle and the answer cards already use. The
+   checkbox itself stays a real, focusable checkbox; only its surroundings
+   change. */
 .dose__time {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--colour-line);
+  background: var(--colour-surface);
   cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.dose__time:has(input:checked) {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary);
+  color: #fff;
 }
 
 .dose__time input {
   accent-color: var(--colour-primary);
   width: 1.05rem;
   height: 1.05rem;
+}
+
+.dose__time:has(input:checked) input {
+  accent-color: #fff;
 }
 
 /* The sentence the patient will get, while it can still be changed. A row of
@@ -4379,12 +4428,645 @@ body {
 }
 
 /* On a phone it spans the width above the thumb bar rather than floating in a
-   corner, where it would cover a control. */
+   corner, where it would cover a control. Lifted clear of the bottom, by the
+   same amount .shell reserves for the fixed topbar__actions bar: a fixed
+   toast and a fixed action bar both pinned to the viewport edge would
+   otherwise sit in the same band regardless of scroll position, and on a
+   short page (the literacy check, before a visit starts) that band is also
+   where the legal footer lands. */
 @media (max-width: 34rem) {
   .setup {
     left: 0.75rem;
     right: 0.75rem;
-    bottom: 0.75rem;
+    bottom: 5.5rem;
     width: auto;
   }
+}
+
+
+/* The way in: who is using this device, and pairing two devices.
+   ---------------------------------------------------------------
+   Written for a desktop first and made to fit a phone, because the doctor's
+   device and a patient trying this from a laptop are both wide screens, and a
+   column of phone width in the middle of one reads as unfinished. */
+
+.entry {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  text-align: center;
+}
+
+.entry__intro {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+}
+
+.entry__lead {
+  margin: 0;
+  max-width: 36rem;
+  color: var(--colour-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.entry__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 46rem;
+}
+
+.entry__card {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 0.6rem;
+  padding: 2rem 1.5rem 1.75rem;
+  border: 2px solid var(--colour-line);
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.entry__card:hover {
+  border-color: var(--colour-primary);
+  box-shadow: 0 6px 22px rgba(10, 74, 58, 0.12);
+  transform: translateY(-2px);
+}
+
+.entry__card:focus-visible {
+  outline: 3px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+.entry__icon {
+  display: grid;
+  place-items: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 50%;
+  margin-bottom: 0.4rem;
+}
+
+.entry__icon svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.entry__icon--doctor {
+  background: var(--colour-mint);
+  color: var(--colour-primary);
+}
+
+.entry__icon--patient {
+  background: var(--colour-cream);
+  color: #8a5a12;
+  border: 1px solid #f2e3bd;
+}
+
+.entry__title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--colour-primary-deep);
+}
+
+.entry__text {
+  color: var(--colour-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-width: 17rem;
+}
+
+.entry__cta {
+  margin-top: 0.7rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  background: var(--colour-primary);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.entry__card:hover .entry__cta {
+  background: var(--colour-primary-deep);
+}
+
+.entry__switch {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+}
+
+.entry__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--colour-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.entry__link:focus-visible {
+  outline: 3px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+/* Pairing: one centred card, on the doctor's side and the patient's.
+   ------------------------------------------------------------------ */
+.pairing--card {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 2.5rem auto 1rem;
+  padding: 2rem 1.75rem 1.75rem;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.pairing__title {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  color: var(--colour-primary-deep);
+}
+
+.pairing__instruction,
+.pairing__hint {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+/* Left aligned inside the centred card: it is a short procedure to follow, not
+   a caption to glance at. */
+.pairing__steps {
+  margin: 0;
+  padding-left: 1.4rem;
+  justify-self: stretch;
+  text-align: left;
+  line-height: 1.7;
+  color: var(--colour-ink);
+}
+
+.pairing__steps li::marker {
+  color: var(--colour-primary);
+  font-weight: 800;
+}
+
+/* The code, large enough to read across a desk, and to be read aloud without a
+   character being mistaken for another: the alphabet it is drawn from leaves
+   out 0, O, 1, I and L for that reason. Letter spacing carries the grouping,
+   so the text itself stays one contiguous string for a screen reader and for
+   selecting. */
+.pairing__code {
+  margin: 0.2rem 0;
+  padding: 0.7rem 0.6rem 0.7rem 1.3rem;
+  border: 2px solid #cfeee1;
+  border-radius: var(--radius);
+  background: var(--colour-mint-pale);
+  color: var(--colour-primary-deep);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: clamp(2.2rem, 9vw, 3.4rem);
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  line-height: 1.1;
+  user-select: all;
+}
+
+.pairing__code--loading {
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--colour-muted);
+}
+
+.pairing__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.95rem;
+}
+
+.pairing__pulse {
+  flex: 0 0 auto;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: #1ea366;
+  animation: pairing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pairing-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 163, 102, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 0.45rem rgba(30, 163, 102, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pairing__pulse {
+    animation: none;
+  }
+
+  .entry__card {
+    transition: none;
+  }
+
+  .entry__card:hover {
+    transform: none;
+  }
+}
+
+.pairing__form,
+.pairing__actions {
+  display: grid;
+  gap: 0.7rem;
+  width: 100%;
+}
+
+.pairing__field {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.pairing__label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.pairing__input {
+  width: 100%;
+  padding: 0.7rem 0.6rem 0.7rem 1.1rem;
+  border: 2px solid var(--colour-field-line);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  color: var(--colour-primary-deep);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.pairing__input::placeholder {
+  color: #c4cdd3;
+}
+
+.pairing__input:focus {
+  outline: none;
+  border-color: var(--colour-primary);
+  box-shadow: 0 0 0 4px rgba(10, 74, 58, 0.14);
+}
+
+.pairing__primary,
+.pairing__secondary {
+  min-height: 3rem;
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pairing__primary {
+  border: 2px solid var(--colour-primary);
+  background: var(--colour-primary);
+  color: #fff;
+}
+
+.pairing__primary:hover:not(:disabled) {
+  background: var(--colour-primary-deep);
+  border-color: var(--colour-primary-deep);
+}
+
+.pairing__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pairing__secondary {
+  border: 1px solid var(--colour-field-line);
+  background: var(--colour-surface);
+  color: var(--colour-ink);
+}
+
+.pairing__secondary:hover {
+  background: var(--colour-inset);
+}
+
+.pairing__primary:focus-visible,
+.pairing__secondary:focus-visible {
+  outline: 3px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+.pairing--card .notice {
+  text-align: left;
+  width: 100%;
+  margin: 0;
+}
+
+/* The patient's own device.
+   -------------------------
+   A brand bar and one column, wide on a desktop. The consultation on it is the
+   patient's half of the same screen the doctor has, so on a wide window it
+   keeps the same two column shape: the sign video and reply on one side, the
+   record of what has been said on the other. */
+.topbar--patient {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "brand";
+}
+
+.shell--patient {
+  max-width: 76rem;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+@media (max-width: 52rem) {
+  .topbar--patient {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand";
+  }
+
+  .shell--patient {
+    padding: 0.75rem 1rem 2rem;
+  }
+
+  .pairing--card {
+    margin-top: 1rem;
+    padding: 1.5rem 1.15rem 1.35rem;
+  }
+}
+
+.consult--guest {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.consult--guest .consult__patient {
+  order: 0;
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+/* After the patient has been talking for a while there is a record to show,
+   and on a wide window it goes beside the video instead of beneath it, kept in
+   view while the page scrolls. */
+@media (min-width: 62rem) {
+  .consult--guest .consult__patient:has(> .transcript) {
+    max-width: none;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    column-gap: 1.5rem;
+    align-items: start;
+  }
+
+  .consult--guest .consult__patient:has(> .transcript) > * {
+    grid-column: 1;
+  }
+
+  .consult--guest .consult__patient:has(> .transcript) > .transcript {
+    grid-column: 2;
+    grid-row: 1 / span 6;
+    position: sticky;
+    top: 5.5rem;
+    max-height: calc(100dvh - 7rem);
+    overflow-y: auto;
+  }
+}
+
+/* The ended screen: the notice and the record, centred, not left in a corner
+   of a wide window. */
+.consult--guest > .transcript {
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.consult--guest > .pairing--card {
+  margin-inline: auto;
+}
+
+
+/* The patient's answer, shown back on both devices of a paired visit.
+   -------------------------------------------------------------------
+   On the doctor's screen it replaces the bare "the patient replies on their
+   own phone" line once there is a reply to show; on the patient's phone it is
+   the confirmation under the send button, because their answer is spoken on
+   another device and nothing else on their screen would say it had gone. */
+.patient-reply {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.patient-reply__lead {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+}
+
+.patient-reply__body {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--colour-line);
+}
+
+.patient-reply__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #8a5a12;
+}
+
+.patient-reply__language {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--colour-cream);
+  border: 1px solid #f2e3bd;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.patient-reply__text {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--colour-ink);
+  overflow-wrap: anywhere;
+}
+
+.patient-reply__said {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.95rem;
+}
+
+.patient-reply__status {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--colour-muted);
+}
+
+.patient-reply__status--playing {
+  color: var(--colour-primary);
+}
+
+.patient-reply__status--spoken {
+  color: #1a7f4e;
+}
+
+.patient-reply__status--failed,
+.patient-reply__status--stopped {
+  color: var(--colour-offline);
+}
+
+.sent {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--colour-line);
+  border-left: 4px solid var(--colour-primary);
+  border-radius: var(--radius);
+  background: var(--colour-mint-pale);
+}
+
+.sent[data-status="failed"] {
+  border-left-color: var(--colour-offline);
+  background: var(--colour-danger-soft);
+}
+
+.sent .spoken__text {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* The doctor's device holding back a patient's answer until it is touched. */
+.spoken__blocked {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.spoken__play {
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--colour-primary);
+  border-radius: var(--radius);
+  background: var(--colour-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.spoken__play:hover {
+  background: var(--colour-primary-deep);
+}
+
+.spoken__play:focus-visible {
+  outline: 3px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+/* The doctor's line while a paired phone is away.
+   The consultation stays where it is; this only says why the phone is quiet. */
+.away {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #f2e3bd;
+  border-left: 4px solid var(--colour-amber);
+  border-radius: var(--radius);
+  background: var(--colour-amber-soft);
+}
+
+.away__text {
+  margin: 0;
+  flex: 1 1 14rem;
+  font-size: 0.92rem;
+  color: #6b4a10;
+}
+
+.away__action {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--colour-field-line);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--colour-ink);
+  cursor: pointer;
+}
+
+.away__action:hover {
+  background: var(--colour-inset);
+}
+
+/* Held still while a phone finds the doctor's device again: visible, so the
+   patient keeps their place, but not answerable. */
+.offline-lock[inert] {
+  opacity: 0.6;
+  filter: grayscale(0.4);
+}
+
+.away--patient {
+  max-width: 46rem;
+  margin: 0 auto 0.75rem;
+}
+
+/* Reconnecting for so long that it stops being routine. */
+.away--stalled {
+  border-left-color: var(--colour-offline);
+  background: var(--colour-danger-soft);
+}
+
+.away--stalled .away__text {
+  color: #7a1f14;
 }

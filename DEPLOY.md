@@ -69,6 +69,51 @@ python manage.py upload_media
 
 Idempotent, so it is safe to re-run after filming more footage.
 
+### Turn on CORS for the bucket (offline video replay)
+
+Without this every clip still plays, streamed from the network. With it, each
+device also keeps every clip on itself, so a question loads instantly and a
+prescription can be replayed with no signal (FR 6.2, NFR 5). A browser only
+lets the app keep a video from another server if that server says it may, and
+the bucket does not say so until you tell it to. The app's own R2 token cannot
+change this (it is scoped to objects), so it is done once in the dashboard.
+
+1. Cloudflare dashboard, **R2**, your bucket, **Settings**, **CORS Policy**,
+   **Add CORS policy**.
+2. Paste this JSON and save:
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range", "If-None-Match", "If-Modified-Since"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "MaxAgeSeconds": 86400
+  }
+]
+```
+
+`"*"` is right for these files: the bucket is already public read, nothing is
+sent with credentials, and only GET and HEAD are allowed. To restrict it, list
+the app's addresses instead, for example `["https://tiemeghana.netlify.app",
+"http://localhost:5183"]`. `Range` and the three exposed headers are what let a
+browser cut a cached video into the byte ranges a player asks for; leaving them
+out makes the cache useless.
+
+3. Check it, from the backend folder:
+
+```bash
+python manage.py check_media_cors --origin https://tiemeghana.netlify.app
+```
+
+It asks for one public clip the way a browser on that address would and says
+whether it worked, with no credentials. Until it says "CORS is on", nothing is
+broken: the app notices the bucket does not allow it and asks for clips the
+plain way. Once it does, devices start keeping clips on their next visit, with
+no change to the app, and the "saving sign videos to this device" message on
+first open becomes true again. ADR 054 has the reasoning.
+
 ---
 
 ## 2. Render, the backend
@@ -150,9 +195,28 @@ set `DJANGO_SUPERUSER_FORCE_RESET=1`, redeploy, then unset it: that is the only
 recovery route on a platform with no shell, and left set it resets the password
 every time.
 
+**Getting footage onto this deployment is also a browser action, not a shell
+one.** `manage.py import_clips` and `manage.py upload_media` both need a
+terminal on the machine, which is exactly what this platform does not have.
+The admin's **Bulk upload clips** button, under GhSL clips, takes video files
+straight from whoever is logged in and saves them to R2 through the same
+storage configuration the running app already uses, so no separate `R2_*`
+credentials or local command are needed to get footage in once the service is
+live. See [SETUP_GUIDE.md](SETUP_GUIDE.md#reviewing-and-approving-clips).
+
 A password Django's validators refuse is reported in the deploy log and no
 account is made. The service still starts, because refusing to boot would take
 a working consultation screen down over a password.
+
+### One process, several threads
+
+The backend runs as one gunicorn worker with eight threads, not several workers.
+Two-device pairing keeps its short lived handshake in the process cache, so a
+code minted by one worker would not exist for another. Leave `WEB_CONCURRENCY`
+unset (or 1) in Render's environment; raise `GUNICORN_THREADS` if you need more
+concurrency. A startup check warns if `WEB_CONCURRENCY` is raised without a
+shared cache. The patient's `/join` page needs nothing on Netlify: the single page app
+fallback already serves it.
 
 ### What happens on deploy
 

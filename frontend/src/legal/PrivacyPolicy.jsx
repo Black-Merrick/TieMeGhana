@@ -160,6 +160,48 @@ export default function PrivacyPolicy() {
           app&rsquo;s vocabulary. It is not about any patient.
         </p>
 
+        <h4>Connecting a patient&rsquo;s own phone</h4>
+        <p>
+          When a clinician pairs a patient&rsquo;s own phone to the
+          clinician&rsquo;s device, our server briefly holds three things: a
+          six character code, and one connection description from each of the
+          two devices. A connection description is technical data that says how
+          to reach that device over the internet. It is the address of the
+          device, not anything that was said.
+        </p>
+        <p>
+          They are kept in memory only, never written to a database or a file,
+          and discarded the moment the two devices have connected, or after ten
+          minutes if they never do. The code is part of the address each device
+          asks for, so, like any web address, it can appear in the
+          server&rsquo;s ordinary request records; the connection descriptions
+          travel in the body of the request and are not recorded.{" "}
+          <strong>
+            The consultation itself does not pass through our server when two
+            devices are used.
+          </strong>{" "}
+          Once connected, the two devices talk to each other directly, and the
+          record of the visit is kept on each device separately. The
+          clinician&rsquo;s copy is deleted when the visit ends, as above. The
+          patient&rsquo;s phone is their own, so its copy stays until they
+          delete it, which they can do from the screen shown after the visit
+          ends.
+        </p>
+
+        <p>
+          So that reloading a page does not end the visit, the doctor&rsquo;s
+          device also makes a second, long random code once the two have
+          connected and gives it to the phone over their own connection. The
+          server holds that code, in memory only, for up to four hours, the
+          length of a visit, so the two can find each other again. It is
+          discarded the moment the doctor ends the visit, and the server then
+          only remembers that the visit ended, so a phone that was out of
+          reach at the time is told when it returns. It identifies no person, it is
+          kept on the two devices and nowhere else, and it opens nothing but
+          that reconnection:
+          what is said in the visit still never reaches the server.
+        </p>
+
         <h4>Staff accounts</h4>
         <p>
           Clinicians and sign language consultants who review the video library
@@ -211,6 +253,22 @@ export default function PrivacyPolicy() {
           The one thing that never leaves is the record of the visit. Questions
           and answers are assembled and kept on the device, and the sentences
           sent for translation are not gathered anywhere as a conversation.
+        </p>
+
+        <h4>Connecting two devices directly</h4>
+        <p>
+          To connect a clinician&rsquo;s device to a patient&rsquo;s own phone,
+          each device asks a public Google server what its own internet address
+          looks like from outside (a STUN server). That request contains no
+          consultation, no name and no identifier from this app. Google can see
+          the public address of each device that asks, the same as any website
+          it is connected to can.
+        </p>
+        <p>
+          Nothing that is said, shown or answered during the visit is sent to
+          Google. If the two devices cannot reach each other directly, for
+          example on some networks, the connection fails and the app says so.
+          It does not fall back to sending the consultation through a server.
         </p>
 
         <h4>Where the app runs</h4>

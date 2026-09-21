@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SignSequencePlayer from "../components/SignSequencePlayer.jsx";
+import { crossOriginFor, forgetMediaCors, recordMediaCors } from "../signs/mediaCors.js";
 
 /**
  * FR 1.7 asks for matched clips "stitched into a single sign video". ADR 008
@@ -241,5 +242,110 @@ describe("a stitched sentence", () => {
 
     expect(screen.getByTestId("sign-video-preload")).toBeInTheDocument();
     expect(screen.getByText(/Sign 1 of 3/)).toBeInTheDocument();
+  });
+});
+
+describe("asking for a clip with CORS", () => {
+  // What lets the service worker keep a clip for offline replay and play it from
+  // that copy (ADR 054). Only from a server the warm up found to allow it: asked
+  // of one that does not, the video is refused outright.
+  const bucket = (name) => `https://cdn.example/clips/${name}.mp4`;
+  const remote = {
+    source_text: "head",
+    segments: [
+      { token: "head", match: "gloss", clips: [{ gloss: "HEAD", video_url: bucket("head"), duration_ms: 900 }] },
+      { token: "hurt", match: "gloss", clips: [{ gloss: "HURT", video_url: bucket("hurt"), duration_ms: 900 }] },
+    ],
+    total_duration_ms: 1800,
+    fingerspelled_tokens: [],
+    unavailable_tokens: [],
+  };
+
+  beforeEach(() => forgetMediaCors());
+  afterEach(() => forgetMediaCors());
+
+  it("leaves it off for a server nothing is known about, which plays as it always did", () => {
+    render(<SignSequencePlayer sequence={remote} />);
+
+    expect(screen.getByTestId("sign-video")).not.toHaveAttribute("crossorigin");
+  });
+
+  it("turns it on for a server known to allow it, on both buffers", () => {
+    recordMediaCors(bucket("head"), true);
+
+    render(<SignSequencePlayer sequence={remote} />);
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute("crossorigin", "anonymous");
+    expect(screen.getByTestId("sign-video-preload")).toHaveAttribute("crossorigin", "anonymous");
+  });
+
+  it("turns it on for a stitched file from that server too", () => {
+    recordMediaCors(bucket("head"), true);
+
+    render(<SignSequencePlayer sequence={{ ...remote, stitched_video_url: "https://cdn.example/stitched/x.mp4" }} />);
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute("crossorigin", "anonymous");
+  });
+
+  it("leaves it off for a server known not to", () => {
+    recordMediaCors(bucket("head"), false);
+
+    render(<SignSequencePlayer sequence={remote} />);
+
+    expect(screen.getByTestId("sign-video")).not.toHaveAttribute("crossorigin");
+  });
+
+  it("never asks for one of the app's own clips that way", () => {
+    recordMediaCors(bucket("head"), true);
+
+    render(<SignSequencePlayer sequence={sequence} />);
+
+    expect(screen.getByTestId("sign-video")).not.toHaveAttribute("crossorigin");
+  });
+
+  it("starts asking the right way as soon as the warm up finds out", () => {
+    render(<SignSequencePlayer sequence={remote} />);
+    expect(screen.getByTestId("sign-video")).not.toHaveAttribute("crossorigin");
+
+    act(() => recordMediaCors(bucket("head"), true));
+
+    expect(screen.getByTestId("sign-video")).toHaveAttribute("crossorigin", "anonymous");
+  });
+
+  it("stops asking when a video asked for that way fails, and remakes the element without", () => {
+    // The server stopped allowing it, or the record was wrong. Without this the
+    // patient would see "the sign video did not load" for every clip.
+    recordMediaCors(bucket("head"), true);
+    render(<SignSequencePlayer sequence={remote} />);
+    const first = screen.getByTestId("sign-video");
+
+    fireEvent.error(first);
+
+    expect(crossOriginFor(bucket("head"))).toBeUndefined();
+    const remade = screen.getByTestId("sign-video");
+    expect(remade).not.toHaveAttribute("crossorigin");
+    expect(remade).not.toBe(first);
+    expect(remade.getAttribute("src")).toBe(bucket("head"));
+  });
+
+  it("does not blame the server for a video that failed without asking", () => {
+    render(<SignSequencePlayer sequence={remote} />);
+
+    fireEvent.error(screen.getByTestId("sign-video"));
+
+    expect(crossOriginFor(bucket("head"))).toBeUndefined();
+    expect(screen.getByTestId("player-status")).toBeInTheDocument();
+  });
+
+  it("plays the remade element", () => {
+    recordMediaCors(bucket("head"), true);
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(<SignSequencePlayer sequence={remote} />);
+    play.mockClear();
+
+    fireEvent.error(screen.getByTestId("sign-video"));
+
+    expect(play).toHaveBeenCalled();
+    play.mockRestore();
   });
 });

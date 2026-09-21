@@ -1,0 +1,63 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:clips_signclip_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; Reject clips
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <p>
+    Rejecting says more than leaving a clip pending: it records that a
+    specific recording was watched and refused, so a future reviewer does not
+    have to guess whether this gloss was already tried, and whoever re-films
+    it knows what to fix. Both survive in the clip's notes, with your name and
+    today's date.
+  </p>
+
+  <ul>
+    {% for clip in queryset %}
+      <li>
+        <strong>{{ clip.gloss }}</strong>
+        ({{ clip.get_kind_display }}{% if clip.video %}, filmed{% else %}, not filmed yet{% endif %})
+        &mdash; currently <em>{{ clip.get_review_status_display }}</em>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+    {% for clip in queryset %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ clip.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="reject_clips">
+    <input type="hidden" name="post" value="yes">
+
+    <fieldset class="module aligned">
+      <div class="form-row">
+        <div>
+          <label for="id_reason" class="required">Reason</label>
+          <textarea name="reason" id="id_reason" rows="3" cols="60"
+                    autofocus required
+                    placeholder="What is wrong with this recording, or why is this gloss not the right word for the sign?"></textarea>
+          <div class="help">
+            Shown to whoever re-films it. Be specific: which sign, which hand,
+            which part of the movement.
+          </div>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="submit-row">
+      <input type="submit" value="Reject {{ queryset.count }} clip{{ queryset.count|pluralize }}" class="default">
+      <a href="{% url 'admin:clips_signclip_changelist' %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

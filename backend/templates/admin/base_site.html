@@ -1,0 +1,39 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% comment %}
+Branding for the admin, seen on every page including the login screen
+(admin/login.html extends admin/base_site.html, which resolves to this
+file: templates/ is searched before any app's own templates, see
+TEMPLATES["DIRS"] in settings.py).
+
+Extends admin/base.html directly, the same parent Django's own
+admin/base_site.html uses, rather than extending "admin/base_site.html" on
+a file of that same name. That same-name trick is the technique Django's
+own docs show for this exact override, and it did not work here: with the
+cached template loader in play, resolving "admin/base_site.html" a second
+time from inside this file's own extends tag found this file again instead
+of Django's original, and failed to parse. Copying the title and branding
+blocks from Django's admin/base_site.html here, unchanged apart from the
+branding content itself, sidesteps that resolution entirely. The cost is
+that a future Django upgrade changing those blocks needs this file updated
+to match by hand; an acceptable trade against a broken login page.
+
+{% endcomment %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+<div id="site-name">
+  <a href="{% url 'admin:index' %}" style="display:flex; align-items:center; gap:10px;">
+    <img src="{% static 'core/icon.png' %}" alt=""
+         style="width:28px; height:28px; border-radius:6px;">
+    {{ site_header|default:"Tie Me Ghana" }}
+  </a>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

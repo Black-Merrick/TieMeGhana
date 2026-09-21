@@ -6,6 +6,7 @@ once rather than copied between test modules as the feature apps grow.
 """
 
 import pytest
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
@@ -14,6 +15,18 @@ from rest_framework.test import APIClient
 def api_client() -> APIClient:
     """A DRF test client for exercising API contracts the frontend depends on."""
     return APIClient()
+
+
+@pytest.fixture(autouse=True)
+def clips_are_stored_as_uploaded(settings):
+    """
+    Do not run ffmpeg over the fake video bytes most tests upload.
+
+    Nearly every test that uploads a clip sends a few placeholder bytes, and
+    compressing those would only fail, slowly, and change nothing being tested.
+    The tests that are about compression turn it back on, and use real video.
+    """
+    settings.CLIP_COMPRESSION_ENABLED = False
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +84,22 @@ def never_write_to_real_media_storage(settings, tmp_path):
     # A fresh directory per test, so nothing accumulates in backend/media and
     # no test can see a file another test wrote.
     settings.MEDIA_ROOT = tmp_path / "media"
+
+
+@pytest.fixture(autouse=True)
+def never_leak_throttle_state_between_tests():
+    """
+    Clear Django's cache before every test.
+
+    Prescription issuing is rate limited per ADR 044's known limitation, and
+    DRF's throttles count requests in the process cache, not the database, so
+    they are untouched by pytest-django's usual per-test transaction rollback.
+    Without this, a test earlier in the run could leave a doctor-facing IP
+    partway to its limit, and a later, unrelated test issuing one prescription
+    too many would fail depending on execution order rather than on anything
+    it did wrong.
+    """
+    cache.clear()
 
 
 @pytest.fixture(autouse=True)

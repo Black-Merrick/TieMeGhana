@@ -1,0 +1,177 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Bulk upload clips | {{ site_title|default:"Django site admin" }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:clips_signclip_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; Bulk upload
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <p>
+    Every file becomes the gloss its name is, with the extension dropped:
+    <code>head.mp4</code> becomes <strong>HEAD</strong>,
+    <code>what_is_your_name.mp4</code> becomes <strong>WHAT_IS_YOUR_NAME</strong>.
+    A gloss that already exists gets this file as its new recording, and its
+    approval is reset &mdash; whoever approved the old one has not seen this
+    one. A gloss that does not exist yet is created.
+  </p>
+  <p>
+    Uploading exactly the same file again changes nothing, so a repeat upload
+    can never un-approve a clip. The one exception is on purpose: tick
+    &ldquo;approved for clinical use&rdquo; below and name the consultant, and a
+    clip already uploaded and still awaiting review is approved, with its
+    recording left as it is. A clip that was rejected stays rejected; approve it
+    from the clip list.
+  </p>
+
+  <div class="module" style="margin-bottom: 20px;">
+    <h2>Library status</h2>
+    <div style="padding: 12px 14px;">
+      <p style="margin: 0 0 6px;">
+        <strong>{{ resolvable_count }}</strong> ready for clinical use,
+        <strong>{{ awaiting_review_count }}</strong> filmed and awaiting a
+        consultant, <strong>{{ awaiting_footage_count }}</strong> not filmed
+        yet.
+      </p>
+
+      {% if awaiting_footage %}
+      <details {% if awaiting_footage_count <= 30 %}open{% endif %}>
+        <summary style="cursor: pointer;">
+          Glosses still needing footage ({{ awaiting_footage_count }})
+        </summary>
+        <p style="margin: 8px 0 0; line-height: 1.9;">
+          {% for gloss, kind in awaiting_footage %}
+            <code style="background: var(--darkened-bg, #f2f2f2); padding: 2px 6px; border-radius: 3px; margin-right: 4px;">{{ gloss|lower }}</code>{% if not forloop.last %} {% endif %}
+          {% endfor %}
+        </p>
+      </details>
+      {% else %}
+      <p style="margin: 0; color: var(--body-quiet-color, #666);">
+        Nothing outstanding. Every gloss in the library has footage.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" id="bulk-upload-form">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+      <h2>Files</h2>
+
+      <div class="form-row">
+        <div>
+          <label for="id_videos" class="required">Video files</label>
+          <input type="file" name="videos" id="id_videos" multiple required
+                 accept="{% for suffix in video_suffixes %}{{ suffix }}{% if not forloop.last %},{% endif %}{% endfor %},video/*">
+          <div class="help">
+            Select as many as you like in one go &mdash; drag a whole folder's
+            worth into the file picker on most systems. Accepted:
+            {% for suffix in video_suffixes %}<code>{{ suffix }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.
+            Up to {{ max_files }} files per batch, {{ max_mb }}MB each.
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row" id="selected-files-row" style="display: none;">
+        <div>
+          <label>Selected</label>
+          <ul id="selected-files-list" style="margin: 6px 0 0; padding-left: 18px;"></ul>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="module aligned">
+      <h2>Approval</h2>
+
+      <div class="form-row">
+        <div class="checkbox-row">
+          <label for="id_approve">
+            <input type="checkbox" name="approve" id="id_approve">
+            These recordings are approved for clinical use
+          </label>
+          <div class="help">
+            Only check this if you are yourself a GhSL fluent consultant and
+            have watched every file you are about to upload. Leave it
+            unchecked to import the footage as filmed but pending, which is
+            almost always the right choice: review is a separate, deliberate
+            step, not a side effect of getting files onto the server.
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row" id="reviewer-row" style="display: none;">
+        <div>
+          <label for="id_reviewer" class="required">Reviewer name</label>
+          <input type="text" name="reviewer" id="id_reviewer" maxlength="120">
+          <div class="help">The GhSL fluent consultant vouching for these recordings.</div>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="submit-row">
+      <input type="submit" value="Upload" class="default" id="upload-submit">
+      <a href="{% url 'admin:clips_signclip_changelist' %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var approveBox = document.getElementById("id_approve");
+  var reviewerRow = document.getElementById("reviewer-row");
+  var reviewerInput = document.getElementById("id_reviewer");
+
+  function syncReviewerVisibility() {
+    var show = approveBox.checked;
+    reviewerRow.style.display = show ? "" : "none";
+    reviewerInput.required = show;
+  }
+  approveBox.addEventListener("change", syncReviewerVisibility);
+  syncReviewerVisibility();
+
+  // Named files rather than a bare count, so a mis-selected batch is caught
+  // before the upload starts rather than after, by reading a list of glosses
+  // that do not match what was meant to be filmed.
+  var input = document.getElementById("id_videos");
+  var row = document.getElementById("selected-files-row");
+  var list = document.getElementById("selected-files-list");
+
+  input.addEventListener("change", function () {
+    list.innerHTML = "";
+    var files = Array.prototype.slice.call(input.files);
+
+    if (!files.length) {
+      row.style.display = "none";
+      return;
+    }
+
+    files.forEach(function (file) {
+      var gloss = file.name.replace(/\.[^./\\]+$/, "").toUpperCase();
+      var li = document.createElement("li");
+      li.textContent = file.name + "  →  " + gloss;
+      list.appendChild(li);
+    });
+
+    row.style.display = "";
+  });
+
+  document.getElementById("bulk-upload-form").addEventListener("submit", function () {
+    var submit = document.getElementById("upload-submit");
+    submit.disabled = true;
+    submit.value = "Uploading …";
+  });
+})();
+</script>
+{% endblock %}
