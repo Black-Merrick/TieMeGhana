@@ -244,10 +244,23 @@ class TestWhenItCannotOrShouldNot:
 
         result = compress_video(garbage)
 
+        # Whether or not ffmpeg is installed, and CI has none: the file is kept
+        # as it arrived, and the reason is given. The reason's wording differs
+        # by cause, and is pinned for the ffmpeg case in the next test.
         assert result.data is None
         assert not result.compressed
-        assert "could not be read as a video" in result.reason
+        assert result.reason
         assert garbage.tell() == 0
+
+    @needs_ffmpeg
+    def test_it_says_a_file_that_is_not_a_video_could_not_be_read(self):
+        garbage = SimpleUploadedFile(
+            "hurt.mp4", b"pretend-video", content_type="video/mp4"
+        )
+
+        result = compress_video(garbage)
+
+        assert "could not be read as a video" in result.reason
 
     def test_without_ffmpeg_the_original_is_kept_and_it_says_so(self, monkeypatch):
         monkeypatch.setattr(compression, "ffmpeg_available", lambda: False)
