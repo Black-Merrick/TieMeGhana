@@ -85,6 +85,20 @@ def test_the_api_surface_is_the_one_we_expect():
         "clip-emergency-speech",
         "clip-list",
         "health",
+        # The WebRTC pairing handshake, ADR 053: a doctor's device and a
+        # patient's own device finding each other before they connect
+        # directly. Everything here lives in the process cache with a short
+        # timeout, never a database row, and once the two devices are
+        # connected the consultation itself never reaches this server again.
+        # `pairing/test_transience.py` asserts the app has no models module
+        # and no migrations, which is what makes that true structurally
+        # rather than by memory.
+        "pairing-answer",
+        "pairing-close",
+        "pairing-create",
+        "pairing-end",
+        "pairing-offer",
+        "pairing-resume",
         # The keep-alive liveness probe. Accepts nothing, reads nothing, and
         # returns a constant, so there is no patient data anywhere near it. It
         # exists separately from `health` so the five minute schedule does not

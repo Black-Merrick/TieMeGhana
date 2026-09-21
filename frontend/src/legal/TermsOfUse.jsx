@@ -149,6 +149,43 @@ export default function TermsOfUse() {
       </section>
 
       <section>
+        <h3>Using the patient&rsquo;s own phone</h3>
+        <p>
+          A visit can run on two devices: yours, and the patient&rsquo;s own
+          phone, joined by a short code. This is optional, and the app asks
+          first.
+        </p>
+        <ul>
+          <li>
+            <strong>Pair only the phone in front of you.</strong> Anyone who
+            enters the code while it is showing joins the visit, so read it to
+            the patient rather than displaying it where others can see it, and
+            check that only their phone has connected before you begin.
+          </li>
+          <li>
+            <strong>It can fail, and it says so.</strong> Some networks stop
+            two devices reaching each other directly. When that happens the app
+            offers to try again or to carry on with one shared device. It will
+            not send the consultation through a server instead.
+          </li>
+          <li>
+            <strong>Reloading a page does not end the visit.</strong> Either
+            device comes back to the screen it was on and the two find each
+            other again by themselves, usually within a few seconds. While the
+            phone is away the doctor is told, and replies from it are paused. If
+            it does not come back, choose &ldquo;Pair with a new code&rdquo;.
+          </li>
+          <li>
+            <strong>Each device keeps its own record.</strong> Starting a new
+            patient deletes yours and disconnects the phone. The
+            patient&rsquo;s phone keeps its own copy, which they can read and
+            delete on that phone, including after the visit has ended. It is
+            theirs, so it is not deleted for them.
+          </li>
+        </ul>
+      </section>
+
+      <section>
         <h3>Prescriptions and QR codes</h3>
         <p>
           A prescription is reached by a long random code, and that code is the

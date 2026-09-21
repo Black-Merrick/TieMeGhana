@@ -25,8 +25,21 @@ export async function apiRequest(path, options = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(`API request to ${path} failed with ${response.status}`);
+    const error = new Error(`API request to ${path} failed with ${response.status}`);
+    // Carried on the error, for the callers that must tell one failure from
+    // another: a phone reconnecting to a consultation has to know a 410, the
+    // doctor ended it, from a 404, the doctor's device is not back yet.
+    error.status = response.status;
+    throw error;
   }
+
+  // 204 No Content carries no body at all, not even "null". Calling .json()
+  // on it throws "Unexpected end of JSON input" despite the request having
+  // succeeded, which is the response.ok check above lying to every caller
+  // that trusted it. Found wiring up the pairing endpoints, which return 204
+  // from every write, since none of them have anything to hand back beyond
+  // "done".
+  if (response.status === 204) return null;
 
   return response.json();
 }

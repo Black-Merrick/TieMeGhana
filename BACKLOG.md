@@ -217,12 +217,56 @@ A new feature reuses one of these. It does not invent a sixth.
 
 | NFR | Requirement | How we verify it | Status |
 | --- | --- | --- | --- |
-| 1 | Speech to sign video within 5 seconds for an average sentence | Timed instrumentation on the pipeline, measured under throttled network | `todo` |
+| 1 | Speech to sign video within 5 seconds for an average sentence | Timed instrumentation on the pipeline, measured under throttled network | `wip` |
 | 2 | Every interactive element satisfies Feedback and Affordance at minimum | Per screen checklist against SRS §4 before a screen is called finished | `todo` |
-| 3 | Vibration degrades gracefully where unsupported, never fails silently | Unit test with the Vibration API absent | `todo` |
+| 3 | Vibration degrades gracefully where unsupported, never fails silently | Unit test with the Vibration API absent | `done` |
 | 4 | Transcript never transmitted without explicit patient action | Satisfied by architecture, asserted by a test that walks every route and fails if one could carry a transcript | `done` |
-| 5 | Usable under intermittent connectivity, core vocabulary cached | Service worker cache verified with the network offline in devtools | `todo` |
+| 5 | Usable under intermittent connectivity, core vocabulary cached | Service worker cache verified with the network offline in devtools | `done` |
 | 6 | Works on current Chrome, Safari, Firefox, on Android and iOS | Manual device pass before submission | `todo` |
+
+NFR 3, done 2026-09-18: `frontend/src/__tests__/vibration.test.js` covers the
+module with the Vibration API absent, refusing, and throwing. Extended with
+one component level case in `EmergencyTriage.test.jsx`, "still speaks a
+critical alert when the device cannot vibrate": the highest stakes pattern in
+the vocabulary, EMERGENCY_ALERT, previously had no test proving the alert
+itself survives losing vibration, only that the vibration call happens.
+`YesNoChoice.test.jsx` already covered the same shape for TAP_SELECTION.
+
+NFR 1, wip 2026-09-18. The instrumentation itself is done:
+`consultations/services.py`'s `build_caption` now times itself with
+`perf_counter`, logs the duration on every request including a failed one,
+and returns it as `pipeline_ms` on the response, proven to be a real reading
+rather than a placeholder by a test that makes the provider sleep 200ms and
+checks the number moved. Also verified for real under a throttled network:
+headless Chrome against the real dev server, `Network.emulateNetworkConditions`
+set to Chrome's own "Slow 3G" preset (400ms latency, 400 Kbps), a reasonable
+stand-in for a Ghanaian hospital connection. A full caption round trip,
+client to server and back, landed at 465ms, of which the server's own
+pipeline was 8 to 50ms; the rest is the throttle. That leaves roughly 90% of
+the five second budget unspent by anything this app's own code controls.
+
+What is still open, and by choice rather than oversight: that number is
+against `LANGUAGE_PROVIDER=stub`, which does no real translation or ASR.
+Getting the genuine end to end figure means at least one live Khaya call,
+and Khaya's free tier is metered, so that has been left for a deliberate,
+minimal, explicitly requested check rather than spent without asking, per
+standing project practice.
+
+NFR 5, done 2026-09-18, verified for real rather than assumed from
+`vite.config.js`: `npm run build`, then `vite preview`, then a headless
+Chrome session driven over the DevTools protocol, the same technique used for
+the mobile layout pass. First load online, confirmed
+`navigator.serviceWorker.controller` is set and `caches.open(...)` holds all
+12 precached entries. Then `Network.emulateNetworkConditions({offline:
+true})`, the same switch DevTools' own offline checkbox flips, and reloaded:
+`/` still rendered the full literacy check screen, and a prescription deep
+link the phone had never cached (`/p/abc123...`) rendered the app shell and a
+plain "no connection" message rather than a blank page or the browser's own
+offline error page. `serviceWorkerRouting.test.js` already covers the
+routing rules that make this possible as a permanent regression test; this
+was the one part of NFR 5 that only a real service worker in a real browser
+can prove, which is why it stayed a manual verification rather than growing a
+vitest test of its own.
 
 ---
 
@@ -235,6 +279,7 @@ whether these exist.
 | --- | --- |
 | Visual or vibration based queue call alternative | Reuses the vibration vocabulary and the tap pattern already built |
 | Expansion to Ga and Ewe | The language provider is an interface, and clip lookup is keyed on gloss, not on Twi |
+| Patient's own phone, two device visits | Built, `wip` until tried on real devices. Peer to peer WebRTC, six character code, asked before the literacy check, both paths. A reload of either device is rejoined by itself and each stays on its page. ADR 053 has the known limits: no TURN so some networks will not connect, the pairing cache is per process |
 | Extension to lecture halls, churches, public service counters | The captioning plus guided question and answer model is not hospital specific |
 
 ---
@@ -253,7 +298,8 @@ solves, so they are tracked explicitly.
 | **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant. **One specific question found while building ADR 049:** `morning` and `night` are blocking, `afternoon` and `evening` are not, and nothing about the four differs clinically. Should they be classified alike, and if so, blocking? | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
 | A Cloudflare R2 bucket, for any deployment | Free below 10 GB and free of egress charges. Media on a container filesystem is lost on every restart, so this is required rather than preferred. Wired up in ADR 050; the four values and where to click for them are in `SETUP_GUIDE.md` | open |
-| Authentication and rate limiting on prescription issuing | ADR 044 names this as a known limitation. Issuing is unauthenticated like the rest of the API, so anyone reaching it can create rows. Not a disclosure, since each is readable only by its own unguessable reference, but deployment work | open |
+| Rate limiting on prescription issuing | ADR 044's known limitation, mitigated 2026-09-18: `PrescriptionIssueThrottle` caps issuing at 60/hour per IP, so a runaway script can no longer create rows without bound. Not a disclosure either way, since each row is readable only by its own unguessable reference | **resolved 2026-09-18** |
+| Authentication for the doctor facing API | Deliberately not added alongside the rate limit above: ADR 036 and ADR 044 both reject an account for this half of the app, since none of these endpoints read `request.user` and an account would defeat FR 6.2, a patient replaying their own prescription without one. Real accounts, if ever wanted, are a deployment decision with its own design, not a gap the current architecture is missing | open, by design |
 
 ---
 

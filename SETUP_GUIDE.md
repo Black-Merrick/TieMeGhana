@@ -158,8 +158,8 @@ translation.
 
 ## Reviewing and approving clips
 
-The Django admin is where footage is approved, aliases are recorded, and the
-question wording is curated. Create an account once:
+The Django admin is where footage is uploaded, approved or rejected, aliases
+are recorded, and the question wording is curated. Create an account once:
 
 ```bash
 cd backend && source .venv/bin/activate
@@ -168,15 +168,66 @@ python manage.py createsuperuser
 
 Then open **http://localhost:5173/admin/**, or whichever port the dev server
 reported. The admin is proxied through the dev server, so it is on the same
-port as the app rather than the backend's.
+port as the app rather than the backend's. In production it is at
+`https://your-site.netlify.app/admin/`, proxied the same way.
 
-Under **GhSL clips** you can approve imported footage, see which glosses still
-need filming, add reviewed aliases, and import the footage folder with a
-button.
+### Getting footage in: two ways, for two situations
 
-Imported footage is always `pending` until someone approves it. That is the
-gate, not a bug: filmed is not the same as usable. A clip only becomes
-resolvable when it is both filmed and approved.
+**Bulk upload**, the button on the **GhSL clips** list, is a form: pick as
+many video files as you like from your own computer and submit. This is the
+one that works after deployment. Render's free tier has no shell and no
+persistent disk, so there is no folder on the server to drop files into and
+nobody who could reach one if there were. Whoever is reviewing clips against
+the live site does it through this form, from whichever machine they are
+sitting at.
+
+Each file's name, minus its extension, becomes the gloss it is filed under:
+`head.mp4` becomes `HEAD`, `what_is_your_name.mp4` becomes
+`WHAT_IS_YOUR_NAME`. The form shows a running list of exactly which gloss each
+selected file will become, before you upload, so a typo in a filename is
+caught before it quietly creates the wrong entry. It also lists which glosses
+in the library still need footage, so you can name files correctly the first
+time rather than discover a mismatch on the next review pass.
+
+**Import footage folder**, the other button, reads a folder on whichever
+machine Django is actually running on: `backend/footage/` locally by default,
+or `FOOTAGE_DIR`. Only useful with direct filesystem access to that machine,
+which in practice means local development. Kept because it is convenient
+there: drop a folder of files in and click one button, rather than open a
+terminal for `manage.py import_clips`. On a deployment with no shell it does
+nothing, because there is no way to have put files in the folder it reads.
+
+Either way, importing is not the same as approving. **Imported footage is
+always `pending` until someone approves it.** That is the gate, not a bug:
+filmed is not the same as usable. A clip only becomes resolvable, reachable
+by a patient, when it is both filmed and approved.
+
+Uploading a file for a gloss that already has one **replaces the recording and
+resets its approval**, on purpose: whoever approved the old take did not see
+the new one, so the new one goes back to pending regardless of what the old
+status was.
+
+### Approving, rejecting, and sending back for a retake
+
+Three outcomes, each a bulk action in the clip list, and each means something
+different enough to a future reviewer that they are worth telling apart:
+
+- **Approve** clears selected, filmed clips for clinical use, recording your
+  name. A clip with no footage is skipped rather than approved, since
+  approving a gloss with nothing to play would be a lie the row tells.
+- **Reject** is for a specific recording a consultant has watched and refused.
+  It asks for a reason before doing anything, on a confirmation page, and
+  keeps that reason on the clip with your name and the date. That reason is
+  what lets whoever re-films it fix the actual problem instead of guessing,
+  and what lets a second reviewer see the gloss was already tried rather than
+  assume it is untouched.
+- **Return to pending, for rework** is the quieter cousin: for a recording
+  that just is not finished yet, rather than one you are actively refusing.
+  It carries no reason, because rejecting an unfinished take would leave a
+  false "somebody said no to this" mark on a clip nobody has properly judged.
+
+Opening a clip's own page shows the current recording playing inline, above
+the file field, so judging it does not mean downloading the file first.
 
 ## ffmpeg, so a sentence plays as one video
 

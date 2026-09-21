@@ -1,11 +1,16 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
+import AppBrand from "./components/AppBrand.jsx";
+import DeviceChoice from "./components/DeviceChoice.jsx";
 import DoctorConsultation from "./components/DoctorConsultation.jsx";
+import DoctorConsultationHost from "./components/DoctorConsultationHost.jsx";
 import GuidedInterrogation from "./components/GuidedInterrogation.jsx";
+import GuidedInterrogationHost from "./components/GuidedInterrogationHost.jsx";
 import InstallApp from "./components/InstallApp.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import ScreenLoader from "./components/ScreenLoader.jsx";
+import RoleChoice from "./components/RoleChoice.jsx";
 import SetupProgress from "./components/SetupProgress.jsx";
 import useClipWarmup from "./hooks/useClipWarmup.js";
 
@@ -27,7 +32,20 @@ const PrescriptionPlayback = lazy(
   () => import("./components/PrescriptionPlayback.jsx"),
 );
 import ConnectionStatus from "./components/ConnectionStatus.jsx";
+import PairingHostScreen from "./components/PairingHostScreen.jsx";
+import PairingJoinScreen from "./components/PairingJoinScreen.jsx";
+import usePairedHostSession from "./hooks/usePairedHostSession.js";
+import {
+  DeviceMode,
+  clearDeviceMode,
+  loadDeviceMode,
+  saveDeviceMode,
+} from "./pairing/deviceMode.js";
+import { clearLastQuestion, loadLastQuestion } from "./pairing/lastQuestion.js";
+import { loadRole, saveDoctorRole } from "./pairing/role.js";
+import { PeerState } from "./webrtc/peerChannel.js";
 import { referenceFromPath } from "./api/prescriptions.js";
+import { isJoinPath } from "./api/pairing.js";
 import LegalScreen from "./legal/LegalScreen.jsx";
 import {
   LegalDocument,
@@ -40,6 +58,7 @@ import {
   loadCurrentPrescription,
 } from "./prescription/currentPrescription.js";
 import { clearTranscript } from "./transcript/transcript.js";
+import { Screen, clearScreen, loadScreen, saveScreen } from "./visit/screen.js";
 import {
   DEFAULT_OUTPUT_LANGUAGE,
   LiteracyPath,
@@ -63,6 +82,17 @@ export default function App() {
   // Read from the path rather than held in state because nothing in the app
   // navigates to it; a scan is always a fresh page load.
   const [prescriptionReference] = useState(() => referenceFromPath());
+
+  // The patient's own device, joining a doctor's visit by a typed code, ADR
+  // 053. Read once for the same reason as the prescription reference above:
+  // this is a fresh page load on a phone that has never opened the app
+  // before, and it must not be shown a literacy question or any other way
+  // into the app.
+  // State, not a constant, because the patient's own door into the app is a
+  // button on the first screen rather than only a typed address: choosing it
+  // moves the address to /join without loading a new page, which is what the
+  // browser's back button then undoes.
+  const [joining, setJoining] = useState(() => isJoinPath());
 
   // The privacy policy and the terms, at /privacy and /terms. Held in state as
   // well as in the address so opening one does not tear down the consultation
@@ -91,7 +121,18 @@ export default function App() {
   // a patient who may have arrived unconscious after an accident, and asking
   // whether they read before letting them say they cannot breathe would be
   // the wrong order. See ADR 040.
-  const [emergency, setEmergency] = useState(false);
+  //
+  // Remembered across a reload like the visit is, so refreshing the page
+  // brings the doctor back to the screen they were on and not to the
+  // consultation behind it.
+  const [emergency, setEmergencyState] = useState(
+    () => loadScreen() === Screen.EMERGENCY,
+  );
+  const setEmergency = (open) => {
+    setEmergencyState(open);
+    if (open) saveScreen(Screen.EMERGENCY);
+    else clearScreen();
+  };
 
   // The prescription builder, FR 6.1. Inside the visit, unlike emergency mode:
   // it is the last thing that happens in a consultation, so there is always a
@@ -101,13 +142,72 @@ export default function App() {
   // back to the QR code rather than to the consultation behind it. Losing it
   // would mean issuing a second prescription, leaving the first one live and
   // scannable with nothing to say it was replaced.
-  const [prescribing, setPrescribing] = useState(
-    () => loadCurrentPrescription() !== null,
+  const [prescribing, setPrescribingState] = useState(
+    () =>
+      loadCurrentPrescription() !== null ||
+      (loadVisit() !== null && loadScreen() === Screen.PRESCRIPTION),
   );
+  const setPrescribing = (open) => {
+    setPrescribingState(open);
+    if (open) saveScreen(Screen.PRESCRIPTION);
+    else clearScreen();
+  };
 
   // The listener's language still applies in an emergency, and there may be no
   // visit yet to have set it.
   const outputLanguage = visit?.outputLanguage ?? DEFAULT_OUTPUT_LANGUAGE;
+
+  // Whether the patient has their own phone, asked before anything else. Kept
+  // out of `visit` because it is answered before a visit exists, and read as
+  // "shared" when a visit is present with no answer, which is how every visit
+  // began before pairing existed. See ADR 053.
+  const [deviceMode, setDeviceMode] = useState(() => loadDeviceMode());
+
+  // Whether this device has been chosen as a doctor's. Asked once, before the
+  // question above, so a patient's phone has somewhere to go that is not the
+  // doctor's screen. See ADR 053.
+  const [role, setRole] = useState(() => loadRole());
+  const paired = deviceMode === DeviceMode.PAIRED;
+
+  // The connection to the patient's phone, held here, above every screen, so
+  // that opening Prescription, Emergency or a legal document mid visit cannot
+  // drop it. Off on the patient's own phone (`/join`) and on a prescription
+  // link, which share this browser's storage in testing and must never mint a
+  // code of their own.
+  const session = usePairedHostSession({
+    enabled: paired && !joining && !prescriptionReference,
+  });
+  const patientConnected = session.state === PeerState.CONNECTED;
+
+  // What the patient's phone needs to be on the right screen, sent every time
+  // it connects, which includes coming back after a reload of either device.
+  //
+  // The literacy answer is given after the two devices connect, so the phone
+  // learns which screen it is for from here. The token is the way back for the
+  // next reload. And the last question is sent again, marked as such, so a
+  // phone that has just reloaded is not left blank until the doctor's next one.
+  // Sent in one place and in this order, because the connection hands a
+  // component only its newest message: the last of these is the one a screen
+  // reads, so each carries the token and the path itself.
+  const literacyPath = visit?.literacyPath ?? null;
+  useEffect(() => {
+    if (!paired || !patientConnected) return;
+    const resume = session.token ?? undefined;
+
+    if (!literacyPath) {
+      if (resume) session.channel.send({ type: "resume", resume });
+      return;
+    }
+
+    session.channel.send({ type: "path", path: literacyPath, resume });
+    const last = loadLastQuestion();
+    if (last) {
+      session.channel.send({ ...last, path: literacyPath, resume, resent: true });
+    }
+    // `send` is stable for the life of a connection; the connection itself
+    // is what this is keyed on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paired, patientConnected, literacyPath, session.code, session.token]);
 
   // The literacy check, which is what the app opens into before a visit
   // exists. `visit` alone would be enough, since the prescription builder is
@@ -129,6 +229,22 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  // Between the two doors of the first screen. pushState for the same reason
+  // as the legal documents: nothing is unloaded, and back returns to the choice.
+  const goToJoin = () => {
+    setJoining(true);
+    window.history.pushState({ join: true }, "", "/join");
+    window.scrollTo(0, 0);
+  };
+
+  const leaveJoin = () => {
+    setJoining(false);
+    window.history.pushState({ join: false }, "", "/");
+    window.scrollTo(0, 0);
+  };
+
+  const chooseDoctor = () => setRole(saveDoctorRole());
+
   const leaveLegal = () => {
     setLegal(null);
     window.history.pushState({ legal: null }, "", "/");
@@ -136,7 +252,10 @@ export default function App() {
 
   // The browser's own back button, which is the one a patient will reach for.
   useEffect(() => {
-    const onPopState = () => setLegal(legalDocumentFromPath());
+    const onPopState = () => {
+      setLegal(legalDocumentFromPath());
+      setJoining(isJoinPath());
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -145,8 +264,11 @@ export default function App() {
     // The health check is for the hospital device. A patient opening their
     // prescription may well be offline, which is the point of FR 6.2, and
     // telling them the hospital system is unreachable would be alarming and
-    // irrelevant.
-    if (prescriptionReference) return undefined;
+    // irrelevant. The same reasoning covers a patient joining a paired
+    // visit: that screen has no topbar to show a status on, and the
+    // connection that matters to it is the one straight to the doctor's
+    // device, not this one.
+    if (prescriptionReference || joining) return undefined;
 
     let cancelled = false;
 
@@ -166,7 +288,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [prescriptionReference]);
+  }, [prescriptionReference, joining]);
 
   /**
    * Finish this visit so the next patient is asked fresh.
@@ -195,9 +317,19 @@ export default function App() {
     // Otherwise the next patient would find the previous patient's question
     // still on screen, waiting for them to answer it.
     clearCurrentExchange();
+    clearLastQuestion();
+    clearScreen();
+
+    // The next patient is asked about their phone afresh. Turning the mode off
+    // is also what ends the connection, and tells the phone that was on it.
+    clearDeviceMode();
+    setDeviceMode(null);
 
     setVisit(null);
   };
+
+  const chooseDeviceMode = (mode) => setDeviceMode(saveDeviceMode(mode));
+  const useThisDeviceInstead = () => setDeviceMode(saveDeviceMode(DeviceMode.SHARED));
 
   /**
    * Change the language the patient's answers are spoken in, FR 3.4.
@@ -244,6 +376,25 @@ export default function App() {
     );
   }
 
+  // The patient's own device, reached by typing in a code rather than by a QR
+  // scan. Its own shell rather than the doctor's: a brand bar and one centred
+  // column that fills out on a desktop, with none of the doctor's controls,
+  // since nothing in them is for a patient. The clips are warmed here as well,
+  // so the doctor's first message plays without waiting on a download. ADR 053.
+  if (joining) {
+    return (
+      <div className="app app--patient">
+        <header className="topbar topbar--patient">
+          <AppBrand />
+        </header>
+        <main className="shell shell--patient">
+          <PairingJoinScreen onLeave={leaveJoin} />
+        </main>
+        <SetupProgress progress={clipWarmup} />
+      </div>
+    );
+  }
+
   // Two columns that scroll independently, on the screens built as two
   // columns: the consultation and emergency triage. Emergency qualifies with
   // no visit at all, because it is reachable before the literacy check.
@@ -261,29 +412,7 @@ export default function App() {
   return (
     <div className={split ? "app app--split" : "app"}>
       <header className="topbar">
-        <div className="topbar__brand">
-          {/* The app's mark, from public/icon.png via tools/build_icons.py.
-              The 96px derivative rather than the 512px source: it draws at
-              about 38px, and the source is a quarter of a megabyte.
-
-              The alt is empty because the name is right beside it, and
-              announcing both would read the app's name twice. */}
-          <img
-            className="topbar__logo"
-            src="/icon-96.png"
-            alt=""
-            width="38"
-            height="38"
-          />
-          {/* Stacked beside the mark, not strung out after it: the name is the
-              heading and the line under it describes the app. */}
-          <div className="topbar__names">
-            <h1 className="topbar__title">Tie Me Ghana</h1>
-            <p className="topbar__subtitle">
-              Hospital communication for Deaf and Hard of Hearing patients
-            </p>
-          </div>
-        </div>
+        <AppBrand />
 
         {/* Four groups rather than one row of controls, so the layout can
             place them differently on a phone: the name and Emergency on the
@@ -388,14 +517,48 @@ export default function App() {
           <PrescriptionBuilder onLeave={() => setPrescribing(false)} />
         </Suspense>
       ) : visit ? (
-        <PatientPath
-          path={visit.literacyPath}
-          outputLanguage={outputLanguage}
-          onOutputLanguageChange={changeOutputLanguage}
-        />
+        paired ? (
+          patientConnected || session.resumable ? (
+            <>
+              {/* The doctor stays on the consultation while the patient's phone
+                  is away, and is told. It comes back by itself: nothing here
+                  needs doing, and nothing on the screen moves. */}
+              {patientConnected ? null : (
+                <PatientAway onNewCode={session.retry} />
+              )}
+              <PairedPatientPath
+                path={visit.literacyPath}
+                channel={session.channel}
+                outputLanguage={outputLanguage}
+                onOutputLanguageChange={changeOutputLanguage}
+              />
+            </>
+          ) : (
+            <PairingHostScreen
+              session={session}
+              reconnecting
+              onUseThisDeviceInstead={useThisDeviceInstead}
+            />
+          )
         ) : (
-          <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
-        )}
+          <PatientPath
+            path={visit.literacyPath}
+            outputLanguage={outputLanguage}
+            onOutputLanguageChange={changeOutputLanguage}
+          />
+        )
+      ) : deviceMode === null && role === null ? (
+        <RoleChoice onDoctor={chooseDoctor} onPatient={goToJoin} />
+      ) : deviceMode === null ? (
+        <DeviceChoice onChosen={chooseDeviceMode} onJoinInstead={goToJoin} />
+      ) : paired && !patientConnected ? (
+        <PairingHostScreen
+          session={session}
+          onUseThisDeviceInstead={useThisDeviceInstead}
+        />
+      ) : (
+        <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
+      )}
       </main>
 
       {/* The opening screen only.
@@ -526,6 +689,59 @@ function PatientPath({ path, outputLanguage, onOutputLanguageChange }) {
   }
   return (
     <GuidedInterrogation
+      outputLanguage={outputLanguage}
+      onOutputLanguageChange={onOutputLanguageChange}
+    />
+  );
+}
+
+/**
+ * Said above the consultation while the patient's phone is not connected.
+ *
+ * Not a screen of its own, on purpose. Reloading either device drops the
+ * connection, and it is rejoined without anyone doing anything, so the
+ * consultation stays where it is and this line says why the phone is quiet.
+ * The button is for when it is not coming back: a fresh code, and the old
+ * phone is told it is over. See ADR 053.
+ */
+function PatientAway({ onNewCode }) {
+  return (
+    <div className="away" role="status" data-testid="patient-away">
+      <span className="pairing__pulse" aria-hidden="true" />
+      <p className="away__text">
+        The patient&apos;s phone has disconnected. It will rejoin by itself when
+        it is open again.
+      </p>
+      <button
+        type="button"
+        className="away__action"
+        onClick={onNewCode}
+        data-testid="patient-away-new-code"
+      >
+        Pair with a new code
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The doctor's half of a paired visit: the same two flows, each split so the
+ * patient's half is on their own phone. The connection is `App`'s, not this
+ * component's, so it outlives the screen.
+ */
+function PairedPatientPath({ path, channel, outputLanguage, onOutputLanguageChange }) {
+  if (path === LiteracyPath.LITERATE) {
+    return (
+      <DoctorConsultationHost
+        channel={channel}
+        outputLanguage={outputLanguage}
+        onOutputLanguageChange={onOutputLanguageChange}
+      />
+    );
+  }
+  return (
+    <GuidedInterrogationHost
+      channel={channel}
       outputLanguage={outputLanguage}
       onOutputLanguageChange={onOutputLanguageChange}
     />

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from clips.compression import describe_saving
 from clips.importing import VIDEO_SUFFIXES, ImportReport, import_footage
 from clips.models import SignClip
 
@@ -116,6 +117,10 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"  replaced  {gloss}, approval reset")
             )
+        for gloss, result in report.compressed.items():
+            self.stdout.write(f"  smaller   {gloss}, {describe_saving(result)}")
+        for gloss, reason in report.uncompressed.items():
+            self.stdout.write(self.style.WARNING(f"  as is     {gloss}, {reason}"))
         if report.unchanged:
             self.stdout.write(
                 f"  unchanged {len(report.unchanged)} clip(s), left alone"

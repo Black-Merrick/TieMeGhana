@@ -93,6 +93,10 @@ class CaptionResponseSerializer(serializers.Serializer):
     caption_problem = serializers.CharField(allow_blank=True)
     language_provider = serializers.CharField()
     sequence = SignSequenceSerializer()
+    # NFR 1's five second budget, measured server side. Exposed rather than
+    # kept in the logs alone so a test, or a doctor's own devtools, can see it
+    # without needing access to the server.
+    pipeline_ms = serializers.IntegerField()
 
 
 class SpeakRequestSerializer(serializers.Serializer):

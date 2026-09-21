@@ -6,6 +6,7 @@ import App from "../App.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
 import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
 import { fetchPlaylist } from "../api/prescriptions.js";
+import { saveDoctorRole } from "../pairing/role.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
@@ -25,6 +26,9 @@ vi.mock("../api/prescriptions.js", async (importOriginal) => {
 
 beforeEach(() => {
   localStorage.clear();
+  // Every test below is about a doctor's device. The first screen a device
+  // that has not been chosen sees is covered in AppRole.test.jsx.
+  saveDoctorRole();
   // Every test starts on the app's own route. A leaked prescription path would
   // replace the whole consultation screen and fail in a way that looks
   // unrelated to whichever test left it behind.
@@ -51,6 +55,21 @@ beforeEach(() => {
     }),
   );
 });
+
+/**
+ * Answer the first question a visit asks, "does this patient have their own
+ * phone?", with No, which is the shared device flow every test below this one
+ * was written for. Waits for the literacy check it leads to, so a caller can go
+ * straight on to answering it.
+ */
+async function shareThisDevice(user = userEvent.setup()) {
+  await waitFor(() => screen.getByTestId("device-choice"));
+  await user.click(
+    within(screen.getByTestId("device-choice")).getByTestId("choice-no"),
+  );
+  await waitFor(() => screen.getByTestId("literacy-check"));
+  return user;
+}
 
 afterEach(() => {
   localStorage.clear();
@@ -101,10 +120,19 @@ describe("routing by literacy path", () => {
     // been routed, because assuming either path breaks the app for the people
     // it exists to serve.
     render(<App />);
+    await shareThisDevice();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
-    });
+    expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/message for the patient/i)).not.toBeInTheDocument();
+  });
+
+  it("asks whether the patient has their own phone before the literacy question", async () => {
+    // ADR 053. The choice decides whether there is a second device to pair,
+    // so it comes first, and nothing about the consultation may start under it.
+    render(<App />);
+
+    await waitFor(() => screen.getByTestId("device-choice"));
+    expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/message for the patient/i)).not.toBeInTheDocument();
   });
 
@@ -147,8 +175,8 @@ describe("routing by literacy path", () => {
   it("routes straight after the patient answers, without a reload", async () => {
     const user = userEvent.setup();
     render(<App />);
+    await shareThisDevice(user);
 
-    await waitFor(() => screen.getByTestId("choice-yes"));
     await user.click(screen.getByTestId("choice-yes"));
 
     await waitFor(() => {
@@ -175,8 +203,8 @@ describe("the visit bar", () => {
 
   it("shows no path indicator before the patient has answered", async () => {
     render(<App />);
+    await shareThisDevice();
 
-    await waitFor(() => screen.getByTestId("literacy-check"));
     expect(screen.queryByTestId("literacy-path")).not.toBeInTheDocument();
   });
 
@@ -190,9 +218,9 @@ describe("the visit bar", () => {
     await waitFor(() => screen.getByTestId("new-patient"));
     await user.click(screen.getByTestId("new-patient"));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
-    });
+    // Back to the very first question, not to the literacy check: the next
+    // patient may have a phone the last one did not.
+    await shareThisDevice(user);
     expect(
       screen.queryByRole("button", { name: /send to patient/i }),
     ).not.toBeInTheDocument();
@@ -249,8 +277,8 @@ describe("the spoken output language", () => {
 
   it("shows no language toggle before a patient has been routed", async () => {
     render(<App />);
+    await shareThisDevice();
 
-    await waitFor(() => screen.getByTestId("literacy-check"));
     expect(screen.queryByTestId("output-language")).not.toBeInTheDocument();
   });
 });
@@ -291,7 +319,7 @@ describe("the transcript and the shared device", () => {
     await waitFor(() => screen.getByTestId("new-patient"));
     await user.click(screen.getByTestId("new-patient"));
 
-    await waitFor(() => screen.getByTestId("literacy-check"));
+    await shareThisDevice(user);
     expect(screen.queryByText(/HIV positive/i)).not.toBeInTheDocument();
   });
 
@@ -454,6 +482,44 @@ describe("a scanned prescription link, FR 6.3 and FR 6.4", () => {
   });
 });
 
+describe("joining a paired visit, ADR 053", () => {
+  it("opens the join screen and nothing else", async () => {
+    // The patient's own phone, reached by typing in a code rather than a QR
+    // scan, but the same "nothing else in this app is wanted here" case as
+    // a scanned prescription link above.
+    window.history.pushState({}, "", "/join");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("pairing-join-form")).toBeInTheDocument();
+    expect(screen.queryByTestId("literacy-check")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enter-emergency")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("new-patient")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("connection-status")).not.toBeInTheDocument();
+  });
+
+  it("opens the join screen even mid consultation on the same device", async () => {
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    window.history.pushState({}, "", "/join");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("pairing-join-form")).toBeInTheDocument();
+  });
+
+  it("does not check the hospital connection on the patient's phone", async () => {
+    window.history.pushState({}, "", "/join");
+
+    render(<App />);
+
+    await screen.findByTestId("pairing-join-form");
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("/health"),
+      expect.anything(),
+    );
+  });
+});
+
 describe("the prescription builder, FR 6.1", () => {
   it("is offered once a visit is under way", async () => {
     saveLiteracyPath(LiteracyPath.LITERATE);
@@ -601,7 +667,7 @@ describe("installing the app, NFR 5", () => {
     }));
 
     render(<App />);
-    await waitFor(() => screen.getByTestId("literacy-check"));
+    await waitFor(() => screen.getByTestId("device-choice"));
 
     expect(screen.queryByTestId("install-app")).not.toBeInTheDocument();
   });
@@ -628,7 +694,7 @@ describe("where the privacy policy and terms are offered", () => {
     await waitFor(() =>
       expect(screen.getByTestId("legal-footer")).toBeInTheDocument(),
     );
-    expect(screen.getByTestId("literacy-check")).toBeInTheDocument();
+    expect(screen.getByTestId("device-choice")).toBeInTheDocument();
     expect(screen.getByTestId("open-privacy")).toBeInTheDocument();
     expect(screen.getByTestId("open-terms")).toBeInTheDocument();
   });

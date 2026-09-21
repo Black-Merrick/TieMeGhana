@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { VibrationPattern, vibrate } from "../feedback/vibration.js";
+
 /**
  * How a patient who reads and writes answers back, SRS FR 3.1.
  *
@@ -27,6 +29,9 @@ export default function PatientReply({
   // rather than just going disabled.
   speakStatus = "idle",
   onReplay = null,
+  // Shown under the send button, where the patient is already looking. For a
+  // screen whose confirmation is not somewhere else on the same device.
+  feedback = null,
 }) {
   const [sourceLanguage, setSourceLanguage] = useState("tw");
   const [reply, setReply] = useState("");
@@ -48,6 +53,9 @@ export default function PatientReply({
     }
 
     setEmptyWarning(false);
+    // Section 4.2: every tap is answered at once, before anything that has to
+    // wait on a service or another device.
+    vibrate(VibrationPattern.TAP_SELECTION);
     await onReply({ text, sourceLanguage });
     setReply("");
   };
@@ -143,6 +151,8 @@ export default function PatientReply({
             </>
           )}
         </button>
+
+        {feedback}
 
         {/* The doctor may simply not have been listening, and the patient has
             no way to tell that from having been understood. Offered as soon as

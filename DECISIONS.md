@@ -1826,3 +1826,528 @@ The setup has one step that fails confusingly and is therefore called out in
 Uploads succeed without it, nothing errors, and every video and photograph
 404s, because writing goes to the authenticated endpoint and reading goes to a
 different public host.
+
+
+## ADR 051: Prescription issuing is rate limited, not authenticated
+
+**Context.** ADR 044 named a known limitation and left it open: issuing has no
+account to check, so anyone who can reach the API can create a `Prescription`
+row. Not a disclosure, since each is only readable by its own unguessable
+reference, but nothing bounded how many a script could create.
+
+**Decision.** `PrescriptionIssueThrottle`, a small `AnonRateThrottle`
+subclass with a fixed `scope`, caps issuing at 60 requests an hour per IP,
+applied only to `POST /api/prescriptions/`.
+
+**Why a rate limit and not an account.** ADR 036 and ADR 044 already settled
+this for the whole doctor facing API: none of these endpoints read
+`request.user`, and an account on the issuing side would sit awkwardly next
+to a replay side that must stay accountless, since FR 6.2 is a Deaf patient
+replaying their own prescription at home, weeks later, with nothing to have
+lost. A rate limit protects the thing actually at risk, storage being filled
+by a script, without adding a login screen to a walk up hospital device.
+
+**Why not `ScopedRateThrottle`.** That is DRF's usual tool for a per view
+rate, and it reads `view.throttle_scope` off the view at request time. DRF's
+`@api_view` decorator, which is what turns `issue()` from a function into a
+view, does not forward that attribute from the function to the `APIView` it
+builds: it forwards `renderer_classes`, `parser_classes`,
+`authentication_classes`, `throttle_classes`, and `permission_classes`, and
+stops there. Setting `.throttle_scope` on the function would silently
+throttle nothing. `PrescriptionIssueThrottle` sets `scope` directly on the
+class instead, the same way `AnonRateThrottle` itself does, so there is no
+attribute to forget to forward.
+
+**A trap worth naming for whoever tests this next.** `SimpleRateThrottle`
+reads `THROTTLE_RATES` as a **class attribute**, set once from
+`api_settings.DEFAULT_THROTTLE_RATES` the first time `rest_framework.throttling`
+is imported, not as a live property. A test that changes the rate with
+`settings.REST_FRAMEWORK = {...}` (or `@override_settings`) changes what
+`django.conf.settings.REST_FRAMEWORK` holds, correctly, and does nothing at
+all to the throttle, because by the time most tests run, some earlier test has
+already triggered the one-time import and frozen the original value. It cost
+real time to trace: the failure looks exactly like the throttle not applying,
+and depends on test order, which is why it passed in isolation and failed in
+the full file. The tests for this instead set `.rate` directly with
+`monkeypatch.setattr(PrescriptionIssueThrottle, "rate", "3/hour", raising=False)`,
+which `SimpleRateThrottle.__init__` reads before it ever touches
+`THROTTLE_RATES`, so it is not exposed to the same staleness. Production is
+unaffected either way: `DEFAULT_THROTTLE_RATES` is set once at process start
+and never changes underneath a running deployment.
+
+**In cache, not the database.** No `CACHES` setting is configured, so this
+runs on Django's default `LocMemCache`, per process and cleared on restart.
+Adequate for what this defends against, a script hammering one process, and
+consistent with treating the limit as a storage nuisance mitigation rather
+than a security boundary; a multi worker deployment would want a shared cache
+for the limit to hold across workers, which is deployment configuration, not
+a reason to hold off shipping the limit itself.
+
+
+## ADR 052: The clip warm up fetches by kind, prompt and alert and letter first
+
+**Context.** `precacheClips` (ADR unnumbered at the time, see the module's
+own docstring) already downloads every resolvable clip into the service
+worker's cache in the background after the app opens, so the first time a
+sign is needed it does not wait on a hospital connection. It fetched them in
+whatever order `GET /api/clips/` returned, which is insertion order, not
+importance order. On a small library that is invisible. On the full 102 gloss
+library the filming list in `BACKLOG.md` describes, it means a doctor who
+taps something in the first few seconds of a consultation is only as likely
+to find that specific clip already warm as its position in an arbitrary list.
+
+**Decision.** The list is sorted by `kind` before the fetch queue is built,
+`prompt` first, then `alert`, then `letter`, then `phrase`, then `word`.
+Nothing is filtered or skipped: every resolvable clip is still warmed, this
+only changes which ones land in the first few completed downloads.
+
+**Why this order.** `PROMPT` is what the app itself asks before a doctor has
+done anything, FR 2.1's literacy check among them, so it is the first thing
+that can possibly be on screen. `ALERT` is Emergency Triage, FR 5, the single
+most time critical path in the app, and per ADR 040 it should work within
+seconds of being opened. `LETTER` is the fingerspelling alphabet: 26 clips
+that, per the filming list's own reasoning, cover every content word and
+medicine name the library has no sign of its own for, so they are reused
+across nearly every free text message rather than triggered by one specific
+question. `PHRASE` and `WORD` are the long tail: real, needed, but any one of
+them is far less likely to be the very next tap than the other four
+categories combined.
+
+**Why not something cleverer, like actual usage frequency.** There is no
+usage data yet, the app has not shipped. A kind based order is available from
+data the clip already carries, needs no new field, no telemetry, and no
+tuning, and it is right for the reason stated above rather than by
+construction from a metric nobody has collected. A frequency based reordering
+is a reasonable thing to build once real consultations produce real numbers
+to base it on.
+
+**A kind this does not recognise sorts last, not first.** A `KIND_PRIORITY`
+list not covering a value defaults to "after everything named", proven by a
+test with an invented kind string. The alternative, defaulting to the front,
+would mean a typo or a future kind nobody updated this list for silently wins
+every race for bandwidth ahead of the categories this was actually written to
+prioritise.
+
+**What this does not do.** It does not make an individual clip download
+faster: that is bounded by file size and the connection, not by JavaScript.
+It does not change first paint, since the warm up already ran off the main
+render path per the existing idle deferral, measured for real at about 59ms
+after navigation in a live headless browser, nowhere near the 5 second
+`requestIdleCallback` timeout that exists only as a worst case fallback. What
+it changes is the order in which a small, concurrency limited pipe fills, so
+the clips most likely to be asked for first are the ones most likely to have
+already arrived.
+
+
+---
+
+## ADR 053: A visit can run on two devices, connected directly and never through the server
+
+**Context.** In a real ward the doctor and the patient do not always share one
+screen. A patient may have their own phone, and a doctor who can see the
+questions they have queued, the ADR 033 confirmation, and the transcript
+should not be showing all of that to the person opposite. Everything up to
+this point assumed one device passed between the two of them.
+
+The constraint that decides the design is the project's own: consultations
+are about pregnancy, sexually transmitted infections and HIV status, and the
+record of one must not sit on a server (ADR 026, and the test that walks every
+route and fails the build if one accepts a transcript).
+
+**Decision.** Two devices connect over a WebRTC data channel, peer to peer.
+The doctor's device is the host, the patient's phone is the guest, and nothing
+of the consultation crosses our server. The phone joins by typing a six
+character code at `/join`.
+
+**What the server does.** Only the handshake. `POST /api/pairing/` mints a code;
+each side posts one connection description (an SDP blob) and the other polls
+for it every 1.5 seconds; `DELETE` discards it. All of it lives in the process
+cache with a ten minute TTL, in no model and no migration, and is discarded the
+moment the two devices connect. `PairingCreateThrottle` caps minting at 30 an
+hour per IP, and `core/test_no_transcript_endpoint.py` pins the pairing routes
+by name so a future route that could carry a consultation fails the build.
+
+**Why not a server relay.** It would have been simpler, and it would have
+routed every question and every answer through our process. Even if nothing
+were stored, "it passes through the server" is a sentence a hospital's data
+protection officer would have to weigh, and the privacy policy's strongest
+line, that the record of the visit is never transmitted, would stop being
+literally true. Peer to peer keeps it literally true.
+
+**Why non trickle ICE.** The host waits for candidate gathering to finish and
+posts one offer, the guest one answer. Trickle ICE would need a stream of small
+messages through the relay in both directions for the seconds it takes to
+connect, which is more server involvement for no benefit here. Gathering has
+its own budget, `ICE_GATHERING_TIMEOUT_MS` (8 seconds), separate from the
+overall `CONNECT_TIMEOUT_MS` (25 seconds); the two were the same number at
+first, see the bugs below.
+
+**Google's public STUN is the one third party.** It is asked what each
+device's public address looks like from outside, and sees that address and
+nothing from the consultation. This is disclosed in the privacy policy beside
+the Khaya disclosure rather than left implicit.
+
+**No TURN, and an honest failure.** A TURN server is a relay of the media
+itself, which is precisely the server relay rejected above, and would be a
+second third party. Some networks (symmetric NAT, some hospital WiFi with
+client isolation) will therefore not connect. The app says "couldn't connect
+these two devices directly" and offers to try again or to carry on with one
+shared device. It never quietly falls back to sending the consultation some
+other way.
+
+**Who answers what (FR 2.7).** A Yes/No question is the *doctor's*
+confirmation of the patient's answer, so it stays on the doctor's device, as
+it does on one shared device. A where-does-it-hurt question is the patient's
+own tap, so the body-location grid is on the patient's phone. On the literate
+path the patient types or taps a reply on their phone, and it is **spoken on
+the doctor's device** (FR 3.5), where the doctor is listening; the audio never
+crosses the wire, only `{text, sourceLanguage}` does, and the doctor's device
+reports `speaking` back so the phone can show the same wave and "say it again"
+the shared screen does. The ADR 033 gate (`RefusedUtterance`,
+`ConfirmUtterance`) stays on the host: nothing is sent to the phone until it
+has cleared, and the phone renders only `CaptionStage`, never a staff panel.
+Each device keeps its own FR 4.2 transcript in its own storage.
+
+**The way in: who is using this device.** Pairing needs a place for the
+patient to go, and the first version had none: a patient's phone opened the
+doctor's screen, and the code box lived at `/join`, an address nobody was told.
+The app now opens on "Who is using this device?", with "I'm a doctor" and
+"I'm a patient". The patient's choice moves the address to `/join` (with
+`pushState`, so the browser's back button returns to the choice), and `/join`
+typed by hand still works. A doctor's answer is remembered in
+`tiemeghana.role`, with no expiry and never cleared by "New patient": a
+hospital device stays a doctor's device from one patient to the next, and
+asking every time would put a tap in front of every visit. A patient is not
+remembered; their answer is the address. The doctor's phone question carries a
+small "Join with a code" link for a patient who has picked up the wrong
+device. `/join` has its own shell (a brand bar and one column, wide on a
+desktop) and none of the doctor's controls: no Emergency, Prescription, New
+patient, or legal footer.
+
+**Both devices stock themselves with the clips.** The warm-up (ADR 052) runs
+from `App` before any screen is chosen, so it starts on the role screen and on
+`/join` alike, and its progress toast shows on both. Verified in two real
+browsers: each cached every clip within seconds of opening and before any code
+was entered, so the doctor's first message plays on the phone from its own
+copy.
+
+**Feedback for an answer spoken on the other device.** On one shared device the
+patient's confirmation of their answer (the wave, the words, the vibration,
+SRS section 4.2) is on the screen in front of them. With two devices the sound
+is made on the doctor's, so the phone shows nothing unless it is told. The
+doctor's device already reported `speaking` back; the phone now turns that into
+what section 4.2 asks for: what it sent, in the patient's own words, the moment
+it is tapped; the wave while it is spoken; a tick when it has been; a plain
+message if it failed or was stopped. The vibrations are the app's existing
+vocabulary and no new pattern: the tap pulse when they tap (which now also
+applies on the shared device, where quick replies had none), two short pulses
+when it starts being spoken, one long one when it has been. Nothing vibrates for
+a failure, since section 6 has no pattern for one and forbids inventing it. The
+same talking-face overlay the doctor's device shows now covers the patient's
+phone while their answer is spoken, on both paths (a typed or tapped reply, and
+a tapped body location), with its own Stop that also asks the doctor's device to
+stop, so it can never trap a patient behind a device that has stopped
+reporting. Only reports about an answer that phone gave are believed: the
+doctor's device also speaks its own confirmation of a nod (FR 2.7), and showing
+"your answer is being spoken" for that, beside an earlier answer's words, would
+be untrue. The doctor's screen shows the reply's words, its language, what was spoken if it
+was translated, and the status in the doctor's terms, in the box that used to
+say only that a reply was expected, with the ADR 011 development-service
+warning beside it. The reply is cleared when the next message goes out.
+
+**A sound the browser holds back is not a failure.** Seen on two real devices:
+the patient's face flashed up and gave up, and the doctor's screen said the
+answer "could not be spoken". The doctor's tab had been reloaded and not
+touched since, and a browser lets a page make sound only once somebody has
+touched it, so `play()` was refused with `NotAllowedError`. That is now its own
+state, `blocked`, in `useSpokenResponse`: the audio is kept, the doctor's screen
+says the sound is being held back and offers "Play the patient's answer" (the
+touch that unblocks it, played from the response already in hand, so no second
+translation), and the phone is told to say the doctor's device needs a touch,
+keeping the answer pending so the later playing and spoken reports are still
+believed. Any other refusal is still a failure. Reproduced in real Chrome with
+its true autoplay policy, not the flag the other runs use. Separately, the
+patient's talking face is held for at least 1.8 seconds when an answer goes well
+(the development service's audio is a fraction of a second, and a face gone
+before it can be read is a flicker); failures, stops and blocked sound are shown
+at once.
+
+**It is asked first.** "Does this patient have their own phone?" is the first
+question of every visit, before the literacy check, because the answer decides
+whether there is a second device to pair before anything is shown to anyone.
+Its answer is stored in its own key, `tiemeghana.device`, and not in `visit`:
+it is given before a visit exists, and `loadVisit` throws away anything
+without a valid literacy path. A visit that exists with no device answer is
+read as a shared visit, which is how every visit began before this.
+
+**The connection lives above the screens.** `usePairedHostSession` is called
+by `App`, not by the consultation. Prescription and Emergency both replace the
+consultation on screen mid visit, and a connection owned by the consultation
+would be closed by opening either, telling the patient's phone the visit was
+over when the doctor had only turned to another screen. The phone is told
+`ended` only when starting a new patient turns the device mode off. That "ended"
+send is declared before the connection's own hook so React's declaration order
+cleanup runs it while the channel is still open.
+
+**The phone learns its path over the wire.** The literacy answer is given
+after the two devices connect, so the phone cannot know which screen it is for.
+The host sends `{type:"path"}`, and every question also carries `path`,
+because `usePeerChannel` exposes a single newest message and a burst can
+collapse the first into the second.
+
+**A reload keeps every device on the page it was on.** The direct connection
+cannot survive a reload, so the two devices find each other again by themselves,
+by a rendezvous the pair agreed on. Once they have met over the six character
+code, the doctor's device makes a token (16 random bytes from `crypto`, 22 URL
+safe characters) and hands it to the phone over their own connection, so the
+server has never seen it before either of them reconnects. Both keep it in
+`localStorage`, expiring with the visit. From then on:
+
+- The doctor's device registers the token (`POST /api/pairing/resume/`, which
+  also clears any offer and answer the last connection left) and waits under it.
+  A dropped connection, whoever's reload caused it, is waited out with a growing
+  back off (1.5s up to 60s), and the doctor stays on the consultation with a
+  line saying the phone is away and a button for a fresh code.
+- The phone opens the consultation from the path it remembered, with its own
+  record, its controls held still and "reconnecting" above them, and looks for
+  the doctor's device under the token, again with a growing wait.
+- On every connection the doctor's device sends the phone, in one place and in
+  this order, `path` and then the last question again (marked `resent`, so the
+  phone shows it without recording it twice). Each carries the token, because
+  the connection hands a component only its newest message.
+- A page that is going away closes its end of the connection at once
+  (`pagehide`), so the other device finds out in moments and not after a
+  timeout, and a connection that simply vanishes (lost signal, a sleeping phone)
+  is treated as gone after four seconds of "disconnected".
+- The doctor ending the visit calls `POST /api/pairing/<token>/close/`, which
+  deletes the rendezvous and leaves a marker; every endpoint then answers 410.
+  A phone that was away when the visit ended is told on its return, and the
+  ended screen (with its record) is what a reload of that phone shows, until
+  the patient chooses "Join another consultation".
+- Emergency triage and the prescription builder are remembered across a reload
+  on the doctor's device the same way (`tiemeghana.screen`).
+
+What this costs, stated plainly. The server now holds a long lived secret for
+the length of a paired visit: the token, in the process cache, for up to four
+hours (the window a visit is live for), closed when the visit ends. It is a
+bearer credential onto the rendezvous, appears in request paths and so in
+ordinary request records, and lets whoever holds it act as the phone at the
+handshake. That is the same trust the six character code already needed, for
+much longer, which is why the token is 128 bits where the code is not. It still
+cannot read a consultation: the two devices' connection is encrypted between
+them, and the server only ever holds connection descriptions. A stolen phone
+that is still on a live visit could rejoin it; the doctor's "Pair with a new
+code" closes the old rendezvous and locks it out.
+
+Two things this does not do. A refresh loses what the patient had half typed.
+And the doctor's own caption on screen is not restored after their reload (the
+phone is shown the last question again, the doctor's screen starts clear), as
+it never was on the shared device.
+
+**The patient's phone keeps its record, visibly, and says so.** On the shared device "New
+patient" clears the transcript. Nothing does that for the patient's own
+phone, and they own it, so it is not deleted for them, but the ended screen
+still shows the record with save and delete, since a record the owner cannot
+see or delete is the one thing this app must not leave behind. Its privacy line
+reads "kept on this phone only, until you delete it": the shared device's
+wording, "deleted automatically when the visit ends", would be untrue there,
+and was found still showing on it in a screenshot. The privacy policy and terms
+say so.
+
+**Bugs found only by running two real browsers**, each now with a regression
+test (item 9 aside), and recorded because none was visible to a passing unit
+suite:
+
+1. The ICE gathering fallback used the same timeout as the overall connect
+   timer, so when gathering was slow it fired at the moment the whole
+   connection was abandoned. Hence the separate 8 second budget.
+2. A guest whose data channel was already `open` by the time the handler was
+   attached never saw the `open` event and sat "connecting" forever. The
+   channel's state is now checked immediately on attach.
+3. `apiRequest` treated `204 No Content` as a failure, so discarding a pairing
+   looked like an error. It now returns `null` for 204.
+4. Closing the connection in the same breath as the data channel threw away
+   the last message sent, which was the doctor's "ended". `close()` now lets
+   the channel finish closing first, with a one second limit.
+5. On the patient's phone, a closed connection replaced the whole consultation
+   with a "connecting" spinner that never resolved, hiding the ended notice and
+   the record. `PairingJoinScreen` now stays on `PatientDevice` once it has been
+   connected.
+6. `usePeerChannel` handed out the previous connection's state and last message
+   for the first render of the next code. On the second pairing in one session
+   that read as "connected", so the new code was discarded the instant it was
+   minted, and the previous patient's last message was still there to be acted
+   on. State and message are now scoped to the code they belong to.
+7. A laptop's Wi-Fi dropped and came back in the middle of pairing. Both
+   browsers built descriptions with no candidates in them, posted them, and sat
+   "connecting" until the timeout, each waiting to reach an address the other
+   had never offered. Found from the pairing state on the server (both
+   descriptions present, neither with a single `a=candidate` line) and the
+   network manager's log, which showed the reconnect in the same second. A
+   description with no candidates is now treated as a device with no network:
+   the channel fails at once with `failure: "no-network"` instead of sending it,
+   and an offer or answer with none, from the other side or left over from an
+   earlier attempt, is not acted on. The doctor's device then tries again by
+   itself under the SAME code (2s, 4s, 8s, then every 15s, for as long as the
+   code is good), and the phone looks again under the code it was given, each
+   saying "no network connection just now, it will try again" rather than
+   "failed" or "the code is wrong". Verified in real Chrome by removing the
+   candidates from the doctor's first two attempts: three attempts, the notice
+   shown, no failed screen, the code unchanged, connected on the third.
+8. A refresh took about ten seconds to reconnect (measured, two real browsers:
+   patient 12.9s, doctor 10.2s; first pairing 9.6s). Almost all of it was
+   waiting, none of it work. Gathering routinely never reports complete, so
+   each side waited out the whole 8 second ICE budget before posting a message
+   whose useful contents were there in a fraction of a second; each side then
+   looked for the other's message only every 1.5 seconds; a phone whose doctor
+   was refreshed too gave up on the first "not found"; and both waited 1.5
+   seconds before even looking again after a drop. Now: a description is posted
+   once an address that works across networks (server reflexive or relayed) has
+   arrived and gone quiet for 150ms, or after 1.5 seconds of holding out for
+   one when only local addresses have come, or on complete, or at the old hard
+   limit; polling is every 300ms for the first 30 looks and 1.5s after; a "not
+   found" on the long token is waited out (a typed code still fails at once);
+   and the first re-look after a drop is at 250ms, growing only if nobody is
+   there. Measured again the same way: patient 1.6s, doctor 1.6s, first pairing
+   1.7s, with the doctor's offer still carrying both host and srflx candidates,
+   so pairing across networks is unaffected. What is left is mostly the page
+   loading. A device with no candidates at all still waits on the gathering
+   state and the hard limit, which is what item 7 relies on.
+9. Chrome hides local addresses behind mDNS names that two headless siblings
+   on one machine cannot resolve. This is a test environment artefact, not an
+   app defect: real devices are unaffected, and the verification runs pass
+   `--disable-features=WebRtcHideLocalIpsWithMdns`.
+
+**Known limits, stated rather than hidden.**
+
+- A reload is rejoined by itself, but only while the visit lives, at most four
+  hours, and only if the rendezvous survives: the pairing cache is per process,
+  so a server restart between the two devices' reconnects loses it, and the
+  patient then chooses "Leave this consultation" and types a new code.
+- The phone's `to_doctor` transcript entry has no translation field. Whether a
+  translation was applied is only known on the doctor's device once `/speak/`
+  has answered, and the doctor's copy has it.
+- A phone's transcript accumulates across visits until its owner deletes it,
+  since nothing on that phone ends a visit for them. A second consultation on
+  the same phone is appended to the first one's record.
+- The pairing cache is per process (`LocMemCache`), so the server has to be one
+  process. `entrypoint.sh` therefore runs gunicorn with one worker and eight
+  threads (`WEB_CONCURRENCY`, `GUNICORN_THREADS`) instead of the three workers it
+  used to, which would have made roughly two in three pairing attempts fail with
+  "not found" on Render, at random. A system check (`pairing.W001`) warns at
+  startup if `WEB_CONCURRENCY` is raised above one without a shared cache. If
+  `WEB_CONCURRENCY` is set in Render's dashboard, it must be unset or 1. A
+  restart or a free tier sleep also empties the cache, which ends any pairing in
+  progress; a phone waiting to rejoin says so after 30 seconds.
+- Anyone who enters the code while it is showing joins the visit. It is six
+  characters from a 31 letter alphabet, valid for one pairing and ten minutes,
+  and the terms tell the clinician to read it to the patient and check that
+  only their phone connected. There is no second factor; that is a real trade
+  against a step nobody at a busy ward would perform.
+
+
+---
+
+## ADR 054: The service worker must not answer a cross origin video request, and clips are made small on upload
+
+**Context.** A clip that had been uploaded, approved and was being served from
+the bucket showed "The sign video did not load" on both devices. The file was
+fine: H.264, two and a half seconds, correct content type, byte ranges
+supported. It played with the service worker switched off, every time, and
+through the service worker it stalled or failed, reproduced in real Chrome
+against the real bucket with the real app.
+
+**Cause.** The media rule cached with `statuses: [0, 200]`, kept on purpose so a
+cross origin file fetched without CORS (status 0, an opaque response) would
+still be cached for offline replay. A video element cannot play from an opaque
+response: it asks for byte ranges, and an opaque body cannot be cut into them.
+The bucket sends no CORS headers, so every clip the warm up stored (ADR 052) was
+stored that way, and even a clip that was not, when the element's own
+`no-cors` range request was answered by the service worker, came back as an
+opaque 206 that Chrome failed. Clips the warm up had not reached played, which
+is why it looked like one bad file.
+
+**Decision.**
+
+- The video rule no longer answers a cross origin `no-cors` request at all
+  (`sameOrigin || request.mode !== "no-cors"`). The browser makes it as though
+  there were no service worker, which is the case that plays. Same origin
+  requests and cross origin ones made with CORS are cached as usual, and the
+  rule now also matches `/media/` in front of the path, since Django and nginx
+  serve `/media/clips/x.mp4`.
+- Only status 200 is cached, and `rangeRequests: true` lets a whole cached file
+  answer the byte range an element asks for. Verified in real Chrome: a
+  same origin clip is stored whole (type `basic`, 200) and replays from the
+  cache, on every repeat play.
+- Medicine photographs are a separate rule with their own cache, keeping
+  status 0: an image element wants the whole file, so an opaque picture is fine.
+- The cache is renamed `ghsl-media-v2`, and the warm up deletes the old
+  `ghsl-media` on every start, because a device that had stored opaque clips
+  would otherwise keep serving them for their thirty day lifetime. Verified: a
+  seeded old cache is gone once the app has started.
+- The warm up no longer falls back to storing an opaque response. Its first
+  download answers whether the server lets the page keep what it sends; if not,
+  the rest of that server's clips are not fetched, and nothing is reported as
+  saved, so the "ready to use offline" message cannot be shown for downloads
+  that were not kept.
+
+**What this costs.** With the bucket as it is, clips are no longer stored by the
+warm up: they are fetched on play and kept by the browser's own HTTP cache (the
+bucket sends `Cache-Control: max-age` for a month). That is playback that works
+in place of offline playback that did not, and it is stated in the warm up's
+summary as `unstorable`. Real preloading and offline replay of bucket clips needs
+CORS on the bucket (GET and HEAD, the `Range` header, `Content-Range` and
+`Accept-Ranges` exposed) and `crossorigin="anonymous"` on the video elements so
+the service worker is asked with CORS. Not done here: it changes the bucket's
+configuration, which is the owner's to allow.
+
+**Uploads are compressed** (`clips/compression.py`), for bulk upload, the clip's
+own page and the folder importer alike. A phone recording is far larger than a
+sign needs: the clip that started this was 720 by 1280 at 3.3 Mbps with an audio
+track, a megabyte for two and a half seconds, and it is fetched by every device.
+H.264 in an MP4 (plays everywhere, hardware decoded), no audio (the player mutes
+every clip), longer side at most 720 and never enlarged, constant quality
+(CRF 27), frame rate thinned only above 30, `faststart` so playback begins before
+the file has arrived, and the phone's metadata (including location) dropped.
+That clip, 1,038,603 bytes, became 113,924, 90% less, and the same frame from
+each is indistinguishable.
+
+- Never in the way of an upload. Missing ffmpeg, an unreadable file, an encode
+  failure or a timeout stores the original and the admin says so, by clip and
+  reason. Never worse: a result that is not smaller is discarded.
+- The checksum is of what was uploaded, not what is stored, so uploading the same
+  file again is still recognised as unchanged and cannot reset an approval.
+- The real length is recorded, which fills the `duration_ms` that read as zero.
+- Off with `CLIP_COMPRESSION=off`, and off in the test suite unless a test is
+  about compression, which uses real video and real ffmpeg.
+- Not applied to clips already in the library. Doing so would replace files that
+  are approved and in use; it is a separate, deliberate step.
+
+**A slip, recorded.** While verifying this I ran the importer with only the
+database pointed at a local file. Media storage is chosen separately, from the
+`R2_*` variables in `.env`, so the compressed test copy overwrote the real
+`clips/hurt.mp4` in the bucket. Noticed at once from the URL the API returned,
+and the original bytes were put back and checked against the object's earlier
+ETag. Local verification of anything that writes media now blanks `R2_BUCKET`
+and `R2_ACCOUNT_ID` too.
+
+**Addendum, offline replay of bucket clips.** The player asks for a clip with
+`crossorigin="anonymous"` only from a server the warm up has found to allow CORS
+(`signs/mediaCors.js`, recorded on the device, a month for a yes and an hour for
+a no), and without it from any other, so nothing changes until the bucket is
+configured. A fetch that succeeds records the server as allowing it; one that
+throws records that it does not; a device with everything already cached renews
+the record, since only CORS responses are ever stored. A video asked for with
+CORS that then fails records the server as refusing and is remade without it,
+so a bucket whose policy is removed later costs a moment of "getting ready",
+not "did not load". Verified in real Chrome against a stand-in bucket on another
+origin: with CORS the clip is stored whole (type `cors`, 200), the element asks
+with `crossorigin`, the service worker answers it, and with the bucket process
+stopped the clip still replays; without CORS it plays, is not stored, and is
+asked for the plain way.
+
+The real bucket cannot be configured from the app: its R2 token is scoped to
+objects and both reading and writing the bucket's CORS policy are refused. The
+policy to paste, and why each part is there, are in DEPLOY.md, and
+`manage.py check_media_cors` reports whether it has taken effect. As of this
+writing it has not, and the command says so.

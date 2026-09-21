@@ -15,6 +15,9 @@ export default function SpokenResponse({
   // repeating it there would be the one thing that changes the strip's height,
   // so the caller can move it somewhere it says itself once.
   showProviderNotice = true,
+  // For a screen where the sound is made on this device on behalf of somebody
+  // else, and the browser has held it back until this device is touched.
+  onPlay = null,
 }) {
   if (status === "idle") return null;
 
@@ -47,6 +50,25 @@ export default function SpokenResponse({
         <p className="spoken__stopped" data-testid="spoken-stopped">
           Stopped before the whole answer was said. Tap to say it again.
         </p>
+      ) : null}
+
+      {status === "blocked" ? (
+        <div className="spoken__blocked" data-testid="spoken-blocked">
+          <p className="consultation__error" role="alert">
+            The browser is holding back the sound until this device is
+            touched.
+          </p>
+          {onPlay ? (
+            <button
+              type="button"
+              className="spoken__play"
+              onClick={onPlay}
+              data-testid="spoken-play"
+            >
+              Play the patient&apos;s answer
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {status === "failed" ? (
@@ -95,7 +117,7 @@ export function StubNotice({ result }) {
  * as sound happening rather than as the app being busy. Honours a reduced
  * motion preference in the stylesheet.
  */
-function Waveform() {
+export function Waveform() {
   return (
     <svg
       className="spoken__wave"

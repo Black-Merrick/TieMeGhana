@@ -179,6 +179,29 @@ describe("critical alerts, FR 5.3", () => {
     expect(navigator.vibrate).toHaveBeenCalledWith([60, 45, 60, 45, 60]);
   });
 
+  it("still speaks a critical alert when the device cannot vibrate", async () => {
+    // NFR 3: vibration degrades gracefully rather than failing silently. The
+    // stakes are highest here of anywhere in the app, so the alert itself,
+    // not just the haptic confirmation, must survive a device with no
+    // vibration motor, or one that throws instead of refusing.
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      vibrate: vi.fn(() => {
+        throw new Error("not allowed");
+      }),
+    });
+    renderTriage();
+
+    await waitFor(() => screen.getByTestId("alert-CANNOT_BREATHE"));
+    await userEvent.click(screen.getByTestId("alert-CANNOT_BREATHE"));
+
+    await waitFor(() => {
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "I cannot breathe" }),
+      );
+    });
+  });
+
   it("still offers an alert whose sign clip has not been filmed", async () => {
     // The opposite of ADR 022, which withholds an unfilmed body location.
     // Deliberate, per ADR 040: an icon a patient half recognises beats having

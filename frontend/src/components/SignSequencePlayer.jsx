@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import useVideoReadiness from "../hooks/useVideoReadiness.js";
+import {
+  crossOriginFor,
+  mediaCorsVersion,
+  recordMediaCors,
+  subscribeMediaCors,
+} from "../signs/mediaCors.js";
 import PlayerStatus from "./PlayerStatus.jsx";
 
 /**
@@ -62,6 +68,22 @@ export default function SignSequencePlayer({
   const onScreen = stitched ?? clips[Math.min(index, Math.max(clips.length - 1, 0))]?.video_url;
   const readiness = useVideoReadiness({ source: onScreen });
 
+  // Whether to ask for each clip with CORS, which is what lets the service
+  // worker keep it for offline replay and answer from that copy. Only from a
+  // server the warm up has found to allow it: asking a server that does not
+  // would refuse the video outright. Re-read whenever what is known changes.
+  useSyncExternalStore(subscribeMediaCors, mediaCorsVersion);
+  const corsFor = (url) => (url ? crossOriginFor(url) : undefined);
+
+  // If a video that was asked for with CORS fails, the server has stopped
+  // allowing it, or never did. Say so, and the element is remade without, which
+  // plays as it always did. The patient sees a moment of "getting ready", not
+  // "the sign video did not load".
+  const failedWithCors = (url) => (event) => {
+    if (event?.currentTarget?.crossOrigin && url) recordMediaCors(url, false);
+    readiness.handlers.onError();
+  };
+
   // A new utterance starts at its own first clip rather than resuming from
   // wherever the previous sentence stopped. Adjusted during render rather than
   // in an effect: an effect runs after the render that needed the new value,
@@ -88,7 +110,7 @@ export default function SignSequencePlayer({
     const played = video.play();
     if (played?.catch) played.catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, safeIndex, clips.length]);
+  }, [active, safeIndex, clips.length, corsFor(current?.video_url), corsFor(next?.video_url)]);
 
   if (clips.length === 0) {
     return (
@@ -107,9 +129,11 @@ export default function SignSequencePlayer({
       <div className="player">
         <div className="player__stage">
           <video
+            key={corsFor(stitched) ?? "plain"}
             data-testid="sign-video"
             className="player__video"
             src={stitched}
+            crossOrigin={corsFor(stitched)}
             onEnded={onFinished}
             controls={controls}
             loop={loop}
@@ -118,6 +142,7 @@ export default function SignSequencePlayer({
             preload="auto"
             muted
             {...readiness.handlers}
+            onError={failedWithCors(stitched)}
           />
           {readiness.showOverlay ? (
             <PlayerStatus phase={readiness.phase} />
@@ -154,7 +179,7 @@ export default function SignSequencePlayer({
 
           return (
             <video
-              key={buffer}
+              key={`${buffer}:${corsFor(clip?.video_url) ?? "plain"}`}
               ref={buffers[buffer]}
               // The testids follow the roles rather than the elements, so a
               // caller always finds the clip on screen under one name.
@@ -165,6 +190,7 @@ export default function SignSequencePlayer({
                   : "player__video player__video--standby"
               }
               src={clip?.video_url}
+              crossOrigin={corsFor(clip?.video_url)}
               onEnded={isActive ? handleEnded : undefined}
               controls={controls && isActive}
               loop={loop}
@@ -179,7 +205,9 @@ export default function SignSequencePlayer({
               // Only the clip on screen reports readiness. The standby buffer
               // is loading too, and letting it fire these would clear the
               // overlay on the strength of a video nobody is watching yet.
-              {...(isActive ? readiness.handlers : {})}
+              {...(isActive
+                ? { ...readiness.handlers, onError: failedWithCors(clip?.video_url) }
+                : {})}
             />
           );
         })}

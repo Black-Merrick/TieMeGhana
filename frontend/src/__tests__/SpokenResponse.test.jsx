@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import SpokenResponse from "../components/SpokenResponse.jsx";
 
@@ -68,5 +69,29 @@ describe("SpokenResponse", () => {
     render(<SpokenResponse status="spoken" result={spoken} />);
 
     expect(screen.queryByTestId("spoken-stub-warning")).not.toBeInTheDocument();
+  });
+});
+
+describe("when the browser is holding the sound back", () => {
+  it("says so, and is not the failure message", () => {
+    render(<SpokenResponse status="blocked" result={null} />);
+
+    expect(screen.getByTestId("spoken-blocked")).toBeInTheDocument();
+    expect(screen.queryByTestId("spoken-error")).not.toBeInTheDocument();
+  });
+
+  it("offers a button to play it when there is a way to", async () => {
+    const onPlay = vi.fn();
+    render(<SpokenResponse status="blocked" result={null} onPlay={onPlay} />);
+
+    await userEvent.click(screen.getByTestId("spoken-play"));
+
+    expect(onPlay).toHaveBeenCalled();
+  });
+
+  it("offers no button where there is nothing to call", () => {
+    render(<SpokenResponse status="blocked" result={null} />);
+
+    expect(screen.queryByTestId("spoken-play")).not.toBeInTheDocument();
   });
 });

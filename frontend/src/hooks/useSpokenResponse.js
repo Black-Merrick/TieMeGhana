@@ -17,7 +17,7 @@ import { VibrationPattern, vibrate } from "../feedback/vibration.js";
  * pulses when speech starts, one long pulse when it ends.
  */
 export default function useSpokenResponse() {
-  // idle, working, playing, spoken, stopped, failed
+  // idle, working, playing, spoken, stopped, blocked, failed
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
   const audioRef = useRef(null);
@@ -100,9 +100,17 @@ export default function useSpokenResponse() {
         // answer can be replayed by hand, so it must not surface as an
         // unhandled rejection.
         await audio.play();
-      } catch {
-        setStatus("failed");
+      } catch (error) {
         speakingRef.current = null;
+        // Told apart from a real failure, because the remedy is different and
+        // the answer is not lost. A browser only lets a page make sound once
+        // somebody has touched it, and a doctor's device that has been
+        // reloaded since it was last tapped, and is now speaking a patient's
+        // reply from their own phone, has not been. The audio is in hand, so
+        // it is played by the tap that follows (`replay`), not thrown away as
+        // "could not be spoken". Found on two real devices, where it showed up
+        // as the patient's screen flashing and giving up.
+        setStatus(error?.name === "NotAllowedError" ? "blocked" : "failed");
       }
     },
     [release],
