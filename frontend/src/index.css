@@ -5070,3 +5070,24 @@ body {
 .away--stalled .away__text {
   color: #7a1f14;
 }
+
+/* A screen that failed, shown in its place. The details are for whoever is
+   looking into it, so they are tucked away and wrap instead of overflowing. */
+.screen-error__details {
+  margin-top: var(--space-3, 0.75rem);
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #5b6b66);
+  text-align: left;
+}
+
+.screen-error__details summary {
+  cursor: pointer;
+  text-align: center;
+}
+
+.screen-error__details code {
+  display: block;
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { announcedEmergency } from "../pairing/announcedScreen.js";
 import DoctorConsultationGuest from "./DoctorConsultationGuest.jsx";
+import EmergencyTriageGuest from "./EmergencyTriageGuest.jsx";
 import GuidedInterrogationGuest from "./GuidedInterrogationGuest.jsx";
 import JoinAnother from "./JoinAnother.jsx";
 
@@ -15,6 +17,13 @@ import JoinAnother from "./JoinAnother.jsx";
  * otherwise be lost, and this screen would wait for a word that was already
  * said. A phone that has been here before starts from the path it remembered,
  * so a reload comes back to the screen it was on.
+ *
+ * Emergency mode is followed the same way. When the doctor opens it this phone
+ * shows the patient the emergency screen, wherever it was, and when the doctor
+ * leaves it the phone goes back to the consultation, which the doctor's device
+ * sends again for the purpose. It is told by `emergency` on every message that
+ * says where the phone should be, for the reason `path` is (see
+ * announcedScreen.js), and it is remembered across a reload.
  *
  * Only the two paths the app has are believed. Anything else is ignored
  * rather than guessed at, since a phone that renders the wrong half of a
@@ -32,11 +41,13 @@ export const STALLED_AFTER_MS = 30000;
 export default function PatientDevice({
   channel,
   path: rememberedPath = null,
+  emergency: rememberedEmergency = false,
   offline = false,
   ended = false,
   onLeave = null,
 }) {
   const [path, setPath] = useState(PATHS.has(rememberedPath) ? rememberedPath : null);
+  const [emergency, setEmergency] = useState(rememberedEmergency === true);
   const [toldEnded, setToldEnded] = useState(false);
 
   useEffect(() => {
@@ -46,13 +57,29 @@ export default function PatientDevice({
     if (message.type === "ended") setToldEnded(true);
 
     const announced =
-      message.type === "path" || message.type === "question" ? message.path : null;
+      message.type === "path" || message.type === "question" || message.type === "emergency"
+        ? message.path
+        : null;
     if (PATHS.has(announced)) setPath(announced);
+
+    const inEmergency = announcedEmergency(message);
+    if (inEmergency !== undefined) setEmergency(inEmergency);
   }, [channel.lastMessage]);
 
   const over = ended || toldEnded;
 
   const away = offline && !over ? <Reconnecting onLeave={onLeave} /> : null;
+
+  // The doctor's emergency screen, mirrored. Not once the consultation is over,
+  // which is shown as over whatever the doctor had open when it ended.
+  if (emergency && !over) {
+    return (
+      <>
+        {away}
+        <EmergencyTriageGuest channel={channel} offline={offline} />
+      </>
+    );
+  }
 
   if (path === "guided") {
     return (

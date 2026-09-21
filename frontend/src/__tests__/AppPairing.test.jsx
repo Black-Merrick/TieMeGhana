@@ -270,6 +270,157 @@ describe("a paired visit, once under way", () => {
   });
 });
 
+describe("emergency mode with the patient's phone attached", () => {
+  async function pairedVisit(path = LiteracyPath.LITERATE) {
+    saveDeviceMode("paired");
+    saveLiteracyPath(path);
+    saveHostResume(TOKEN);
+    connection = PeerState.CONNECTED;
+    render(<App />);
+    await screen.findByTestId("literacy-path");
+    await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "path" })));
+  }
+
+  const lastState = () =>
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type !== "speaking")
+      .at(-1);
+
+  it.each([LiteracyPath.LITERATE, LiteracyPath.GUIDED])(
+    "tells the phone, last of everything, when the doctor opens it from the %s path",
+    async (path) => {
+      await pairedVisit(path);
+      send.mockClear();
+
+      await userEvent.click(screen.getByTestId("enter-emergency"));
+
+      await waitFor(() => expect(lastState()).toMatchObject({ type: "emergency", emergency: true }));
+      expect(lastState()).toMatchObject({ path, resume: TOKEN });
+      expect(await screen.findByTestId("triage-patient-phone")).toBeInTheDocument();
+    },
+  );
+
+  it("does not disturb the connection", async () => {
+    await pairedVisit();
+    send.mockClear();
+
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+    await screen.findByTestId("emergency-triage");
+
+    expect(send).not.toHaveBeenCalledWith({ type: "ended" });
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("puts the phone back on the consultation when the doctor leaves, with the question it was on", async () => {
+    saveLastQuestion({ type: "question", path: "literate", result: { transcript: "Where does it hurt?" } });
+    await pairedVisit();
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+    await screen.findByTestId("emergency-triage");
+    send.mockClear();
+
+    await userEvent.click(screen.getByTestId("leave-emergency"));
+
+    await waitFor(() =>
+      expect(lastState()).toMatchObject({
+        type: "question",
+        resent: true,
+        emergency: false,
+        path: "literate",
+        resume: TOKEN,
+      }),
+    );
+    const types = send.mock.calls.map(([message]) => message.type);
+    expect(types.indexOf("path")).toBeLessThan(types.indexOf("question"));
+  });
+
+  it("says it is over even when there was no question to send back", async () => {
+    await pairedVisit();
+    await userEvent.click(screen.getByTestId("enter-emergency"));
+    await screen.findByTestId("emergency-triage");
+    send.mockClear();
+
+    await userEvent.click(screen.getByTestId("leave-emergency"));
+
+    await waitFor(() => expect(lastState()).toMatchObject({ type: "path", emergency: false }));
+  });
+
+  it("sends no question behind the announcement, so the announcement is what the phone reads", async () => {
+    saveLastQuestion({ type: "question", path: "literate", result: { transcript: "x" } });
+    saveScreen("emergency");
+    await pairedVisit();
+
+    await waitFor(() => expect(lastState()).toMatchObject({ type: "emergency", emergency: true }));
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: "question" }));
+  });
+
+  it("tells a phone that comes back, after either device reloads, that emergency is open", async () => {
+    saveDeviceMode("paired");
+    saveLiteracyPath(LiteracyPath.GUIDED);
+    saveHostResume(TOKEN);
+    saveScreen("emergency");
+    connection = PeerState.CONNECTED;
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith({
+        type: "emergency",
+        path: "guided",
+        resume: TOKEN,
+        emergency: true,
+      }),
+    );
+  });
+
+  it("tells a phone that has no path yet, before the literacy question, as well", async () => {
+    saveDeviceMode("paired");
+    saveHostResume(TOKEN);
+    saveScreen("emergency");
+    connection = PeerState.CONNECTED;
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith({ type: "emergency", resume: TOKEN, emergency: true }),
+    );
+  });
+
+  it("says the phone is not there when it is not", async () => {
+    saveDeviceMode("paired");
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    saveHostResume(TOKEN);
+    saveScreen("emergency");
+    connection = PeerState.CLOSED;
+
+    render(<App />);
+
+    expect(await screen.findByTestId("triage-patient-phone-away")).toBeInTheDocument();
+  });
+
+  it("does nothing about a phone on a shared device", async () => {
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    render(<App />);
+
+    await userEvent.click(await screen.findByTestId("enter-emergency"));
+    await screen.findByTestId("emergency-triage");
+
+    expect(send).not.toHaveBeenCalled();
+    expect(createPairing).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("triage-patient-phone")).not.toBeInTheDocument();
+  });
+
+  it("never asks for a phone before any question, since emergency is reachable first", async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByTestId("enter-emergency"));
+    await screen.findByTestId("emergency-triage");
+
+    expect(createPairing).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("device-choice")).not.toBeInTheDocument();
+  });
+});
+
 describe("reloading a paired visit", () => {
   it("does not pretend the patient's phone is still there", async () => {
     // A reload drops the direct connection. Falling back to the shared
@@ -413,7 +564,7 @@ describe("a reload in the middle of a paired visit", () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(send).toHaveBeenCalledWith({ type: "path", path: "literate", resume: TOKEN }),
+      expect(send).toHaveBeenCalledWith({ type: "path", path: "literate", resume: TOKEN, emergency: false }),
     );
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ type: "question", resent: true, resume: TOKEN, path: "literate" }),
@@ -462,7 +613,7 @@ describe("a reload before the literacy question was answered", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: "resume", resume: TOKEN }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: "resume", resume: TOKEN, emergency: false }));
   });
 });
 

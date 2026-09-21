@@ -18,6 +18,9 @@ export default function SpokenResponse({
   // For a screen where the sound is made on this device on behalf of somebody
   // else, and the browser has held it back until this device is touched.
   onPlay = null,
+  // The sound is made on the device showing this, for an answer somebody else
+  // gave, so "your answer" would be untrue. Said as the doctor's device says it.
+  heardHere = false,
 }) {
   if (status === "idle") return null;
 
@@ -33,7 +36,7 @@ export default function SpokenResponse({
       {status === "playing" ? (
         <p className="spoken__playing" data-testid="spoken-playing">
           <Waveform />
-          Speaking your answer to the doctor
+          {heardHere ? "Speaking the patient's answer" : "Speaking your answer to the doctor"}
         </p>
       ) : null}
 
@@ -42,7 +45,7 @@ export default function SpokenResponse({
           <span className="spoken__tick" aria-hidden="true">
             ✓
           </span>
-          Your answer was spoken aloud
+          {heardHere ? "The patient's answer was spoken aloud" : "Your answer was spoken aloud"}
         </p>
       ) : null}
 

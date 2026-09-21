@@ -3,11 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import PatientDevice, { STALLED_AFTER_MS } from "../components/PatientDevice.jsx";
-import { fetchBodyLocations } from "../api/clips.js";
+import { fetchBodyLocations, fetchCriticalAlerts, fetchEmergencySpeech } from "../api/clips.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchBodyLocations: vi.fn() };
+  return {
+    ...actual,
+    fetchBodyLocations: vi.fn(),
+    fetchCriticalAlerts: vi.fn(),
+    fetchEmergencySpeech: vi.fn(),
+  };
 });
 
 /**
@@ -46,6 +51,8 @@ function caption() {
 beforeEach(() => {
   localStorage.clear();
   fetchBodyLocations.mockResolvedValue([]);
+  fetchCriticalAlerts.mockResolvedValue([]);
+  fetchEmergencySpeech.mockResolvedValue({ phrases: [], pending_review: [] });
 });
 
 afterEach(() => {
@@ -270,5 +277,111 @@ describe("when reconnecting is not working", () => {
     expect(text).toHaveTextContent(/still cannot reach your doctor/i);
     expect(text).toHaveTextContent(/new code/i);
     expect(screen.getByTestId("leave-consultation")).toBeInTheDocument();
+  });
+});
+
+describe("the doctor opening emergency mode", () => {
+  function mount(props = {}, message = null) {
+    const view = render(
+      <PatientDevice channel={channel({ lastMessage: message })} {...props} />,
+    );
+    return {
+      ...view,
+      hear(next) {
+        view.rerender(<PatientDevice channel={channel({ lastMessage: next })} {...props} />);
+      },
+    };
+  }
+
+  it("takes the phone to the emergency screen from the consultation", async () => {
+    const view = mount({ path: "literate" });
+    await screen.findByTestId("speak-to-doctor");
+
+    view.hear({ type: "emergency", emergency: true, path: "literate" });
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+    expect(screen.queryByTestId("speak-to-doctor")).not.toBeInTheDocument();
+  });
+
+  it("takes a guided phone there too", async () => {
+    const view = mount({ path: "guided" });
+    await screen.findByTestId("stage-idle");
+
+    view.hear({ type: "emergency", emergency: true, path: "guided" });
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+    expect(screen.queryByTestId("stage-idle")).not.toBeInTheDocument();
+  });
+
+  it("goes there before any path is known, since emergency needs no literacy answer", async () => {
+    const view = mount();
+    await screen.findByTestId("patient-waiting");
+
+    view.hear({ type: "emergency", emergency: true });
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+  });
+
+  it("goes back to the consultation when the doctor leaves, and is shown the question again", async () => {
+    const view = mount({ path: "literate" });
+    view.hear({ type: "emergency", emergency: true, path: "literate" });
+    await screen.findByTestId("emergency-triage-guest");
+
+    view.hear({
+      type: "question",
+      path: "literate",
+      emergency: false,
+      resent: true,
+      result: caption(),
+    });
+
+    expect(await screen.findByTestId("speak-to-doctor")).toBeInTheDocument();
+    expect(screen.queryByTestId("emergency-triage-guest")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("caption")).toHaveTextContent("Ɛhe na ɛyɛ yaw?");
+  });
+
+  it("is told by whichever message came last, since the connection keeps only the newest", async () => {
+    const view = mount({ path: "literate" });
+    await screen.findByTestId("speak-to-doctor");
+
+    // The announcement collapsed into the message sent behind it.
+    view.hear({ type: "path", path: "literate", emergency: true });
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+  });
+
+  it("is not moved by a message that says nothing about it", async () => {
+    const view = mount({ path: "literate" });
+    view.hear({ type: "emergency", emergency: true, path: "literate" });
+    await screen.findByTestId("emergency-triage-guest");
+
+    view.hear({ type: "speaking", status: "playing" });
+
+    expect(screen.getByTestId("emergency-triage-guest")).toBeInTheDocument();
+  });
+
+  it("comes back to it after a reload, from what it remembered", async () => {
+    render(
+      <PatientDevice
+        channel={channel({ state: "connecting" })}
+        path="guided"
+        emergency
+        offline
+      />,
+    );
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+    expect(screen.getByTestId("patient-reconnecting-banner")).toBeInTheDocument();
+  });
+
+  it("is shown as over when the consultation ends with emergency open", async () => {
+    const view = mount({ path: "literate" });
+    view.hear({ type: "emergency", emergency: true, path: "literate" });
+    await screen.findByTestId("emergency-triage-guest");
+
+    view.hear({ type: "ended" });
+
+    expect(await screen.findByTestId("pairing-ended")).toBeInTheDocument();
+    expect(screen.queryByTestId("emergency-triage-guest")).not.toBeInTheDocument();
   });
 });

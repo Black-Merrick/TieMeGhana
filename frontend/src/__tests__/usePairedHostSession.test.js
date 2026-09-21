@@ -457,7 +457,10 @@ describe("waiting for the phone to come back", () => {
 });
 
 describe("telling the patient's phone the visit is over", () => {
-  it("sends ended when the session goes away", async () => {
+  it("does NOT say the visit is over when the app merely unmounts", async () => {
+    // A screen crashing, or a development server reloading a module, unmounts
+    // the app without the visit having ended. The phone was being told it was
+    // over, when the doctor had done nothing of the kind.
     const { result, unmount } = renderHook(() =>
       usePairedHostSession({ enabled: true }),
     );
@@ -465,7 +468,7 @@ describe("telling the patient's phone the visit is over", () => {
 
     unmount();
 
-    expect(channel.send).toHaveBeenCalledWith({ type: "ended" });
+    expect(channel.send).not.toHaveBeenCalledWith({ type: "ended" });
   });
 
   it("sends ended when the next patient starts, without the app unmounting", async () => {

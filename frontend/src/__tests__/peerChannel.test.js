@@ -360,6 +360,19 @@ describe("sending and receiving messages", () => {
     ]);
   });
 
+  it("does not throw into the caller when the channel refuses a message", async () => {
+    // `send` is called from effects, and an effect that throws unmounts the
+    // whole app. That took the doctor's page down and told the phone the visit
+    // had ended.
+    const { channel, dataChannel } = await connectedHostChannel();
+    dataChannel.simulateOpen();
+    dataChannel.send = () => {
+      throw new DOMException("queue is full", "OperationError");
+    };
+
+    expect(() => channel.send({ type: "emergency", emergency: true })).not.toThrow();
+  });
+
   it("sends immediately once already open", async () => {
     const { channel, dataChannel } = await connectedHostChannel();
     dataChannel.simulateOpen();

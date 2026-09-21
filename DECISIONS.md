@@ -2218,6 +2218,99 @@ suite:
    app defect: real devices are unaffected, and the verification runs pass
    `--disable-features=WebRtcHideLocalIpsWithMdns`.
 
+**Addendum: emergency mode follows onto the patient's phone.**
+
+When the doctor opens Emergency Visual Triage in a paired visit, from either
+the "Reads and writes" or the "Guided Interrogation" path, the patient's phone
+goes to the emergency screen too, and goes back to the consultation when the
+doctor leaves it. The reason is FR 5: the patient points at what is wrong, and
+the doctor's device should not have to be held out to them to do it.
+
+- **The doctor's device is the authority, and the phone follows.** `App` sends
+  `{type:"emergency", emergency, path, resume}` whenever emergency mode opens or
+  closes while a phone is connected, and on every (re)connect. Leaving sends
+  `path` and then the last question again (`resent`), which is what puts the
+  phone back on the consultation as it was; the phone drops the consultation
+  screen while it is away and the resend is what rebuilds it.
+- **Carried on every state message, not only the one that announces it.** The
+  connection hands a screen only the newest message, so `emergency` (a boolean)
+  rides on `path`, `question` and `resume` as well, and while emergency is open
+  it is sent last with no question behind it. A phone that missed the
+  announcement because something else was sent in the same instant is corrected
+  by the next state message rather than staying on the wrong screen for as long
+  as the doctor stays on the right one. It is remembered on the phone
+  (`tiemeghana.guest-resume`), so a reload comes back to the emergency screen
+  while the doctor's device is found again, and the reconnect takes the same
+  ~1.5 seconds as any other.
+- **The sound is still the doctor's (FR 3.5).** A tap on the phone is sent as
+  `{type:"triage", kind, id}`: which button, never the words. The doctor's
+  device looks the words up itself (the alerts it loaded, the fixed pain scale,
+  the body map), so a message that names something it does not offer is dropped
+  and answered with a `speaking: failed`, never read aloud to whoever is
+  treating the patient. A tap is then spoken by the same `announce` a tap on
+  that device uses, through the same reviewed-Twi gate, and recorded in the
+  doctor's transcript as the patient's.
+- **The phone gets the same feedback as every other screen it has** (section 4.2):
+  the tap shown as sent at once, the talking face while the doctor's device
+  speaks, the two and one vibrations, "Say it again" (`replay`, no second
+  language call, ADR 015) and Stop. The doctor's screen says "the patient's
+  answer" rather than "your answer" while it is the one speaking.
+- **The doctor's own screen still works.** A patient who cannot use a phone is
+  exactly who emergency mode is for, so tapping on the doctor's device carries
+  on as it always did, and the doctor is told whether the phone is showing the
+  screen ("shows this screen too", or "is not connected"). Emergency stays
+  reachable with no visit and asks nothing about pairing; on a shared device
+  nothing changed.
+- **No text input, on either device (FR 5.4).** The phone has no voice picker
+  (the voice is the listener's) and no way to leave (the doctor ends it); if the
+  doctor's device goes away the phone's usual "reconnecting" line and the way
+  out it carries still apply.
+- **The two screens are one layout.** `TriagePanels` is the alerts, pain scale
+  and body, used by both; `useTriageVocabulary` loads the alerts and the fixed
+  phrases for both, and now asks again a bounded number of times if they fail
+  (2, 5, 10, then 20 seconds). Found while testing: on a phone pulled onto the
+  screen by the doctor's device a single failed request left "Critical alerts
+  could not be loaded" up for good, with no way to recover it. The pain scale and
+  body are drawn locally and never wait on it.
+
+Verified in two real browsers against a throwaway backend on both paths: the
+phone follows in about 0.4 seconds; its alert, pain and body taps are spoken on
+the doctor's device and reported back; the phone never asks the language
+service to speak; both devices survive a reload in emergency and stay on it;
+the doctor's own taps still work; leaving returns the phone to the question it
+was on.
+
+**Addendum: a screen that fails must not end the visit.**
+
+Reported from real use: the doctor pressed Emergency, the page went blank and
+the patient's phone showed "This consultation has ended". No clean browser
+reproduced it against the same servers, but the two symptoms together are what
+an error while a screen renders looks like, and the app had nothing to stop one.
+The emergency screen is fetched the first time it is opened, and a failed fetch
+(the development server rebuilding, a network that dropped just then) is such an
+error. With no error boundary it unmounted the whole app, and the connection
+held in `App` said `ended` on its way out. Reproduced deliberately in a real
+browser by making that file unreachable. Now:
+
+- **`ScreenErrorBoundary`** wraps the screens in `App` and the patient's phone.
+  A failing screen is replaced by a message ("This screen could not open"), with
+  Try again, a way back, and the error's own text tucked under "Details", so a
+  report of it says what happened. The connection and the visit carry on behind
+  it. It clears when another screen is opened.
+- **`ended` is sent only when the visit is turned off** (the next patient
+  starts, or the doctor takes the shared device), not whenever the app unmounts.
+  An unmount is also what a crash or a hot reload looks like, and the phone was
+  being told the consultation was over when it was not. A page that is really
+  going away closes its connection (`pagehide`) and the phone waits for it.
+- **The phone is sent to emergency only once the doctor's emergency screen is
+  actually showing.** Otherwise a phone could be sent to a screen the doctor's
+  device failed to open, and the patient would tap into one nobody was hearing.
+- **Split-out screens retry** their fetch (three tries) before failing, since
+  `lazy` remembers a failure for good and one bad moment made the screen
+  unopenable until a reload.
+- **`send` no longer throws** when the data channel refuses a message. It is
+  called from effects, where a throw unmounts the app.
+
 **Known limits, stated rather than hidden.**
 
 - A reload is rejoined by itself, but only while the visit lives, at most four

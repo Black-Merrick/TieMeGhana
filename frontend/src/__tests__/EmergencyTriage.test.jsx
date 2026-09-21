@@ -853,3 +853,194 @@ describe("speaking a tap without translating it first", () => {
     await waitFor(() => expect(speakResponse).toHaveBeenCalled());
   });
 });
+
+describe("in a paired visit, with the patient's own phone", () => {
+  let lastMessage;
+  const send = vi.fn();
+
+  beforeEach(() => {
+    lastMessage = null;
+  });
+
+  function renderPaired(props = {}) {
+    const channel = () => ({ send, lastMessage, state: "connected" });
+    const view = render(
+      <EmergencyTriage
+        outputLanguage="en"
+        onLeave={() => {}}
+        channel={channel()}
+        patientPhone="connected"
+        {...props}
+      />,
+    );
+    return {
+      ...view,
+      hear(message) {
+        lastMessage = message;
+        view.rerender(
+          <EmergencyTriage
+            outputLanguage="en"
+            onLeave={() => {}}
+            channel={channel()}
+            patientPhone="connected"
+            {...props}
+          />,
+        );
+      },
+    };
+  }
+
+  it("says the patient's phone shows this screen too", async () => {
+    renderPaired();
+    await settle();
+
+    expect(screen.getByTestId("triage-patient-phone")).toBeInTheDocument();
+  });
+
+  it("says so when the phone is not there, and that tapping here still works", async () => {
+    renderPaired({ patientPhone: "away" });
+    await settle();
+
+    expect(screen.getByTestId("triage-patient-phone-away")).toHaveTextContent(/not connected/i);
+    await userEvent.click(screen.getByTestId("alert-CANNOT_BREATHE"));
+    await waitFor(() => expect(speakResponse).toHaveBeenCalled());
+  });
+
+  it("says nothing about a phone on a shared device", async () => {
+    renderTriage();
+    await settle();
+
+    expect(screen.queryByTestId("triage-patient-phone")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("triage-patient-phone-away")).not.toBeInTheDocument();
+  });
+
+  it("speaks a tap from the phone, here, and records it as the patient's", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "alert", id: "CANNOT_BREATHE" });
+
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "I cannot breathe", sourceLanguage: "en" }),
+      ),
+    );
+    expect(readTranscript()).toEqual([
+      expect.objectContaining({
+        direction: "to_doctor",
+        text: "I cannot breathe",
+        answeredBy: "patient",
+      }),
+    ]);
+  });
+
+  it("marks on this screen what the patient chose", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "location", id: "HEAD" });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("body-part-HEAD")).toHaveAttribute("aria-pressed", "true"),
+    );
+  });
+
+  it("speaks a pain level and a body part from the phone with the same words as a tap here", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "pain", id: 4 });
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "I have severe pain" }),
+      ),
+    );
+  });
+
+  it("uses the voice this device chose, not one the phone asked for", async () => {
+    const view = renderPaired({ outputLanguage: "tw" });
+    await settle();
+
+    view.hear({ type: "triage", kind: "location", id: "HEAD", outputLanguage: "en" });
+
+    await waitFor(() =>
+      expect(speakResponse).toHaveBeenCalledWith(
+        expect.objectContaining({ outputLanguage: "tw" }),
+      ),
+    );
+  });
+
+  it("answers a tap it cannot name with a failure, and speaks nothing", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "alert", id: "SELF_DESTRUCT" });
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith({ type: "speaking", status: "failed" }),
+    );
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+
+  it("tells the phone how the tap is going", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "alert", id: "CANNOT_BREATHE" });
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith({ type: "speaking", status: "working" }),
+    );
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith({ type: "speaking", status: "spoken" }),
+    );
+  });
+
+  it("says the patient's answer, not 'your answer', when it is spoken here", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "triage", kind: "alert", id: "CANNOT_BREATHE" });
+
+    expect(await screen.findByTestId("spoken-done")).toHaveTextContent(
+      /the patient's answer was spoken aloud/i,
+    );
+  });
+
+  it("plays the last answer again when the phone asks, without asking the service again", async () => {
+    let played = 0;
+    vi.stubGlobal(
+      "Audio",
+      class {
+        play() {
+          played += 1;
+          this.onplay?.();
+          this.onended?.();
+          return Promise.resolve();
+        }
+      },
+    );
+    const view = renderPaired();
+    await settle();
+    view.hear({ type: "triage", kind: "alert", id: "CANNOT_BREATHE" });
+    await screen.findByTestId("spoken-done");
+    expect(played).toBe(1);
+    const requests = speakResponse.mock.calls.length;
+
+    view.hear({ type: "replay" });
+
+    // From the response already in hand, per ADR 015.
+    await waitFor(() => expect(played).toBe(2));
+    expect(speakResponse.mock.calls.length).toBe(requests);
+  });
+
+  it("ignores messages that are not about emergency mode", async () => {
+    const view = renderPaired();
+    await settle();
+
+    view.hear({ type: "reply", text: "hello", sourceLanguage: "en" });
+    view.hear({ type: "answer", value: "yes" });
+
+    expect(speakResponse).not.toHaveBeenCalled();
+  });
+});

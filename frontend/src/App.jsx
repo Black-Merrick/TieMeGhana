@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { fetchHealth } from "./api/client.js";
 import AppBrand from "./components/AppBrand.jsx";
@@ -11,6 +11,8 @@ import InstallApp from "./components/InstallApp.jsx";
 import LiteracyCheck from "./components/LiteracyCheck.jsx";
 import ScreenLoader from "./components/ScreenLoader.jsx";
 import RoleChoice from "./components/RoleChoice.jsx";
+import ScreenErrorBoundary from "./components/ScreenErrorBoundary.jsx";
+import lazyScreen from "./lazyScreen.js";
 import SetupProgress from "./components/SetupProgress.jsx";
 import useClipWarmup from "./hooks/useClipWarmup.js";
 
@@ -24,11 +26,11 @@ import useClipWarmup from "./hooks/useClipWarmup.js";
  * device entirely, arriving by QR code, where nothing else in the bundle is
  * wanted at all.
  */
-const EmergencyTriage = lazy(() => import("./components/EmergencyTriage.jsx"));
-const PrescriptionBuilder = lazy(
+const EmergencyTriage = lazyScreen(() => import("./components/EmergencyTriage.jsx"));
+const PrescriptionBuilder = lazyScreen(
   () => import("./components/PrescriptionBuilder.jsx"),
 );
-const PrescriptionPlayback = lazy(
+const PrescriptionPlayback = lazyScreen(
   () => import("./components/PrescriptionPlayback.jsx"),
 );
 import ConnectionStatus from "./components/ConnectionStatus.jsx";
@@ -180,7 +182,8 @@ export default function App() {
   const patientConnected = session.state === PeerState.CONNECTED;
 
   // What the patient's phone needs to be on the right screen, sent every time
-  // it connects, which includes coming back after a reload of either device.
+  // it connects, which includes coming back after a reload of either device,
+  // and every time the doctor opens or leaves emergency mode.
   //
   // The literacy answer is given after the two devices connect, so the phone
   // learns which screen it is for from here. The token is the way back for the
@@ -188,26 +191,65 @@ export default function App() {
   // phone that has just reloaded is not left blank until the doctor's next one.
   // Sent in one place and in this order, because the connection hands a
   // component only its newest message: the last of these is the one a screen
-  // reads, so each carries the token and the path itself.
+  // reads, so each carries the token, the path and whether emergency mode is
+  // open itself.
+  //
+  // Emergency mode goes last while it is open, so it is the one the phone
+  // reads, and there is no question sent behind it: the phone is on the
+  // emergency screen and the question waits. Leaving it sends the question
+  // again, which is what puts the phone back on the consultation as it was.
+  //
+  // "Open" here means the doctor's own emergency screen is actually on screen,
+  // not that it was asked for. It is a separate screen fetched when first
+  // opened, and can fail to arrive or to draw; a phone sent there while the
+  // doctor's device could not follow would let the patient tap into a screen
+  // nobody is listening to. So the phone follows what the doctor can see.
+  const [emergencyShown, setEmergencyShown] = useState(false);
+  const mirroredEmergency = emergency && emergencyShown;
   const literacyPath = visit?.literacyPath ?? null;
   useEffect(() => {
     if (!paired || !patientConnected) return;
     const resume = session.token ?? undefined;
 
     if (!literacyPath) {
-      if (resume) session.channel.send({ type: "resume", resume });
+      if (mirroredEmergency) {
+        session.channel.send({ type: "emergency", emergency: true, resume });
+      } else if (resume) {
+        session.channel.send({ type: "resume", resume, emergency: mirroredEmergency });
+      }
       return;
     }
 
-    session.channel.send({ type: "path", path: literacyPath, resume });
+    session.channel.send({
+      type: "path",
+      path: literacyPath,
+      resume,
+      emergency: mirroredEmergency,
+    });
+    if (mirroredEmergency) {
+      session.channel.send({
+        type: "emergency",
+        path: literacyPath,
+        resume,
+        emergency: true,
+      });
+      return;
+    }
+
     const last = loadLastQuestion();
     if (last) {
-      session.channel.send({ ...last, path: literacyPath, resume, resent: true });
+      session.channel.send({
+        ...last,
+        path: literacyPath,
+        resume,
+        emergency: false,
+        resent: true,
+      });
     }
     // `send` is stable for the life of a connection; the connection itself
     // is what this is keyed on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paired, patientConnected, literacyPath, session.code, session.token]);
+  }, [paired, patientConnected, literacyPath, mirroredEmergency, session.code, session.token]);
 
   // The literacy check, which is what the app opens into before a visit
   // exists. `visit` alone would be enough, since the prescription builder is
@@ -388,7 +430,16 @@ export default function App() {
           <AppBrand />
         </header>
         <main className="shell shell--patient">
-          <PairingJoinScreen onLeave={leaveJoin} />
+          {/* A fault in one screen must not blank this phone. Its place in the
+              consultation is kept on the phone, so reloading, which is what
+              this offers, comes back to it. */}
+          <ScreenErrorBoundary
+            title="Something went wrong on this screen"
+            keepsVisit
+            reloadable
+          >
+            <PairingJoinScreen onLeave={leaveJoin} />
+          </ScreenErrorBoundary>
         </main>
         <SetupProgress progress={clipWarmup} />
       </div>
@@ -499,6 +550,17 @@ export default function App() {
         </p>
       ) : null}
 
+      {/* A fault in whichever screen is showing stays in that screen. The
+          connection to the patient's phone is held above this, and used to be
+          taken down with it: the page went blank and the phone was told the
+          consultation had ended. The error is cleared on moving to another
+          screen. */}
+      <ScreenErrorBoundary
+        resetKey={emergency ? "emergency" : prescribing ? "prescription" : "main"}
+        keepsVisit={Boolean(visit) && paired}
+        onBack={emergency ? () => setEmergency(false) : prescribing ? () => setPrescribing(false) : null}
+        backLabel={emergency ? "Leave emergency mode" : "Back to the consultation"}
+      >
       {emergency ? (
         <Suspense fallback={<ScreenLoader label="Opening emergency mode" />}>
           <EmergencyTriage
@@ -510,6 +572,11 @@ export default function App() {
             // change it.
             onOutputLanguageChange={changeOutputLanguage}
             onLeave={() => setEmergency(false)}
+            onShownChange={setEmergencyShown}
+            // In a paired visit the patient's phone shows this screen too, and
+            // its taps arrive here to be spoken. See ADR 053.
+            channel={paired ? session.channel : null}
+            patientPhone={paired ? (patientConnected ? "connected" : "away") : null}
           />
         </Suspense>
       ) : prescribing && visit ? (
@@ -559,6 +626,7 @@ export default function App() {
       ) : (
         <LiteracyCheck onDecided={() => setVisit(loadVisit())} />
       )}
+      </ScreenErrorBoundary>
       </main>
 
       {/* The opening screen only.

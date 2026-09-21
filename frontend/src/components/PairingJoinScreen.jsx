@@ -6,6 +6,7 @@ import {
   loadGuestResume,
   saveGuestResume,
 } from "../pairing/resume.js";
+import { announcedEmergency } from "../pairing/announcedScreen.js";
 import { isResumeToken } from "../pairing/token.js";
 import { PeerRole, PeerState } from "../webrtc/peerChannel.js";
 import PatientDevice from "./PatientDevice.jsx";
@@ -77,9 +78,13 @@ export default function PairingJoinScreen({ onLeave }) {
     // The way back, and which screen it was for. Carried on every message the
     // doctor's device sends when it connects, because the connection hands a
     // component only the newest one.
-    const path = message.type === "path" || message.type === "question" ? message.path : undefined;
-    if (isResumeToken(message.resume) || path) {
-      const next = saveGuestResume({ token: message.resume, path });
+    const path =
+      message.type === "path" || message.type === "question" || message.type === "emergency"
+        ? message.path
+        : undefined;
+    const emergency = announcedEmergency(message);
+    if (isResumeToken(message.resume) || path || emergency !== undefined) {
+      const next = saveGuestResume({ token: message.resume, path, emergency });
       if (next) {
         // Only when something actually changed, so a message that says what is
         // already known cannot set off another render.
@@ -87,9 +92,15 @@ export default function PairingJoinScreen({ onLeave }) {
           before &&
           before.token === next.token &&
           before.path === next.path &&
+          before.emergency === next.emergency &&
           before.ended === next.ended
             ? before
-            : { token: next.token, path: next.path, ended: next.ended },
+            : {
+                token: next.token,
+                path: next.path,
+                emergency: next.emergency,
+                ended: next.ended,
+              },
         );
       }
     }
@@ -181,6 +192,7 @@ export default function PairingJoinScreen({ onLeave }) {
       <PatientDevice
         channel={channel}
         path={saved?.path ?? null}
+        emergency={saved?.emergency === true}
         ended={over}
         offline={!connected && !over}
         onLeave={leaveConsultation}
