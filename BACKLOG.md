@@ -279,6 +279,7 @@ whether these exist.
 | --- | --- |
 | Visual or vibration based queue call alternative | Reuses the vibration vocabulary and the tap pattern already built |
 | Expansion to Ga and Ewe | The language provider is an interface, and clip lookup is keyed on gloss, not on Twi |
+| Patient's own phone, two device visits | Built, `wip` until tried on real devices. Peer to peer WebRTC, six character code, asked before the literacy check, both paths. A reload of either device is rejoined by itself and each stays on its page. ADR 053 has the known limits: no TURN so some networks will not connect, the pairing cache is per process |
 | Extension to lecture halls, churches, public service counters | The captioning plus guided question and answer model is not hospital specific |
 
 ---
