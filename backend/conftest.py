@@ -18,6 +18,18 @@ def api_client() -> APIClient:
 
 
 @pytest.fixture(autouse=True)
+def clips_are_stored_as_uploaded(settings):
+    """
+    Do not run ffmpeg over the fake video bytes most tests upload.
+
+    Nearly every test that uploads a clip sends a few placeholder bytes, and
+    compressing those would only fail, slowly, and change nothing being tested.
+    The tests that are about compression turn it back on, and use real video.
+    """
+    settings.CLIP_COMPRESSION_ENABLED = False
+
+
+@pytest.fixture(autouse=True)
 def static_files_need_no_collectstatic(settings):
     """
     Use the plain static files backend for every test.

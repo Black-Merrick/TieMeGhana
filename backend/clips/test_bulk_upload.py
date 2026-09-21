@@ -13,6 +13,7 @@ alone and changed content resetting approval, are the same tests
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
 
 from clips.importing import (
     MAX_UPLOAD_BYTES,
@@ -104,6 +105,81 @@ class TestImportUploads:
         assert clip.review_status == ReviewStatus.APPROVED
         assert report.unchanged == ["HEAD"]
         assert report.replaced == []
+
+    def test_approving_footage_that_was_already_uploaded_takes_effect(self):
+        # The bug this pins: upload a clip, forget to approve, upload the same
+        # file again with "approve" ticked and a reviewer named. The upload
+        # was treated as unchanged and the approval swallowed, so the clip
+        # stayed "Awaiting consultant review" after being approved, under a
+        # message that read like success.
+        import_uploads([video("hurt.webm")])
+        assert SignClip.objects.get(gloss="HURT").review_status == ReviewStatus.PENDING
+
+        report = import_uploads(
+            [video("hurt.webm")], approve=True, reviewer="Ama Mensah"
+        )
+
+        clip = SignClip.objects.get(gloss="HURT")
+        assert clip.review_status == ReviewStatus.APPROVED
+        assert clip.reviewed_by == "Ama Mensah"
+        assert report.approved == ["HURT"]
+        assert report.unchanged == []
+
+    def test_approving_does_not_touch_the_recording(self):
+        import_uploads([video("hurt.webm")])
+        before = SignClip.objects.get(gloss="HURT")
+        name, checksum = before.video.name, before.source_checksum
+
+        import_uploads([video("hurt.webm")], approve=True, reviewer="Ama Mensah")
+
+        after = SignClip.objects.get(gloss="HURT")
+        assert (after.video.name, after.source_checksum) == (name, checksum)
+
+    def test_it_counts_as_having_changed_something(self):
+        assert ImportReport(approved=["A"]).touched_anything is True
+
+    def test_a_clip_already_approved_keeps_its_reviewer(self):
+        import_uploads([video("hurt.webm")], approve=True, reviewer="Ama Mensah")
+
+        report = import_uploads(
+            [video("hurt.webm")], approve=True, reviewer="Someone Else"
+        )
+
+        clip = SignClip.objects.get(gloss="HURT")
+        assert clip.reviewed_by == "Ama Mensah"
+        assert report.unchanged == ["HURT"]
+        assert report.approved == []
+
+    def test_a_rejected_clip_stays_rejected(self):
+        # A rejection carries a reason and is undone by the admin's approve
+        # action, not by uploading the same file again.
+        import_uploads([video("hurt.webm")])
+        SignClip.objects.filter(gloss="HURT").update(
+            review_status=ReviewStatus.REJECTED
+        )
+
+        report = import_uploads(
+            [video("hurt.webm")], approve=True, reviewer="Ama Mensah"
+        )
+
+        assert SignClip.objects.get(gloss="HURT").review_status == ReviewStatus.REJECTED
+        assert report.unchanged == ["HURT"]
+
+    def test_without_approve_an_unchanged_upload_still_changes_nothing(self):
+        import_uploads([video("hurt.webm")])
+
+        report = import_uploads([video("hurt.webm")])
+
+        assert SignClip.objects.get(gloss="HURT").review_status == ReviewStatus.PENDING
+        assert report.unchanged == ["HURT"]
+
+    def test_approving_still_needs_a_named_reviewer_for_unchanged_footage(self):
+        import_uploads([video("hurt.webm")])
+
+        with pytest.raises(ValueError, match="consultant"):
+            import_uploads([video("hurt.webm")], approve=True)
+
+        assert SignClip.objects.get(gloss="HURT").review_status == ReviewStatus.PENDING
 
 
 class TestUploadedFileChecksum:
@@ -288,3 +364,30 @@ class TestBulkUploadFromTheAdmin:
         response = admin_client.get("/admin/clips/signclip/bulk-upload/")
 
         assert b"STOMACH" in response.content or b"stomach" in response.content
+
+
+@pytest.mark.django_db
+class TestApprovingAnAlreadyUploadedClipFromTheAdmin:
+    @pytest.fixture
+    def admin_client(self, django_user_model, client):
+        django_user_model.objects.create_superuser(
+            username="reviewer", email="r@example.com", password="pw"
+        )
+        client.login(username="reviewer", password="pw")
+        return client
+
+    def test_says_it_approved_it_and_that_the_recording_was_not_changed(
+        self, admin_client
+    ):
+        import_uploads([video("hurt.webm")])
+
+        response = admin_client.post(
+            reverse("admin:clips_signclip_bulk_upload"),
+            {"videos": [video("hurt.webm")], "approve": "on", "reviewer": "Ama Mensah"},
+            follow=True,
+        )
+
+        text = " ".join(str(message) for message in response.context["messages"])
+        assert "Approved 1 clip(s) whose footage was already uploaded" in text
+        assert "HURT" in text
+        assert SignClip.objects.get(gloss="HURT").review_status == ReviewStatus.APPROVED

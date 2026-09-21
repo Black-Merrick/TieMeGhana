@@ -11,6 +11,8 @@ in practice and the previous shape of this file made it awkward to answer.
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import UploadedFile
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.template.response import TemplateResponse
@@ -18,6 +20,12 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
+from clips.compression import (
+    compress_video,
+    compressed_name,
+    compression_enabled,
+    describe_saving,
+)
 from clips.importing import (
     MAX_UPLOAD_BYTES,
     MAX_UPLOAD_FILES,
@@ -25,6 +33,7 @@ from clips.importing import (
     ImportReport,
     import_footage,
     import_uploads,
+    uploaded_file_checksum,
 )
 from clips.models import ClipAlias, ClipKind, ReviewStatus, SignClip
 
@@ -147,6 +156,51 @@ class SignClipAdmin(admin.ModelAdmin):
             'border-radius: 4px;"></video>',
             clip.video.url,
         )
+
+    # ------------------------------------------------------------------
+    # Saving from the change form
+    # ------------------------------------------------------------------
+
+    def save_model(self, request, obj, form, change):
+        """
+        Make a recording uploaded on the clip's own page small, as bulk upload
+        does.
+
+        Two ways in, one rule. Only when a new file was actually chosen: saving
+        the form for a reviewer's note must not re-encode a clip that has
+        already been, and a cleared file has nothing to compress. What was
+        uploaded is what its checksum is taken from, so putting the same file in
+        through bulk upload later is recognised rather than treated as a
+        replacement that resets the approval.
+        """
+        upload = (
+            form.cleaned_data.get("video") if "video" in form.changed_data else None
+        )
+
+        if isinstance(upload, UploadedFile):
+            result = compress_video(upload)
+            obj.source_checksum = uploaded_file_checksum(upload)
+
+            if result.compressed:
+                obj.video.save(
+                    compressed_name(upload.name), ContentFile(result.data), save=False
+                )
+                self.message_user(
+                    request,
+                    f"{obj.gloss}: recording made smaller, "
+                    f"{describe_saving(result)}.",
+                )
+            elif compression_enabled():
+                self.message_user(
+                    request,
+                    f"{obj.gloss}: {result.reason}",
+                    level=messages.WARNING,
+                )
+
+            if result.duration_ms and not obj.duration_ms:
+                obj.duration_ms = result.duration_ms
+
+        super().save_model(request, obj, form, change)
 
     # ------------------------------------------------------------------
     # Approve / reject / rework
@@ -393,6 +447,36 @@ class SignClipAdmin(admin.ModelAdmin):
                 level=messages.WARNING,
             )
 
+        if report.compressed:
+            before = sum(item.original_size for item in report.compressed.values())
+            after = sum(item.compressed_size for item in report.compressed.values())
+            saved = round(100 * (before - after) / before) if before else 0
+            self.message_user(
+                request,
+                f"Made {len(report.compressed)} recording(s) smaller: "
+                f"{before / (1024 * 1024):.1f} MB to {after / (1024 * 1024):.1f} MB "
+                f"({saved}% less to download).",
+            )
+
+        if report.uncompressed:
+            self.message_user(
+                request,
+                "Stored as they arrived, not made smaller: "
+                + "; ".join(
+                    f"{gloss} ({reason})"
+                    for gloss, reason in report.uncompressed.items()
+                ),
+                level=messages.WARNING,
+            )
+
+        if report.approved:
+            self.message_user(
+                request,
+                f"Approved {len(report.approved)} clip(s) whose footage was "
+                f"already uploaded: {', '.join(report.approved)}. The "
+                "recording itself was not changed.",
+            )
+
         if report.unchanged:
             self.message_user(
                 request,
@@ -409,7 +493,9 @@ class SignClipAdmin(admin.ModelAdmin):
                 level=messages.WARNING,
             )
 
-        if not report.created and not report.replaced and not report.unchanged:
+        if not (
+            report.created or report.replaced or report.approved or report.unchanged
+        ):
             self.message_user(
                 request, "No video files were imported.", level=messages.WARNING
             )

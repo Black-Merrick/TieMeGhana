@@ -35,8 +35,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from django.core.files import File
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile
 
+from clips.compression import (
+    CompressionResult,
+    compress_video,
+    compressed_name,
+    compression_enabled,
+)
 from clips.models import ClipKind, ReviewStatus, SignClip, normalize_gloss
 
 logger = logging.getLogger(__name__)
@@ -66,6 +73,13 @@ class ImportReport:
     created: list[str] = field(default_factory=list)
     replaced: list[str] = field(default_factory=list)
     unchanged: list[str] = field(default_factory=list)
+    #: Footage that had not changed, but that a named reviewer approved in this
+    #: upload. The recording was left alone; only its approval changed.
+    approved: list[str] = field(default_factory=list)
+    #: Glosses whose footage was made smaller, with what that did.
+    compressed: dict[str, CompressionResult] = field(default_factory=dict)
+    #: Glosses stored as they arrived although compression was on, and why.
+    uncompressed: dict[str, str] = field(default_factory=dict)
     ignored: list[str] = field(default_factory=list)
 
     @property
@@ -74,7 +88,7 @@ class ImportReport:
 
     @property
     def touched_anything(self) -> bool:
-        return bool(self.created or self.replaced)
+        return bool(self.created or self.replaced or self.approved)
 
 
 def file_checksum(path: Path) -> str:
@@ -200,6 +214,7 @@ def import_uploads(
             approve=approve,
             reviewer=reviewer,
             duration_ms=duration_ms,
+            approve_unchanged=True,
         )
 
     return report
@@ -248,6 +263,7 @@ def _apply_import(
     approve: bool,
     reviewer: str,
     duration_ms: int | None,
+    approve_unchanged: bool = False,
 ) -> None:
     """
     Save one file against its gloss, or leave it alone if nothing has changed.
@@ -258,9 +274,28 @@ def _apply_import(
     """
     clip = SignClip.objects.filter(gloss=gloss).first()
 
-    # The guard. Same contents already imported, so nothing is touched at all,
-    # and in particular the existing approval survives.
+    # The guard. Same contents already imported, so the footage is not touched
+    # and an existing approval survives.
     if clip is not None and clip.source_checksum == checksum and clip.video:
+        # One exception, and only for a person at a browser. Uploading a file,
+        # ticking "approve" and naming the consultant is an explicit request to
+        # approve it, and swallowing that because the same bytes were uploaded
+        # once before left a clip "Awaiting review" after the reviewer had
+        # approved it, with a message that read like success. It approves and
+        # nothing else: the footage is untouched, a clip that is already
+        # approved keeps its reviewer, and a REJECTED one stays rejected, since
+        # a rejection carries a reason and is undone by the admin's own approve
+        # action, not by an upload. Never for a folder import: a watcher run
+        # with --approve would otherwise re-approve, on every poll, a clip a
+        # consultant had just sent back.
+        if approve and approve_unchanged and clip.review_status == ReviewStatus.PENDING:
+            clip.review_status = ReviewStatus.APPROVED
+            clip.reviewed_by = reviewer
+            clip.save()
+            report.approved.append(gloss)
+            logger.info("Approved unchanged footage for %s", gloss)
+            return
+
         report.unchanged.append(gloss)
         return
 
@@ -268,11 +303,28 @@ def _apply_import(
     if is_new:
         clip = SignClip(gloss=gloss, kind=_kind_for(gloss))
 
-    clip.video.save(filename, source, save=False)
+    # Made small on the way in, once, so every device that ever fetches it pays
+    # for the small one. The checksum below is of what was uploaded, not of what
+    # is stored, so uploading the same file again is still recognised as
+    # unchanged. Never blocks: a file that cannot be compressed is stored as it
+    # arrived, and the report says so.
+    result = compress_video(source)
+    if result.compressed:
+        clip.video.save(compressed_name(filename), ContentFile(result.data), save=False)
+        report.compressed[gloss] = result
+    else:
+        clip.video.save(filename, source, save=False)
+        if compression_enabled():
+            report.uncompressed[gloss] = result.reason
     clip.source_checksum = checksum
 
     if duration_ms is not None:
         clip.duration_ms = duration_ms
+    elif result.duration_ms:
+        # The real length of what was stored, which the sequence's total
+        # duration and the player's progress are worked out from. Left empty it
+        # read as zero.
+        clip.duration_ms = result.duration_ms
 
     # New or replaced footage is unapproved, because a consultant approved the
     # recording that was there before rather than this one.
