@@ -61,6 +61,13 @@ export default defineConfig(({ mode }) => {
           theme_color: "#0b3d2e",
           background_color: "#ffffff",
           display: "standalone",
+          // Named explicitly, so the installed app's identity is the same
+          // whatever address it was added from (a browsers derives it from the
+          // start URL otherwise), and scoped to the whole site so /join and a
+          // prescription link stay inside the app rather than opening a tab.
+          id: "/",
+          scope: "/",
+          lang: "en",
           start_url: "/",
           icons: [
             // Derived from public/icon.png by tools/build_icons.py. Two sizes,

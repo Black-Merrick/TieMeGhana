@@ -153,7 +153,7 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
       {/* Covers the screen while the patient's answer is being spoken. One tap
           has to mean one answer: a second one queued underneath would reach
           the doctor as two sentences with nothing to say which was which. */}
-      {spoken.status === "working" || spoken.status === "playing" ? (
+      {spoken.showing ? (
         <SpeakingOverlay
           text={spoken.result?.spoken_text ?? null}
           status={spoken.status}

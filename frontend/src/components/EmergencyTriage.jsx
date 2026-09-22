@@ -152,7 +152,7 @@ export default function EmergencyTriage({
 
   // Covers both halves of the wait: asking the language service, then the
   // audio actually playing. From the patient's side it is one action.
-  const speaking = spoken.status === "working" || spoken.status === "playing";
+  const speaking = spoken.showing;
 
   return (
     <section className="triage" data-testid="emergency-triage">

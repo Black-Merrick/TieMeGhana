@@ -617,6 +617,16 @@ describe("the patient's own phone, at /join", () => {
     expect(createPairing).not.toHaveBeenCalled();
     expect(endPairing).not.toHaveBeenCalled();
   });
+
+  it("has the install control, since a patient's phone is the one that needs telling how", async () => {
+    // It was only in the doctor's bar. A patient on an iPhone, who has to add
+    // the app to the home screen by hand, had nothing on their screen to say so.
+    window.history.pushState({}, "", "/join");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("install-app")).toBeInTheDocument();
+  });
 });
 
 const TOKEN = "k3Jx9_-Qm2LpV8wZr5TnYA";

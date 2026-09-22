@@ -2404,6 +2404,44 @@ recorded as the patient's on both; the doctor recording a nod first takes the
 buttons off the phone and the phone records nothing of its own; a reload of the
 phone with a question waiting offers them again and the tap counts.
 
+**Addendum: the talking face lasts as long as the sentence, and installing on an iPhone.**
+
+*The talking face.* The face is the patient's only evidence that their answer is
+being said aloud, and it went as soon as the audio stopped. With the development
+service that is a fraction of a second of silence, and on the phone a report of
+"spoken" arriving just after "playing" ended it as quickly. `feedback/speechHold.js`
+estimates how long the sentence would take to say (0.5 s plus 0.35 s a word, at
+least 1.8 s, at most 10 s), and once the sound has started the face stays until
+that time has passed, on both the doctor's device (`useSpokenResponse.showing`)
+and the phone (`useSpeechFeedback`). It is a floor, never a cut-off: audio longer
+than the estimate keeps it up until it ends, a failure, a blocked sound or Stop
+takes it away at once, and where the start of the sound was not seen (the report
+of it collapsed into the next) only the 1.8 s minimum applies. The overlay
+covers the screen, so a second tap still cannot land on top of the first for the
+whole of that time. Measured in two real browsers with the silent development
+audio: "Yes" 1.9 s, five words 2.4 s, sixteen words 6.2 s.
+
+*Installing on an iPhone.* Safari on iOS has no install dialog; it is Share, then
+"Add to Home Screen", by hand, and only from Safari. What was wrong: the button
+was only in the doctor's bar, so a patient's phone at `/join`, the device most
+likely to be an iPhone, had none; the instructions opened as a panel hung off the
+button, which on a phone sits in a bar at the foot of the screen and had no room
+to open; Chrome or Firefox on an iPhone were given the same steps although only
+Safari can add to the home screen; the touch icon had transparent corners, which
+iOS fills with black; and older iOS opens a home screen icon as an ordinary
+Safari tab without the `apple-mobile-web-app-capable` tags. Now: the button is in
+the patient's header; the instructions are a sheet over the screen, rendered into
+the document body so no bar can clip it; they are for the device detected
+(Safari on iOS: Share, Add to Home Screen, Add, with the Share icon drawn;
+another browser on iOS: open the address in Safari, with a copy button; Android
+and computers as before; all of them where it cannot tell); an opaque 180 px
+`apple-touch-icon.png` is built from the logo's tile by `tools/build_icons.py`;
+the iOS web app tags and a manifest `id` and `scope` are set. It also says the
+installed app starts fresh, because on iOS a home screen app does not share
+Safari's storage: install before a consultation, not in the middle of one.
+Verified in a real browser presenting an iPhone's user agent; **not on a real
+iPhone**, which needs the deployed HTTPS site.
+
 **Known limits, stated rather than hidden.**
 
 - A reload is rejoined by itself, but only while the visit lives, at most four

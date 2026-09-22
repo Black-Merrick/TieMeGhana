@@ -472,6 +472,10 @@ export default function App() {
       <div className="app app--patient">
         <header className="topbar topbar--patient">
           <AppBrand />
+          {/* On the patient's own phone as well as the doctor's. It was only in
+              the doctor's bar, so a patient on an iPhone, who has to add the
+              app to the home screen by hand, had nothing to tell them how. */}
+          <InstallApp />
         </header>
         <main className="shell shell--patient">
           {/* A fault in one screen must not blank this phone. Its place in the

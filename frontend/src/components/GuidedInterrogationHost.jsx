@@ -183,7 +183,7 @@ export default function GuidedInterrogationHost({
 
   return (
     <section className="consult">
-      {spoken.status === "working" || spoken.status === "playing" ? (
+      {spoken.showing ? (
         <SpeakingOverlay
           text={spoken.result?.spoken_text ?? null}
           status={spoken.status}

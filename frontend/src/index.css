@@ -480,14 +480,6 @@ body {
     min-height: 2.75rem;
   }
 
-  /* Opens upward, because on a phone this control sits in the bar at the foot
-     of the screen and there is nothing below it to open into. */
-  .install__help {
-    top: auto;
-    bottom: calc(100% + 0.5rem);
-    right: 0;
-  }
-
   /* Room for that bar, so the last card is not hidden behind it. */
   .shell {
     padding-bottom: 5.5rem;
@@ -3642,21 +3634,47 @@ body {
   border-color: var(--colour-primary);
 }
 
-/* A panel under the bar rather than inline: the bar has no room for three
-   lines of instructions, and the instructions are only wanted on the one tap
-   that asks for them. */
+/* A sheet over the screen, not a panel hanging off the button. The button is in
+   a bar at the foot of a phone, or in the corner of the patient's header, and a
+   panel anchored to it opened where a small screen had no room, so tapping
+   "Install app" seemed to do nothing. On a phone the sheet rises from the
+   bottom; on a wide screen it is a dialog in the middle. */
+.install__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(16, 34, 28, 0.5);
+}
+
 .install__help {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  right: 0;
-  z-index: 40;
-  width: min(22rem, calc(100vw - 2rem));
-  padding: 1rem 1.1rem;
+  position: relative;
+  z-index: 201;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--colour-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius) var(--radius) 0 0;
   background: var(--colour-surface);
-  box-shadow: 0 12px 32px rgba(16, 34, 28, 0.16);
+  box-shadow: 0 -12px 32px rgba(16, 34, 28, 0.2);
   text-align: left;
+}
+
+@media (min-width: 40rem) {
+  .install__overlay {
+    align-items: center;
+    padding: 1.5rem;
+  }
+
+  .install__help {
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(16, 34, 28, 0.25);
+  }
 }
 
 .install__close {
@@ -5168,4 +5186,68 @@ body {
 
 .save__status--failed {
   color: #7a1f14;
+}
+
+.install__platform {
+  margin: 0.4rem 0 0.35rem;
+  font-weight: 700;
+}
+
+.install__note {
+  margin: 0.7rem 0 0;
+  font-size: 0.88rem;
+  color: var(--colour-muted);
+}
+
+.install__note--lead {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  color: inherit;
+}
+
+.install__address {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--colour-line);
+  border-radius: 0.45rem;
+  background: var(--colour-bg, #f8fafc);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.install__copy {
+  min-height: 2.75rem;
+  margin-bottom: 0.9rem;
+  padding: 0 1rem;
+  border: 1px solid var(--colour-primary, #0a4a3a);
+  border-radius: 0.45rem;
+  background: var(--colour-surface);
+  color: var(--colour-primary, #0a4a3a);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.install__share-icon {
+  display: inline-block;
+  vertical-align: -0.2em;
+  color: var(--colour-primary, #0a4a3a);
+}
+
+/* On the patient's own phone the button sits at the right of the brand bar. */
+.topbar--patient {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "brand install";
+  align-items: center;
+}
+
+.topbar--patient .install {
+  grid-area: install;
+}
+
+@media (max-width: 52rem) {
+  .topbar--patient {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand install";
+  }
 }

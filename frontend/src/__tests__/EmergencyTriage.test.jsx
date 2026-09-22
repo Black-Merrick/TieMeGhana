@@ -137,6 +137,18 @@ async function settle() {
   );
 }
 
+/**
+ * Wait for the talking face to go. It now stays up for as long as the sentence
+ * takes to say, however short the audio, and covers the screen so a second tap
+ * cannot land on top of the first. Tests that tap twice have to let it finish.
+ */
+async function afterTheFaceGoes() {
+  await waitFor(
+    () => expect(screen.queryByTestId("speaking-overlay")).not.toBeInTheDocument(),
+    { timeout: 6000 },
+  );
+}
+
 function renderTriage(props = {}) {
   return render(
     <EmergencyTriage outputLanguage="tw" onLeave={() => {}} {...props} />,
@@ -352,6 +364,7 @@ describe("the transcript, FR 4.1", () => {
     renderTriage();
 
     await userEvent.click(screen.getByTestId("pain-level-4"));
+    await afterTheFaceGoes();
     await userEvent.click(screen.getByTestId("body-part-HEAD"));
 
     await waitFor(() => {
@@ -624,9 +637,12 @@ describe("telling the patient they are being heard", () => {
     renderTriage();
     await userEvent.click(screen.getByTestId("body-part-CHEST"));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("replay-answer")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("replay-answer")).toBeInTheDocument();
+      },
+      { timeout: 6000 },
+    );
 
     speakResponse.mockClear();
     await userEvent.click(screen.getByTestId("replay-answer"));
@@ -707,6 +723,7 @@ describe("the page not moving under the patient", () => {
 
     await userEvent.click(screen.getByTestId("pain-level-3"));
     await waitFor(() => screen.getByTestId("spoken-stub-warning"));
+    await afterTheFaceGoes();
     await userEvent.click(screen.getByTestId("body-part-CHEST"));
 
     await waitFor(() => {
