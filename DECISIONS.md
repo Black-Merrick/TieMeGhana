@@ -2575,3 +2575,86 @@ objects and both reading and writing the bucket's CORS policy are refused. The
 policy to paste, and why each part is there, are in DEPLOY.md, and
 `manage.py check_media_cors` reports whether it has taken effect. As of this
 writing it has not, and the command says so.
+
+
+---
+
+## ADR 055: A plural or "-s" form of a word reaches the sign for the word
+
+**Status:** accepted, built.
+
+**Context.** GhSL, like most sign languages, does not mark plural on a noun or
+the third person on a verb: the sign for GO is the sign for GOES, and BRING is
+BRING whether one thing is brought or several. The clip library is filmed once
+per sign, and the resolver matched a typed or spoken word to a gloss exactly, so
+"brings" with only `BRING` filmed was fingerspelled letter by letter, which a
+patient who does not read print may not follow, or refused outright when the
+word could not be spelled. A doctor cannot be expected to know which form each
+clip happens to be named after.
+
+**Decision.** When a word has no clip of its own and no reviewed alias, the
+resolver looks for a clip under the word it is the plural or "-s" form of, and
+shows that one. The order is: the word's own clip, then a reviewed alias (ADR
+034), then the reading, then the safety rules, then fingerspelling. "Brings"
+shows BRING, "goes" shows GO, "pains" shows PAIN, "allergies" ALLERGY, "watches"
+WATCH, "children" CHILD. Typed and spoken text are the same thing by the time
+they reach the resolver, so both are covered. The sequence still reports the
+word as typed and the gloss that will be shown, so the doctor's read-back says
+"brings" and "BRING".
+
+**What it is not.** It is one rule, for the one ending English adds for a plural
+or a third person singular, and nothing else: no "-ing", no "-ed", no root
+guessing, and nothing in the other direction (typing "go" does not look for a
+clip named GOES). Each candidate is only ever another reading of the same word
+and still has to be a filmed, approved word clip with exactly that gloss, so the
+ADR 033 property that an unreviewed sign never reaches a patient is untouched
+(tested for the reading as well as for a typed word).
+
+**Nothing that carries clinical meaning is rewritten.** This is the part that
+needed care, because a clinical app that quietly turns one word into another is
+worse than one that spells it out.
+
+- A word the safety classifier knows is never reduced. "Times" does not become
+  "time": "three times a day" would lose its frequency to a clip for TIME and
+  pass the gate as a complete sentence. The same holds for negations, numbers,
+  quantities, severities and the droppable words.
+- The other way round, the plural of a word that stops a sentence is that word
+  for safety when there is no clip: "stops", "avoids", "refuses", "doubles",
+  "halves", "nights" and "mornings" are refused like the word they are, and not
+  fingerspelled. Before this they were spelled, because the blocking list holds
+  only base forms. With a clip (STOP filmed) "stops" shows STOP and the sentence
+  is safe, since nothing is missing.
+- Words that end like a plural and are not one are left alone: `-ss`, `-us`,
+  `-is`, `-ous`, `-ics` endings (class, virus, diagnosis, nervous, arthritis),
+  anything shorter than four letters or reducing to fewer than three ("toes" is
+  not "to", "yes" is not "ye"), a short list of others ("news" is not "new",
+  "diabetes", "series"), and any word that is not plain English letters, so Twi
+  is never touched.
+- Irregular plurals are limited to the few a clinic says: children, men, women,
+  teeth, feet, mice, and has to have.
+
+**Whole phrases.** A phrase clip is named by its words (WHAT_IS_YOUR_NAME) and
+is matched on each word's base form, on both sides, so "what is your names"
+reaches it and a phrase named with a plural matches the singular.
+
+**Cost.** None extra: the readings are fetched in the same query as the words,
+so the resolver is still four queries however long the sentence, pinned by an
+existing test.
+
+**Known limits.** Which reading is right for an ambiguous form is chosen by
+order and by which clip exists ("leaves" reaches LEAVE before LEAF), where a
+consultant might choose otherwise; a form that is really a different sign in
+GhSL can be given its own clip or a reviewed alias, and either wins over the
+reading. The lists of exceptions are a starting point for the team's Deaf member
+and consultant to extend, like the safety lists themselves.
+
+**Verified** against a copy of the real clip library: "hurts" shows HURT,
+"appears" APPEAR, "asks" ASK, "how are you doings" the HOW_ARE_YOU_DOING phrase,
+and "stops" and "halves" stop the sentence.
+
+**A slip, recorded.** The first backend test run of this work went to the Neon
+database, because `backend/.env` now points there and I had not blanked
+`DATABASE_URL`. Django only creates and drops its own `test_neondb`, so the real
+data was not touched, but it is the same mistake as the two before it and it is
+recorded for the same reason. Backend tests are run with
+`DATABASE_URL= R2_BUCKET= R2_ACCOUNT_ID= LANGUAGE_PROVIDER=stub`.
