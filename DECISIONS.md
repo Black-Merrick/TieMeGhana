@@ -2831,3 +2831,48 @@ filming shorter takes or encoding smaller, and encoding smaller trades against
 the legibility of fingers in motion, which is a clinical judgment and not one to
 take quietly. `MAX_DIMENSION` and `CRF` in `clips/compression.py` are where it
 would be done.
+
+---
+
+## ADR 058: The sign stage takes the shape of the clip in it
+
+**Status:** accepted, built.
+
+**Context.** Reported from real use once the real footage was in: "not all the
+sign can be seen". The screenshot showed the emergency alert cards with the
+signer's head cut off at the top and the hands cut off at the bottom, which on
+a card whose whole job is to say "cannot breathe" leaves a torso.
+
+The footage is filmed on a phone held upright, 406 by 720. Two rules assumed
+otherwise, both written when the library was placeholders:
+
+- `.player__stage` was a fixed `4 / 3` box with `object-fit: contain`. Nothing
+  was lost, but an upright clip was letterboxed into a narrow strip in the
+  middle of a black rectangle, so the hands were small.
+- `.alerts__clip video` was a fixed `4 / 3` box with `object-fit: **cover**`,
+  which fills the box by cropping. That is what took the head and the hands.
+
+**Decision.** The stage is shaped by the clip rather than by an assumption
+about it. `SignSequencePlayer` reads `videoWidth` and `videoHeight` on
+`loadedmetadata` and sets `--clip-shape` on the stage; the stylesheet uses it
+as the stage's `aspect-ratio`, falling back to `4 / 3` until it is known and if
+a video never reports its size. Nothing anywhere assumes upright footage: a
+landscape clip gets a landscape stage from the same code.
+
+**Bounded by height, not width.** An upright clip given the full width of a
+desktop column would be taller than the window and push the caption and the
+answers off the screen. The stage is `height: min(52vh, 26rem)` with the width
+following from the shape, centred. Measured after: 235 by 416 on both a 1280
+wide desktop and a 390 wide phone, filling the stage exactly, with no bars.
+
+**The emergency cards hug the player.** They hold a whole `SignSequencePlayer`,
+not a bare video, so styling the video inside them fought the player's own
+layout: the first attempt produced a 126 by 224 video floating in a 271 by 416
+black wrapper. The card is now `width: fit-content` around the stage, and caps
+the stage at `14rem` tall, because those two cards sit side by side and both
+have to be reachable without scrolling. The card went from 470px tall showing a
+cropped torso to 278px tall showing the whole sign.
+
+**`cover` is never right for a sign.** A photograph of a medicine box cropped
+to a thumbnail loses nothing that matters, and those rules are unchanged. A
+sign cropped loses the hands, which is the part that carries the meaning.

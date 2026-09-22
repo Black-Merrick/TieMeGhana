@@ -939,10 +939,26 @@ body {
 /* Two video elements occupy the same space. The standby one is fully loaded
    and decoding, just not shown, which is what removes the gap between clips.
    See ADR 030. */
+/* Shaped by the clip it is showing, not by an assumption about it.
+   ----------------------------------------------------------------
+   The footage is filmed on a phone, held upright: 406 by 720. A fixed 4 by 3
+   stage put that in a letterbox, so the signer occupied a narrow strip in the
+   middle of a black rectangle and the hands were small enough to be hard to
+   read. The player sets --clip-shape from the video's own dimensions once they
+   are known, so the stage is exactly the shape of what is in it and the sign
+   is as large as the space allows.
+
+   Bounded by height rather than width, because that is the dimension that
+   runs out: a portrait clip given the full width of a desktop column would be
+   taller than the window and push the caption and the answers off the screen.
+   The width then follows from the shape, and the stage is centred. */
 .player__stage {
   position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: var(--clip-shape, 4 / 3);
+  height: min(52vh, 26rem);
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -2150,20 +2166,26 @@ body {
 /* Once the sign is filmed the clip is the card, per FR 5.3, rather than a
    thumbnail beside an icon. The patient is meant to read the sign, and a sign
    the size of a postage stamp cannot be read. */
+/* The card holds the whole player, so it hugs whatever shape the stage takes
+   rather than imposing one. It used to be a full width box with a black
+   ground and the clip cropped to fill it: an upright clip lost its top and
+   bottom, which took the signer's head and, worse, the hands at the end of the
+   sign, so the patient was shown a torso. FR 5.3 is a patient telling a
+   clinician they cannot breathe, and half a sign is not that. */
 .alerts__clip {
   display: block;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
   border-radius: 0.5rem;
   overflow: hidden;
-  background: #000;
 }
 
-.alerts__clip video {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
+/* Bounded by height here, not by the card's width. These two cards sit side by
+   side and both have to be reachable without scrolling, and an upright clip
+   given the full width of the card would be half a screen tall on its own. */
+.alerts__clip .player__stage {
+  height: 14rem;
 }
 
 .alerts__label {
