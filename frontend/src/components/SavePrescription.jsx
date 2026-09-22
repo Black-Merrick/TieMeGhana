@@ -1,3 +1,7 @@
+import { useState } from "react";
+
+import { saveFile } from "../prescription/saveFile.js";
+
 /**
  * Keeping a prescription on the patient's own phone, SRS FR 6.2.
  *
@@ -11,6 +15,21 @@
  * Two ways to keep it, offered in that order of durability.
  */
 export default function SavePrescription({ playlist }) {
+  // What became of each save, by its link: saving, saved, or failed. A tap that
+  // appears to do nothing is the worst outcome for a patient who cannot hear or
+  // read what went wrong, so each says.
+  const [saves, setSaves] = useState({});
+
+  const save = async (event, key, url, filename) => {
+    // Not for a modified click: let the browser open it in its own tab.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+
+    setSaves((before) => ({ ...before, [key]: "saving" }));
+    const saved = await saveFile(url, filename);
+    setSaves((before) => ({ ...before, [key]: saved ? "saved" : "failed" }));
+  };
+
   // Only items that can be signed have anything to save. A refused item has
   // no video by design, per ADR 033.
   // `video_url` rather than the sequence's own stitched file: this is the one
@@ -38,10 +57,12 @@ export default function SavePrescription({ playlist }) {
             // The filename the patient sees in their gallery. Named for what
             // it is, not for the reference, which means nothing to them.
             download="my-prescription.mp4"
+            onClick={(event) => save(event, "whole", whole, "my-prescription.mp4")}
             data-testid="save-whole"
           >
             Save all my medicines as one video
           </a>
+          <SaveStatus state={saves.whole} url={whole} />
         </>
       ) : savable.length > 0 ? (
         <>
@@ -58,10 +79,19 @@ export default function SavePrescription({ playlist }) {
                   className="save__download"
                   href={item.video_url}
                   download={`${item.label.toLowerCase().replace(/\s+/g, "-")}.mp4`}
+                  onClick={(event) =>
+                    save(
+                      event,
+                      item.position,
+                      item.video_url,
+                      `${item.label.toLowerCase().replace(/\s+/g, "-")}.mp4`,
+                    )
+                  }
                   data-testid={`save-item-${item.position}`}
                 >
                   Save {item.label}
                 </a>
+                <SaveStatus state={saves[item.position]} url={item.video_url} />
               </li>
             ))}
           </ul>
@@ -82,5 +112,39 @@ export default function SavePrescription({ playlist }) {
         <strong>Add to Home screen</strong>. It becomes an icon on your phone.
       </p>
     </section>
+  );
+}
+
+/**
+ * What became of a save. Nothing until one is tried. A failure keeps the plain
+ * link, opened in its own tab, where the phone's own player offers to save.
+ */
+function SaveStatus({ state, url }) {
+  if (!state) return null;
+
+  if (state === "saving") {
+    return (
+      <p className="save__status" role="status" data-testid="save-status-saving">
+        Saving…
+      </p>
+    );
+  }
+
+  if (state === "saved") {
+    return (
+      <p className="save__status save__status--done" role="status" data-testid="save-status-saved">
+        <span aria-hidden="true">✓ </span>Saved to your phone. Look in your downloads or gallery.
+      </p>
+    );
+  }
+
+  return (
+    <p className="save__status save__status--failed" role="alert" data-testid="save-status-failed">
+      It could not be saved from here.{" "}
+      <a href={url} target="_blank" rel="noopener" data-testid="save-open">
+        Open the video
+      </a>{" "}
+      and hold it to save it.
+    </p>
   );
 }

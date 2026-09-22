@@ -7,6 +7,7 @@ import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
 import { loadDeviceMode } from "../pairing/deviceMode.js";
 import { loadRole, saveDoctorRole } from "../pairing/role.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../hooks/usePeerChannel.js", () => ({
   default: vi.fn(() => ({
@@ -44,6 +45,9 @@ const { createPairing } = await import("../api/pairing.js");
  */
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   window.history.pushState({}, "", "/");
   fetchBodyLocations.mockResolvedValue([]);

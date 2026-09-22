@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import {
+  announcedEmergency,
+  announcedPath,
+  announcedPrescription,
+} from "../pairing/announcedScreen.js";
+import { saveGuestResume } from "../pairing/resume.js";
 import DoctorConsultationGuest from "./DoctorConsultationGuest.jsx";
+import EmergencyTriageGuest from "./EmergencyTriageGuest.jsx";
 import GuidedInterrogationGuest from "./GuidedInterrogationGuest.jsx";
 import JoinAnother from "./JoinAnother.jsx";
+import PrescriptionGuest from "./PrescriptionGuest.jsx";
 
 /**
  * The patient's own phone, once it has connected to the doctor's device.
@@ -15,6 +23,22 @@ import JoinAnother from "./JoinAnother.jsx";
  * otherwise be lost, and this screen would wait for a word that was already
  * said. A phone that has been here before starts from the path it remembered,
  * so a reload comes back to the screen it was on.
+ *
+ * Emergency mode is followed the same way. When the doctor opens it this phone
+ * shows the patient the emergency screen, wherever it was, and when the doctor
+ * leaves it the phone goes back to the consultation, which the doctor's device
+ * sends again for the purpose. It is told by `emergency` on every message that
+ * says where the phone should be, for the reason `path` is (see
+ * announcedScreen.js), and it is remembered across a reload.
+ *
+ * The prescription is followed the same way. When the doctor issues one, the
+ * phone is sent its reference (all it is ever sent: the medicines are fetched
+ * from the server, as after scanning the code) and opens it, and it stays the
+ * patient's: it is not taken away when the doctor presses Done, when emergency
+ * mode opens and closes, or when the consultation ends. The patient can go back
+ * to the conversation and return to it from a bar at the top. A reference the
+ * phone already has, sent again when a connection comes back, does not pull the
+ * patient away from where they were.
  *
  * Only the two paths the app has are believed. Anything else is ignored
  * rather than guessed at, since a phone that renders the wrong half of a
@@ -32,11 +56,18 @@ export const STALLED_AFTER_MS = 30000;
 export default function PatientDevice({
   channel,
   path: rememberedPath = null,
+  emergency: rememberedEmergency = false,
+  prescription: rememberedPrescription = null,
+  prescriptionOpen: rememberedOpen = false,
   offline = false,
   ended = false,
   onLeave = null,
 }) {
   const [path, setPath] = useState(PATHS.has(rememberedPath) ? rememberedPath : null);
+  const [emergency, setEmergency] = useState(rememberedEmergency === true);
+  const [reference, setReference] = useState(rememberedPrescription);
+  const [looking, setLooking] = useState(rememberedPrescription !== null && rememberedOpen);
+  const referenceRef = useRef(rememberedPrescription);
   const [toldEnded, setToldEnded] = useState(false);
 
   useEffect(() => {
@@ -45,14 +76,64 @@ export default function PatientDevice({
 
     if (message.type === "ended") setToldEnded(true);
 
-    const announced =
-      message.type === "path" || message.type === "question" ? message.path : null;
+    const announced = announcedPath(message);
     if (PATHS.has(announced)) setPath(announced);
+
+    const inEmergency = announcedEmergency(message);
+    if (inEmergency !== undefined) setEmergency(inEmergency);
+
+    // A prescription this phone has not seen: opened, and remembered so a
+    // reload comes back to it. One it already has changes nothing.
+    const issued = announcedPrescription(message);
+    if (issued && issued !== referenceRef.current) {
+      referenceRef.current = issued;
+      setReference(issued);
+      setLooking(true);
+      saveGuestResume({ prescription: issued, prescriptionOpen: true });
+    }
   }, [channel.lastMessage]);
 
   const over = ended || toldEnded;
 
-  const away = offline && !over ? <Reconnecting onLeave={onLeave} /> : null;
+  const look = (open) => {
+    setLooking(open);
+    saveGuestResume({ prescriptionOpen: open });
+  };
+
+  const reconnecting = offline && !over ? <Reconnecting onLeave={onLeave} /> : null;
+  // What is kept for the patient, offered wherever else they are.
+  const bar =
+    reference && !looking ? (
+      <MedicinesBar onOpen={() => look(true)} />
+    ) : null;
+  const away = (
+    <>
+      {reconnecting}
+      {bar}
+    </>
+  );
+
+  // The doctor's emergency screen, mirrored. Not once the consultation is over,
+  // which is shown as over whatever the doctor had open when it ended.
+  if (emergency && !over) {
+    return (
+      <>
+        {reconnecting}
+        <EmergencyTriageGuest channel={channel} offline={offline} />
+      </>
+    );
+  }
+
+  // The medicines, when the patient is looking at them. Over the consultation,
+  // which is where "back" goes, and still here once the consultation has ended.
+  if (reference && looking) {
+    return (
+      <>
+        {reconnecting}
+        <PrescriptionGuest reference={reference} over={over} onBack={() => look(false)} />
+      </>
+    );
+  }
 
   if (path === "guided") {
     return (
@@ -83,6 +164,8 @@ export default function PatientDevice({
 
   if (over) {
     return (
+      <>
+      {bar}
       <section className="pairing pairing--card" data-testid="pairing-ended">
         <h2 className="pairing__title">This consultation has ended</h2>
         <p className="pairing__hint" role="status">
@@ -91,11 +174,14 @@ export default function PatientDevice({
         </p>
         {onLeave ? <JoinAnother onLeave={onLeave} /> : null}
       </section>
+      </>
     );
   }
 
   if (offline) {
     return (
+      <>
+      {bar}
       <section className="pairing pairing--card" data-testid="patient-reconnecting">
         <p className="literacy__eyebrow">
           <span className="shell__dot shell__dot--connected" aria-hidden="true" />
@@ -108,10 +194,13 @@ export default function PatientDevice({
         </p>
         {onLeave ? <LeaveLink onLeave={onLeave} /> : null}
       </section>
+      </>
     );
   }
 
   return (
+    <>
+    {bar}
     <section className="pairing pairing--card" data-testid="patient-waiting">
       <p className="literacy__eyebrow">
         <span className="shell__dot shell__dot--connected" aria-hidden="true" />
@@ -123,6 +212,7 @@ export default function PatientDevice({
         Waiting for the doctor to begin. Keep this screen open.
       </p>
     </section>
+    </>
   );
 }
 
@@ -181,5 +271,27 @@ function LeaveLink({ onLeave }) {
         Leave this consultation
       </button>
     </p>
+  );
+}
+
+/**
+ * Said at the top of every screen but the medicines and the emergency, once the
+ * doctor has issued a prescription, so the patient can always get back to it.
+ * A button they can see rather than a thing to remember: it is the one part of
+ * the visit they take home.
+ */
+function MedicinesBar({ onOpen }) {
+  return (
+    <div className="medicines-bar" data-testid="medicines-bar">
+      <p className="medicines-bar__text">Your medicines are ready.</p>
+      <button
+        type="button"
+        className="medicines-bar__open"
+        onClick={onOpen}
+        data-testid="view-medicines"
+      >
+        View my medicines
+      </button>
+    </div>
   );
 }

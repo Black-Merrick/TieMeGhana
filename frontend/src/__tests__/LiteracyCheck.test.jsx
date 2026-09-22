@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LiteracyCheck from "../components/LiteracyCheck.jsx";
 import { fetchClipByGloss } from "../api/clips.js";
 import { LiteracyPath, loadVisit } from "../visit/visit.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -19,6 +20,9 @@ const promptClip = {
 };
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   fetchClipByGloss.mockResolvedValue(promptClip);
 });
@@ -28,6 +32,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * The question's own player.
+ *
+ * Since ADR 059 the two answers carry the signs for YES and NO, so this screen
+ * has three players on it and "the sign video" no longer names one thing. The
+ * answers' clips arrive from a second request, so which of the three a bare
+ * query found depended on what had resolved: it passed here and failed in CI.
+ */
+const promptVideo = () =>
+  within(screen.getByTestId("literacy-prompt")).getByTestId("sign-video");
+
 describe("LiteracyCheck", () => {
   it("asks the question as sign video", async () => {
     // FR 2.1. The question must be delivered in GhSL, because a patient who
@@ -35,10 +50,7 @@ describe("LiteracyCheck", () => {
     render(<LiteracyCheck onDecided={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("sign-video")).toHaveAttribute(
-        "src",
-        promptClip.video_url,
-      );
+      expect(promptVideo()).toHaveAttribute("src", promptClip.video_url);
     });
   });
 
@@ -48,25 +60,31 @@ describe("LiteracyCheck", () => {
     render(<LiteracyCheck onDecided={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("sign-video")).toBeInTheDocument();
+      expect(promptVideo()).toBeInTheDocument();
     });
-    expect(screen.getByTestId("sign-video").className).toContain(
-      "player__video",
-    );
+    expect(promptVideo().className).toContain("player__video");
   });
 
   it("offers answers a patient who does not read can still act on", async () => {
     // The options carry labels since ADR 047, so what matters here is that
-    // each one still leads with its icon. A patient who does not read acts on
-    // the mark, and this screen is the one place in the app where getting that
-    // wrong means acting on an answer to a question nobody was asked.
+    // each one still leads with a mark rather than with words. A patient who
+    // does not read acts on the mark, and this screen is the one place in the
+    // app where getting that wrong means acting on an answer to a question
+    // nobody was asked. Since ADR 059 the mark is the GhSL sign where it has
+    // been filmed, and the drawn tick or cross where it has not; either way it
+    // is never text alone.
     render(<LiteracyCheck onDecided={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("choice-yes").querySelector("svg")).not.toBeNull();
-    expect(screen.getByTestId("choice-no").querySelector("svg")).not.toBeNull();
+
+    for (const option of ["choice-yes", "choice-no"]) {
+      const button = screen.getByTestId(option);
+      const sign = button.querySelector(`[data-testid="${option}-sign"]`);
+      const drawn = button.querySelector(":scope > svg");
+      expect(sign ?? drawn).not.toBeNull();
+    }
   });
 
   it("routes a patient who reads to the literate path", async () => {
@@ -115,7 +133,7 @@ describe("LiteracyCheck", () => {
     await waitFor(() => {
       expect(screen.getByTestId("literacy-unavailable")).toBeInTheDocument();
     });
-    expect(screen.queryByTestId("sign-video")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("literacy-prompt")).not.toBeInTheDocument();
   });
 
   it("still lets the answer be recorded when the prompt is missing", async () => {

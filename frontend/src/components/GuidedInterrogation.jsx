@@ -153,7 +153,7 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
       {/* Covers the screen while the patient's answer is being spoken. One tap
           has to mean one answer: a second one queued underneath would reach
           the doctor as two sentences with nothing to say which was which. */}
-      {spoken.status === "working" || spoken.status === "playing" ? (
+      {spoken.showing ? (
         <SpeakingOverlay
           text={spoken.result?.spoken_text ?? null}
           status={spoken.status}
@@ -274,7 +274,7 @@ function YesNoAnswer({ onChoose }) {
         The patient can tap Yes or No, or nod or shake their head. If they nod,
         tap what you saw. Either way, what is tapped here is what gets recorded.
       </p>
-      <YesNoChoice onChoose={onChoose} />
+      <YesNoChoice onChoose={onChoose} signed />
     </div>
   );
 }

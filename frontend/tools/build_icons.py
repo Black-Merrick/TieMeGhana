@@ -29,6 +29,13 @@ SOURCE = PUBLIC / "icon.png"
 # browser tab, and 96 is the largest the splash needs at the size it draws.
 SIZES = (512, 192, 96, 64)
 
+# What an iPhone puts on the home screen. iOS fills any transparency with black
+# and rounds the corners itself, so the logo's own transparent margin and rounded
+# tile would come out as a small tile floating in a black field. This one is the
+# tile alone, cropped to its edge and scaled to fill the square, with its corners
+# on the tile's own edge colour. 180 is the size current iPhones ask for.
+APPLE_TOUCH_SIZE = 180
+
 
 def squared(image: Image.Image) -> Image.Image:
     """Pad to a square on a transparent ground, keeping the icon centred."""
@@ -42,6 +49,35 @@ def squared(image: Image.Image) -> Image.Image:
     return canvas
 
 
+def write_apple_touch_icon(image: Image.Image) -> None:
+    """The tile alone, filling a flat square, for iOS."""
+    alpha = image.getchannel("A").point(lambda value: 255 if value > 128 else 0)
+    tile = image.crop(alpha.getbbox())
+    side = max(tile.size)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.paste(tile, ((side - tile.width) // 2, (side - tile.height) // 2), tile)
+    square = square.resize((APPLE_TOUCH_SIZE, APPLE_TOUCH_SIZE), Image.LANCZOS)
+
+    # The ground is the tile's own colour at the middle of each edge, so what
+    # shows in the corners, once iOS has rounded them, is the same colour.
+    edge = [
+        square.getpixel(point)[:3]
+        for point in (
+            (3, APPLE_TOUCH_SIZE // 2),
+            (APPLE_TOUCH_SIZE - 4, APPLE_TOUCH_SIZE // 2),
+            (APPLE_TOUCH_SIZE // 2, 3),
+            (APPLE_TOUCH_SIZE // 2, APPLE_TOUCH_SIZE - 4),
+        )
+    ]
+    ground = tuple(sum(channel) // len(edge) for channel in zip(*edge)) + (255,)
+
+    flat = Image.new("RGBA", square.size, ground)
+    flat.alpha_composite(square)
+    out = PUBLIC / "apple-touch-icon.png"
+    flat.convert("RGB").save(out, format="PNG", optimize=True)
+    print(f"{out.name:16} {out.stat().st_size:>7} bytes")
+
+
 def main() -> None:
     source = squared(Image.open(SOURCE).convert("RGBA"))
 
@@ -51,6 +87,8 @@ def main() -> None:
             out, format="PNG", optimize=True
         )
         print(f"{out.name:16} {out.stat().st_size:>7} bytes")
+
+    write_apple_touch_icon(Image.open(SOURCE).convert("RGBA"))
 
     # The splash in index.html carries the mark as a data URI, because it is
     # painted before anything has been fetched. Printed rather than written:

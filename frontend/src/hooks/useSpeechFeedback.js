@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { MIN_OVERLAY_MS, remainingHoldMs } from "../feedback/speechHold.js";
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
+
+// Kept here as well as in speechHold.js, where the reasoning is: the phone's
+// screens and their tests have always read it from this hook.
+export { MIN_OVERLAY_MS };
 
 /**
  * The patient's phone following its own answer while another device speaks it.
@@ -22,17 +27,6 @@ import { VibrationPattern, vibrate } from "../feedback/vibration.js";
  * failure, because there is no pattern for one and none may be invented; it is
  * shown on screen.
  */
-/**
- * The least time the talking face stays up once shown.
- *
- * The answer can be spoken in well under a second, and a face that appears and
- * is gone before it can be read is not feedback, it is a flicker. Seen on a
- * real phone against the development service, whose audio is a fraction of a
- * second of silence. Held only for an answer that went well: a failure, a
- * blocked sound or a stop is shown the instant it is known.
- */
-export const MIN_OVERLAY_MS = 1800;
-
 export default function useSpeechFeedback(channel) {
   const [status, setStatus] = useState("idle");
   const [text, setText] = useState("");
@@ -43,11 +37,20 @@ export default function useSpeechFeedback(channel) {
   // answer's state and not whatever the last render happened to close over.
   const pending = useRef(false);
   const felt = useRef("idle");
+  // When this answer was given and when the sound began, so the face can be
+  // held for as long as the sentence takes to say. See feedback/speechHold.js.
+  const beganAt = useRef(0);
+  const playingAt = useRef(null);
+  const spokenText = useRef("");
 
-  const hold = useCallback(() => {
+  const hold = useCallback((ms) => {
     clearTimeout(holdTimer.current);
+    if (ms <= 0) {
+      setHolding(false);
+      return;
+    }
     setHolding(true);
-    holdTimer.current = setTimeout(() => setHolding(false), MIN_OVERLAY_MS);
+    holdTimer.current = setTimeout(() => setHolding(false), ms);
   }, []);
 
   const release = useCallback(() => {
@@ -63,13 +66,29 @@ export default function useSpeechFeedback(channel) {
     if (!pending.current) return;
 
     setStatus(message.status);
+
+    if (message.status === "playing" && playingAt.current === null) {
+      playingAt.current = Date.now();
+    }
+
     // "blocked" is not the end: the doctor taps and it is spoken after all,
     // and that report has to be believed, so the answer stays pending.
     if (["spoken", "failed", "stopped"].includes(message.status)) {
       pending.current = false;
     }
     if (["failed", "stopped", "blocked"].includes(message.status)) release();
-  }, [channel.lastMessage, release]);
+
+    if (message.status === "spoken") {
+      // The sound has finished, which is not the moment to take the face away:
+      // it stays for as long as the sentence would take to say, and for the
+      // shortest time it is ever shown, counted from when the answer was given.
+      const now = Date.now();
+      const sinceStarted = playingAt.current === null ? null : now - playingAt.current;
+      const forSentence = remainingHoldMs(spokenText.current, sinceStarted);
+      const forMinimum = MIN_OVERLAY_MS - (now - beganAt.current);
+      hold(Math.max(forSentence, forMinimum));
+    }
+  }, [channel.lastMessage, release, hold]);
 
   useEffect(() => {
     const before = felt.current;
@@ -84,9 +103,14 @@ export default function useSpeechFeedback(channel) {
   const begin = useCallback(
     (answer) => {
       pending.current = true;
+      beganAt.current = Date.now();
+      playingAt.current = null;
+      spokenText.current = answer;
       setText(answer);
       setStatus("working");
-      hold();
+      // Nothing to hold yet: it is on screen for as long as it is working or
+      // playing, and held for the sentence once it is spoken.
+      hold(0);
     },
     [hold],
   );
@@ -94,7 +118,10 @@ export default function useSpeechFeedback(channel) {
   /** Ask for the last answer to be said again, and follow that too. */
   const replay = useCallback(() => {
     pending.current = true;
-    hold();
+    beganAt.current = Date.now();
+    playingAt.current = null;
+    // Up at once, before the doctor's device has said it has started.
+    hold(MIN_OVERLAY_MS);
     channel.send({ type: "replay" });
   }, [channel, hold]);
 
@@ -109,6 +136,18 @@ export default function useSpeechFeedback(channel) {
     channel.send({ type: "stop" });
     setStatus("stopped");
   }, [channel, release]);
+
+  /**
+   * Let go of an answer the doctor's device is not going to speak, because it
+   * had already been answered some other way. Nothing is left waiting, and
+   * nothing is claimed about it.
+   */
+  const cancel = useCallback(() => {
+    pending.current = false;
+    release();
+    setStatus("idle");
+    setText("");
+  }, [release]);
 
   /**
    * A new turn from the doctor. The last answer's confirmation was about that
@@ -126,5 +165,5 @@ export default function useSpeechFeedback(channel) {
   const busy =
     status === "working" || status === "playing" || (holding && status === "spoken");
 
-  return { status, text, busy, begin, replay, stop, reset };
+  return { status, text, busy, begin, replay, stop, reset, cancel };
 }

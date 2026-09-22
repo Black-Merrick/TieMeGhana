@@ -1,19 +1,15 @@
 import { useEffect, useState } from "react";
 
-import { fetchCriticalAlerts, fetchEmergencySpeech } from "../api/clips.js";
-import {
-  NO_PHRASES,
-  indexPhrases,
-  phraseToSpeak,
-} from "../emergency/spokenPhrases.js";
+import { phraseToSpeak } from "../emergency/spokenPhrases.js";
+import { TapKind, resolveTap } from "../emergency/triageTaps.js";
+import useSpeakingReports from "../hooks/useSpeakingReports.js";
 import useSpokenResponse from "../hooks/useSpokenResponse.js";
 import useTranscript from "../hooks/useTranscript.js";
+import useTriageVocabulary from "../hooks/useTriageVocabulary.js";
 import { Direction } from "../transcript/transcript.js";
-import BodyMap from "./BodyMap.jsx";
-import CriticalAlerts from "./CriticalAlerts.jsx";
-import PainScale from "./PainScale.jsx";
 import SpeakingOverlay from "./SpeakingOverlay.jsx";
 import SpokenResponse, { StubNotice } from "./SpokenResponse.jsx";
+import TriagePanels from "./TriagePanels.jsx";
 
 /**
  * Emergency Visual Triage Mode, SRS FR 5.1 to FR 5.5.
@@ -48,53 +44,25 @@ export default function EmergencyTriage({
   outputLanguage,
   onOutputLanguageChange = null,
   onLeave,
+  // The connection to the patient's own phone, in a paired visit, and whether
+  // that phone is there. Both null on a shared device, which is unchanged.
+  channel = null,
+  patientPhone = null,
+  // Told when this screen is on screen and when it stops being, so a paired
+  // phone is sent here only once the doctor's device can follow.
+  onShownChange = null,
 }) {
-  const [alerts, setAlerts] = useState(null);
+  useEffect(() => {
+    onShownChange?.(true);
+    return () => onShownChange?.(false);
+    // Once per showing. The callback is a state setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // The fixed vocabulary, in both languages, fetched once. Emergency mode has
-  // no free text, so everything it can say is known in advance and is
-  // translated on the server rather than at the moment of a tap. That is what
-  // makes a tap speak in about three seconds rather than five, and what keeps
-  // an unreviewed clinical translation from being read aloud during triage.
-  const [phrases, setPhrases] = useState(NO_PHRASES);
+  const { alerts, phrases } = useTriageVocabulary();
   const [chosen, setChosen] = useState({ pain: null, location: null, alert: null });
   const spoken = useSpokenResponse();
   const transcript = useTranscript();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchCriticalAlerts()
-      .then((loaded) => {
-        if (cancelled) return;
-
-        // Shape checked rather than trusted. A payload that is not a list
-        // would throw inside render and take the whole screen down with it,
-        // including the pain scale and body map, which need nothing from the
-        // server and must survive anything the server does.
-        setAlerts(Array.isArray(loaded) ? loaded : []);
-      })
-      .catch(() => {
-        // The pain scale and body map still work, so triage degrades rather
-        // than failing. Both are drawings and need nothing from the server.
-        if (!cancelled) setAlerts([]);
-      });
-
-    // Failure here is survivable in the same way: without the vocabulary
-    // every tap is spoken in English, which is the behaviour before this
-    // existed rather than a broken screen.
-    fetchEmergencySpeech()
-      .then((payload) => {
-        if (!cancelled) setPhrases(indexPhrases(payload));
-      })
-      .catch(() => {
-        if (!cancelled) setPhrases(NO_PHRASES);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   /**
    * Speak a selection aloud and record it, FR 5.5 and FR 4.1.
@@ -150,9 +118,41 @@ export default function EmergencyTriage({
     });
   };
 
+  /** One tap, from this device or from the patient's phone: highlighted, then spoken. */
+  const takeTap = (tap) => {
+    const slot = {
+      [TapKind.ALERT]: "alert",
+      [TapKind.PAIN]: "pain",
+      [TapKind.LOCATION]: "location",
+    }[tap.kind];
+    setChosen((previous) => ({
+      ...previous,
+      [slot]: tap.id,
+    }));
+    announce(tap.key, tap.english);
+  };
+
+  // The patient's phone tapping, and asking for it again. Only what this
+  // device can name is believed: see triageTaps.js. A tap it cannot name is
+  // answered with a failure, so the phone does not wait on it for ever.
+  useEffect(() => {
+    const message = channel?.lastMessage;
+    if (message?.type === "triage") {
+      const tap = resolveTap(message, alerts);
+      if (tap) takeTap(tap);
+      else channel.send({ type: "speaking", status: "failed" });
+    } else if (message?.type === "replay" && spoken.canReplay) {
+      spoken.replay();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel?.lastMessage]);
+
+  // Tells the phone how its tap is going, and lets it stop one.
+  useSpeakingReports(channel, spoken);
+
   // Covers both halves of the wait: asking the language service, then the
   // audio actually playing. From the patient's side it is one action.
-  const speaking = spoken.status === "working" || spoken.status === "playing";
+  const speaking = spoken.showing;
 
   return (
     <section className="triage" data-testid="emergency-triage">
@@ -171,6 +171,27 @@ export default function EmergencyTriage({
         <div>
           <h2 className="triage__title">Emergency</h2>
           <p className="triage__hint">No typing needed.</p>
+          {/* In a paired visit, whether the patient's phone is showing this
+              screen. Said either way, because a doctor who believes the
+              patient can see it, and is wrong, is worse off than one who was
+              never told. Their own taps here still work: a patient who cannot
+              use a phone is exactly who emergency mode is for. */}
+          {patientPhone === "connected" ? (
+            <p className="triage__hint triage__phone" data-testid="triage-patient-phone">
+              The patient&apos;s phone shows this screen too. What they tap
+              there is spoken here.
+            </p>
+          ) : null}
+          {patientPhone === "away" ? (
+            <p
+              className="triage__hint triage__phone triage__phone--away"
+              role="status"
+              data-testid="triage-patient-phone-away"
+            >
+              The patient&apos;s phone is not connected. It will show this
+              screen as soon as it is back. You can tap here in the meantime.
+            </p>
+          ) : null}
         </div>
 
         {/* FR 5.5 speaks every tap aloud, and who is listening is not knowable
@@ -233,79 +254,29 @@ export default function EmergencyTriage({
       <div className="triage__spoken">
         {spoken.status === "idle" ? (
           <p className="triage__ready" data-testid="triage-ready">
-            Tap anything. Every tap is spoken aloud to the doctor.
+            {patientPhone
+              ? "Tap anything, or the patient can on their phone. Every tap is spoken aloud here."
+              : "Tap anything. Every tap is spoken aloud to the doctor."}
           </p>
         ) : (
           <SpokenResponse
             status={spoken.status}
             result={spoken.result}
             showProviderNotice={false}
+            // A phone's tap is spoken here and this device may need touching
+            // before the browser will make the sound.
+            onPlay={patientPhone ? spoken.replay : null}
+            heardHere={Boolean(patientPhone)}
           />
         )}
       </div>
 
-      {/* Two columns, same reason as the consultation: the device is turned
-          between the patient and whoever is treating them. The body gets a
-          column of its own so the figure is large enough to point at, which is
-          the whole mechanism of FR 5.2. */}
-      <div className="triage__columns">
-        <div className="triage__side">
-          {/* FR 5.3 first. It is the only group here that can be about
-              something stopping the patient breathing, so it is what a
-              responder should reach without scrolling. */}
-          <div className="panel">
-            <div className="panel__header">
-              <h3 className="panel__title">Tell them what is wrong</h3>
-              <span className="pill triage__priority panel__aside">
-                Immediate
-              </span>
-            </div>
-            <CriticalAlerts
-              alerts={alerts}
-              disabled={speaking}
-              chosenId={chosen.alert}
-              onChoose={(alert) => {
-                setChosen((previous) => ({ ...previous, alert: alert.id }));
-                announce(alert.id, alert.english_text);
-              }}
-            />
-          </div>
-
-          <div className="panel">
-            <div className="panel__header">
-              <h3 className="panel__title">How much pain</h3>
-            </div>
-            <PainScale
-              disabled={speaking}
-              chosenLevel={chosen.pain}
-              onChoose={(option) => {
-                setChosen((previous) => ({ ...previous, pain: option.level }));
-                // Spoken as words rather than "4 of 5", because a number out
-                // of context tells the clinician nothing they can act on.
-                announce(`PAIN_${option.level}`, option.label);
-              }}
-            />
-          </div>
-
-        </div>
-
-        <div className="triage__side">
-          <div className="panel">
-            <div className="panel__header">
-              <h3 className="panel__title">Point to where it hurts</h3>
-              <span className="pill panel__aside">Front view</span>
-            </div>
-            <BodyMap
-              disabled={speaking}
-              chosenId={chosen.location}
-              onChoose={(region) => {
-                setChosen((previous) => ({ ...previous, location: region.id }));
-                announce(region.id, `My ${region.label.toLowerCase()} hurts`);
-              }}
-            />
-          </div>
-        </div>
-      </div>
+      <TriagePanels
+        alerts={alerts}
+        chosen={chosen}
+        disabled={speaking}
+        onTap={takeTap}
+      />
 
       {/* Once, at the foot of the page, rather than after every tap. It is a
           development notice: true, and worth saying, but it says the same

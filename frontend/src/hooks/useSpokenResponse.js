@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { audioUrlFrom, speakResponse } from "../api/speech.js";
 import {
@@ -6,6 +6,7 @@ import {
   speakOnDevice,
   stopDevice,
 } from "../audio/deviceSpeech.js";
+import { remainingHoldMs } from "../feedback/speechHold.js";
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
 
 /**
@@ -21,6 +22,21 @@ export default function useSpokenResponse() {
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
   const audioRef = useRef(null);
+
+  // Whether the talking face is still to be shown after the sound has ended,
+  // because the sentence would take longer to say than the audio did. See
+  // feedback/speechHold.js. Never longer than it takes, and cleared the moment
+  // anything but a finished answer is known.
+  const [holding, setHolding] = useState(false);
+  const holdTimer = useRef(null);
+  const playedAt = useRef(null);
+
+  const endHold = useCallback(() => {
+    clearTimeout(holdTimer.current);
+    setHolding(false);
+  }, []);
+
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
 
   /**
    * What is being spoken right now, so it cannot be started twice.
@@ -76,6 +92,7 @@ export default function useSpokenResponse() {
       audioRef.current = audio;
 
       audio.onplay = () => {
+        playedAt.current = Date.now();
         setStatus("playing");
         // Two short pulses, SRS section 6. The patient's physical cue that
         // their answer is being spoken, for an event they cannot hear.
@@ -85,11 +102,23 @@ export default function useSpokenResponse() {
       audio.onended = () => {
         setStatus("spoken");
         vibrate(VibrationPattern.AUDIO_FINISHED);
+
+        // Kept on screen for as long as the sentence would take to say, if the
+        // audio was shorter. The face is the patient's evidence that it was.
+        const sinceStarted =
+          playedAt.current === null ? null : Date.now() - playedAt.current;
+        const more = remainingHoldMs(spoken?.spoken_text, sinceStarted);
+        clearTimeout(holdTimer.current);
+        if (more > 0) {
+          setHolding(true);
+          holdTimer.current = setTimeout(() => setHolding(false), more);
+        }
         speakingRef.current = null;
         release();
       };
 
       audio.onerror = () => {
+        endHold();
         setStatus("failed");
         speakingRef.current = null;
         release();
@@ -110,10 +139,11 @@ export default function useSpokenResponse() {
         // it is played by the tap that follows (`replay`), not thrown away as
         // "could not be spoken". Found on two real devices, where it showed up
         // as the patient's screen flashing and giving up.
+        endHold();
         setStatus(error?.name === "NotAllowedError" ? "blocked" : "failed");
       }
     },
-    [release],
+    [release, endHold],
   );
 
   /**
@@ -141,9 +171,10 @@ export default function useSpokenResponse() {
     }
 
     release();
+    endHold();
     speakingRef.current = null;
     setStatus((current) => (current === "idle" ? current : "stopped"));
-  }, [release]);
+  }, [release, endHold]);
 
   /** Say the last answer again. Nothing to do if there has not been one. */
   const replay = useCallback(async () => {
@@ -151,8 +182,9 @@ export default function useSpokenResponse() {
     // Asked for deliberately, so it is not caught by the guard above: a doctor
     // who missed the answer is not double tapping, they want it again.
     speakingRef.current = null;
+    endHold();
     await play(result);
-  }, [play, result]);
+  }, [play, result, endHold]);
 
   const speak = useCallback(
     async (payload) => {
@@ -162,6 +194,7 @@ export default function useSpokenResponse() {
       speakingRef.current = payload?.text ?? null;
 
       release();
+      endHold();
       setStatus("working");
       setResult(null);
 
@@ -186,10 +219,15 @@ export default function useSpokenResponse() {
       await play(spoken);
       return spoken;
     },
-    [play, release],
+    [play, release, endHold],
   );
 
-  return { status, result, speak, replay, stop, canReplay: result !== null };
+  // Up while it is being prepared or said, and after, for as long as the
+  // sentence takes. What the talking face is shown for.
+  const showing =
+    status === "working" || status === "playing" || (holding && status === "spoken");
+
+  return { status, result, speak, replay, stop, canReplay: result !== null, showing };
 }
 
 /**

@@ -19,6 +19,12 @@ htmlcov/
 /backend/footage/*
 !/backend/footage/README.md
 
+# The same, for footage kept at the root while it is being filmed and imported.
+# `replace_clip_library` reads a folder and uploads to the bucket, so these
+# files never need to be in the repository, and 88 MB of video committed once
+# is in the history for good.
+/clips/
+
 # Environment, never commit real credentials
 .env
 .env.local

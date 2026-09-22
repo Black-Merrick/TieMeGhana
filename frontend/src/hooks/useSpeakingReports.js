@@ -15,17 +15,18 @@ export default function useSpeakingReports(channel, spoken) {
   const reported = useRef("idle");
 
   useEffect(() => {
-    if (spoken.status === reported.current) return;
+    // No connection to report to on a shared device, where this is a no-op.
+    if (!channel || spoken.status === reported.current) return;
     reported.current = spoken.status;
     channel.send({ type: "speaking", status: spoken.status });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spoken.status]);
 
   useEffect(() => {
-    if (channel.lastMessage?.type !== "stop") return;
+    if (channel?.lastMessage?.type !== "stop") return;
     // Only while there is something to stop. A stop that arrives after the
     // answer has finished must not turn a spoken answer into a stopped one.
     if (spoken.status === "working" || spoken.status === "playing") spoken.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.lastMessage]);
+  }, [channel?.lastMessage]);
 }

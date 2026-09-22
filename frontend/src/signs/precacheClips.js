@@ -24,6 +24,7 @@
 
 import { fetchResolvableClips } from "../api/clips.js";
 import { recordMediaCors } from "./mediaCors.js";
+import { whenNobodyIsWatching } from "./playbackPriority.js";
 
 /**
  * The cache the service worker serves media from.
@@ -219,6 +220,15 @@ export async function precacheClips({ signal, onProgress } = {}) {
   const worker = async () => {
     while (queue.length) {
       if (signal?.aborted) return;
+
+      // Someone is waiting on a sign right now. The bucket gives the same
+      // throughput however many files are asked for at once, so carrying on
+      // here is taking the connection from the clip a patient is watching for.
+      // Nothing in flight is cancelled; the queue just stops being fed. See
+      // ADR 057.
+      await whenNobodyIsWatching();
+      if (signal?.aborted) return;
+
       if (await isQuotaNearlyFull()) {
         // Stop rather than evict. The browser evicts under pressure on its own
         // terms, and racing it would mean thrashing the connection this is
@@ -227,7 +237,12 @@ export async function precacheClips({ signal, onProgress } = {}) {
         return;
       }
 
+      // Taken only after the waiting above, and checked, because another
+      // worker may have emptied the queue while this one was standing aside.
+      // Without this, a worker that woke to an empty queue fetched `undefined`.
       const url = queue.shift();
+      if (url === undefined) return;
+
       const outcome = await warmOne(cache, url, signal, blocked);
       summary[outcome] += 1;
 

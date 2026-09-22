@@ -6,6 +6,7 @@ import GuidedInterrogation from "../components/GuidedInterrogation.jsx";
 import { captionUtterance } from "../api/consultation.js";
 import { fetchBodyLocations } from "../api/clips.js";
 import { speakResponse } from "../api/speech.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/consultation.js", () => ({ captionUtterance: vi.fn() }));
 vi.mock("../api/speech.js", async (importOriginal) => {
@@ -79,6 +80,9 @@ const filmedLocations = [
 ];
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   // The transcript persists on the device now, so it has to be cleared between
   // tests or one consultation's record leaks into the next.
   localStorage.clear();

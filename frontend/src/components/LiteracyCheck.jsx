@@ -83,8 +83,12 @@ export default function LiteracyCheck({ onDecided }) {
         </p>
       ) : null}
 
+      {/* Named, because this screen now holds three players: the question, and
+          the sign on each of the two answers. "The sign video" is no longer
+          unambiguous, and a test that meant the question was picking whichever
+          happened to have loaded first. */}
       {status === "ready" ? (
-        <div className="literacy__video">
+        <div className="literacy__video" data-testid="literacy-prompt">
           <SignSequencePlayer sequence={singleClipSequence(promptClip)} />
         </div>
       ) : null}
@@ -109,7 +113,7 @@ export default function LiteracyCheck({ onDecided }) {
         </p>
       ) : null}
 
-      {status !== "loading" ? <YesNoChoice onChoose={choose} /> : null}
+      {status !== "loading" ? <YesNoChoice onChoose={choose} signed /> : null}
     </section>
   );
 }
