@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { claimPlayback } from "../signs/playbackPriority.js";
+
 /**
  * Track whether a sign video can actually play yet, so the wait can be shown.
  *
@@ -22,6 +24,11 @@ import { useEffect, useRef, useState } from "react";
  * things to whoever is watching: one is "it has not started", the other is
  * "it stopped part way", and a patient who sees the same message for both
  * cannot tell whether they missed a sign.
+ *
+ * While a video is in either of those states, this also claims the connection
+ * from the clip warm up, which would otherwise be downloading the rest of the
+ * library over the top of the one clip somebody is waiting for. See
+ * signs/playbackPriority.js and ADR 057.
  */
 export default function useVideoReadiness({ source, graceMs = 250 } = {}) {
   const [phase, setPhase] = useState("preparing");
@@ -51,6 +58,16 @@ export default function useVideoReadiness({ source, graceMs = 250 } = {}) {
     timer.current = setTimeout(() => setWaitedLongEnough(true), graceMs);
     return () => clearTimeout(timer.current);
   }, [phase, source, graceMs]);
+
+  // The warm up stands aside while this clip is still loading. Released the
+  // moment it can play, or fails, or the screen goes: holding it any longer
+  // would stop the library ever being stocked.
+  useEffect(() => {
+    if (!source || phase === "ready" || phase === "failed") return undefined;
+
+    const release = claimPlayback();
+    return release;
+  }, [source, phase]);
 
   return {
     phase,

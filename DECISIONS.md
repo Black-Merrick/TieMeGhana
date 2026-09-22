@@ -2763,3 +2763,71 @@ sixteen of its signs before it will show at all. Seven rows that held only
 placeholder footage were deleted with it (`ABOUT`, `APPEAR`, `ASK`, `FEELING`,
 `HOW_ARE_YOU_DOING`, `WHAT_IS_YOUR_NAME`, `WHO_ARE_YOU`); they are worth
 refilming, and the importer creates the rows again when they are.
+
+---
+
+## ADR 057: The clip warm up stands aside for the clip somebody is watching
+
+**Status:** accepted, built and measured.
+
+**Context.** Reported from real use, with the new library in place: a sign took
+so long to appear that "Getting ready to sign" sat on both devices for many
+seconds, and the obvious objection was the right one, since the app is supposed
+to have saved the clips on the device already.
+
+Measured rather than guessed, in real Chrome against the real bucket:
+
+| | |
+| --- | --- |
+| A clip already in the cache | **11 ms** |
+| A clip fetched with nothing else going on | ~800 ms |
+| A clip fetched while the warm up was running | **2.4 s**, and 20 s+ once the warm up was in full flow |
+| The whole library warmed | 19 of 64 clips after 82 seconds |
+
+The connection was about 150 KB a second, and the same from cdnjs and jsdelivr
+as from the bucket, so it is the line rather than anything about R2. The library
+had just gone from ten mostly placeholder files, about a megabyte, to
+sixty-four real recordings at 7.6 MB (ADR 056). The warm up of ADR 052 pulls all
+of them, three at a time, and never yielded. Throughput is the same however many
+files are asked for at once, so those three downloads were taking the whole
+connection from the one clip a patient was waiting for. The caching was working
+perfectly; it was the warming that was in the way of the thing it exists to
+make fast.
+
+**Decision.** A player claims the connection while its video is still loading,
+and the warm up waits. `signs/playbackPriority.js` is a counter with
+`claimPlayback()` and `whenNobodyIsWatching()`; `useVideoReadiness` claims while
+its phase is `preparing` or `buffering` and releases on `ready`, on `failed`, or
+on unmount, which covers every player in the app including the stitched path and
+the patient's phone. The warm up's workers await it before taking the next clip.
+
+Nothing is cancelled. Downloads already in flight finish, and the queue simply
+stops being fed, which is why the measured figure is about half a second rather
+than the ~800 ms of an idle line: up to three partial clips are still arriving.
+Cancelling them would free the connection a little sooner and throw away the
+bytes already paid for, which on this connection is the worse trade.
+
+**A claim expires after twenty seconds.** A video element on a stalled
+connection reports neither success nor failure, and without an expiry one of
+those would hold the warm up off for the rest of the session. The library being
+stocked slowly is a worse outcome than a brief overlap.
+
+**Result**, three runs each way, same script, same conditions: **2.4 s, 1.3 s and
+3.4 s before; 0.46 s, 0.48 s and 0.60 s after.** A clip already stored is
+unchanged at 11 ms.
+
+**A bug this found.** Adding an await inside the warm up's worker loop made an
+existing race likely: another worker could empty the queue while this one was
+standing aside, so `queue.shift()` returned `undefined` and it fetched
+`undefined` as a URL. It was reachable before this change too, through the quota
+check's await, just far less often. The worker now stops when the queue has been
+drained under it.
+
+**Known limit, and what would actually fix it.** The whole library is 7.6 MB, so
+on a 150 KB per second line it still takes over a minute to stock, and during
+that minute each new sign costs about half a second rather than 11 ms. Nothing
+here changes that: it is 7.6 MB over a slow line. The only real levers are
+filming shorter takes or encoding smaller, and encoding smaller trades against
+the legibility of fingers in motion, which is a clinical judgment and not one to
+take quietly. `MAX_DIMENSION` and `CRF` in `clips/compression.py` are where it
+would be done.

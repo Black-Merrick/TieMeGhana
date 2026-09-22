@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { crossOriginFor, forgetMediaCors } from "../signs/mediaCors.js";
+import {
+  claimPlayback,
+  resetPlaybackPriority,
+} from "../signs/playbackPriority.js";
 import { MEDIA_CACHE, precacheClips } from "../signs/precacheClips.js";
 
 vi.mock("../api/clips.js", () => ({ fetchResolvableClips: vi.fn() }));
@@ -29,6 +33,7 @@ function installCaches(cache) {
 
 beforeEach(() => {
   forgetMediaCors();
+  resetPlaybackPriority();
   vi.restoreAllMocks();
   delete globalThis.caches;
   delete globalThis.navigator.storage;
@@ -523,5 +528,86 @@ describe("telling the player what the server allows", () => {
     await precacheClips();
 
     expect(crossOriginFor("/media/clips/ask.mp4")).toBeUndefined();
+  });
+});
+
+describe("standing aside for the clip somebody is watching", () => {
+  /**
+   * The bucket serves about 150 KB a second however many files are asked for
+   * at once, so warming the library takes the whole connection from a sign the
+   * doctor has just sent. Measured: a stored clip plays in 11 ms, and the same
+   * clip fetched while the warm up ran did not arrive within twenty seconds.
+   */
+
+  function respondSlowly() {
+    const requested = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      requested.push(url);
+      return { ok: true, type: "cors", status: 200, clone: () => ({}) };
+    });
+    return requested;
+  }
+
+  it("fetches nothing more while a clip is being waited on", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("A", "https://bucket/clips/a.mp4"),
+      CLIP("B", "https://bucket/clips/b.mp4"),
+      CLIP("C", "https://bucket/clips/c.mp4"),
+      CLIP("D", "https://bucket/clips/d.mp4"),
+    ]);
+    const requested = respondSlowly();
+    const release = claimPlayback();
+
+    const warming = precacheClips();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // The first is fetched alone, deliberately, to learn whether the server
+    // allows the page to keep what it sends. Nothing after it goes out.
+    expect(requested).toHaveLength(1);
+
+    release();
+    await warming;
+    expect(requested).toHaveLength(4);
+  });
+
+  it("carries on at full speed when nobody is watching", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue([
+      CLIP("A", "https://bucket/clips/a.mp4"),
+      CLIP("B", "https://bucket/clips/b.mp4"),
+    ]);
+    const requested = respondSlowly();
+
+    await precacheClips();
+
+    expect(requested).toHaveLength(2);
+  });
+
+  it("stops for a clip that starts loading part way through", async () => {
+    installCaches(fakeCache());
+    fetchResolvableClips.mockResolvedValue(
+      Array.from({ length: 8 }, (_, index) =>
+        CLIP(`C${index}`, `https://bucket/clips/${index}.mp4`),
+      ),
+    );
+
+    let release = null;
+    const requested = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      requested.push(url);
+      // Somebody sends a sign once the warm up is under way.
+      if (requested.length === 2) release = claimPlayback();
+      return { ok: true, type: "cors", status: 200, clone: () => ({}) };
+    });
+
+    const warming = precacheClips();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(requested.length).toBeLessThan(8);
+
+    release();
+    await warming;
+    expect(requested).toHaveLength(8);
   });
 });
