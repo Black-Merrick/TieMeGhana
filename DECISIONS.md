@@ -2876,3 +2876,54 @@ cropped torso to 278px tall showing the whole sign.
 **`cover` is never right for a sign.** A photograph of a medicine box cropped
 to a thumbnail loses nothing that matters, and those rules are unchanged. A
 sign cropped loses the hands, which is the part that carries the meaning.
+
+---
+
+## ADR 059: Yes and No are shown as the signs for them
+
+**Status:** accepted, built.
+
+**Context.** The app asks a patient to answer yes or no in four places: the
+literacy check, a guided question on a shared device, the same question on the
+doctor's device, and the same question on the patient's own phone. Until the
+footage existed, each option carried a drawn tick or cross, which ADR 047
+accepted as the mark a patient acts on. A tick is a convention the patient has
+to already share, though, and FR 2.1 asks the literacy check in particular to
+put its question without depending on text. With `yes.mp4` and `no.mp4` now
+filmed and approved (ADR 056), the button can say it in the patient's own
+language.
+
+**Decision.** `YesNoChoice` takes a `signed` prop. Where it is set, each option
+plays the GhSL clip for that answer in place of the drawing, silent, looping and
+without controls, exactly as the emergency alert cards do; the bilingual label
+stays underneath. The clips are fetched by gloss through the ordinary endpoint,
+so the review gate applies: a sign that is missing, unfilmed or unapproved is a
+404, and the option keeps its drawing. Neither the tap target nor the answer
+recorded changes.
+
+**Not everywhere the control appears.** `DeviceChoice` asks the doctor whether
+the patient has their own phone. That is an English question about logistics,
+and putting it to the doctor in GhSL would be decoration pretending to be
+communication, so `signed` is off by default and set at the four places a
+patient is the one answering.
+
+**Fetched once and shared.** The two clips appear on the literacy check, on
+every guided question, and on the phone, and a request per screen is a round
+trip each on a connection that has none to spare. The module holds one promise
+for the session, with `forgetYesNoSigns()` for tests, the same shape as
+`forgetMediaCors`. Tests that render these screens call it, because a cache that
+outlives a case would hand the next one clips its own mock never returned.
+
+**The waiting message is hidden on a card sized player.** At about six rems
+wide, "Waiting for the rest of the video" wrapped to five lines over the clip
+and read as a fault rather than as a wait. The motion stays, which is the part
+that says the app is alive without being read, and the button's own label says
+which answer it is. The full wording belongs on the main stage, where there is
+room. The same rule covers the emergency alert cards, which had the problem
+already.
+
+**A test restated rather than deleted.** One case asserted each option contains
+an `svg`, meaning the drawing. Its intent was that an option leads with a mark
+and never with words alone, so it now accepts either the sign or the drawing.
+Weakening it to pass would have given up the one property this screen cannot
+lose: acting on an answer to a question nobody was asked.

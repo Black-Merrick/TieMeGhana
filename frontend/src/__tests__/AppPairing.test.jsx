@@ -15,6 +15,7 @@ import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 import { PeerState } from "../webrtc/peerChannel.js";
 import usePeerChannel from "../hooks/usePeerChannel.js";
 import App from "../App.jsx";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../hooks/usePeerChannel.js", () => ({ default: vi.fn() }));
 vi.mock("../api/pairing.js", async (importOriginal) => {
@@ -55,6 +56,9 @@ const close = vi.fn();
 let connection;
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   // Cleared here as well as after each test: the previous test's screen is
   // unmounted, and so sends "ended", after this file's own afterEach has run.
   send.mockClear();

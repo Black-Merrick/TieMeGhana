@@ -6,6 +6,7 @@ import GuidedInterrogationHost from "../components/GuidedInterrogationHost.jsx";
 import { captionUtterance } from "../api/consultation.js";
 import { fetchBodyLocations } from "../api/clips.js";
 import { speakResponse } from "../api/speech.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/consultation.js", () => ({ captionUtterance: vi.fn() }));
 vi.mock("../api/speech.js", async (importOriginal) => {
@@ -66,6 +67,9 @@ function fakeChannel(overrides = {}) {
 }
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   captionUtterance.mockResolvedValue(caption());
   fetchBodyLocations.mockResolvedValue([]);

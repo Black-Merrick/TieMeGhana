@@ -267,7 +267,7 @@ function YesNoAnswer({ onChoose, disabled }) {
         Tap Yes or No. You can also nod or shake your head, and the doctor will
         record what they see.
       </p>
-      <YesNoChoice onChoose={onChoose} disabled={disabled} />
+      <YesNoChoice onChoose={onChoose} disabled={disabled} signed />
     </div>
   );
 }

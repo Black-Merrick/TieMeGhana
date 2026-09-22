@@ -1322,12 +1322,43 @@ body {
 }
 
 /* The icon sits on a tinted tile inside the card, which is what gives the
-   option its weight at a glance without any text on it. */
-.choice__option svg {
+   option its weight at a glance without any text on it.
+
+   A direct child only. When the option carries a sign clip instead, the player
+   inside it has SVGs of its own, and sizing those to 6rem would blow up a
+   status spinner to the size of the button. */
+.choice__option > svg {
   width: 100%;
   max-width: 6rem;
   height: auto;
   border-radius: 0.8rem;
+}
+
+/* The sign itself, where it has been filmed, in place of the drawing. Sized to
+   about the weight the icon tile had, and hugging the clip's own shape so an
+   upright recording is not cropped or letterboxed. See ADR 058 and ADR 059. */
+.choice__clip {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  border-radius: 0.8rem;
+  overflow: hidden;
+}
+
+.choice__clip .player__stage {
+  height: 10.5rem;
+}
+
+/* In a player the size of a card, the waiting message has nowhere to go: at
+   about six rems wide "Waiting for the rest of the video" wrapped to five
+   lines over the clip and read as a fault rather than as a wait. The motion
+   stays, which is the part that says the app is alive without being read, and
+   the button's own label says which answer it is. The full wording belongs on
+   the main stage, where there is room for it. */
+.choice__clip .player__status-text,
+.alerts__clip .player__status-text {
+  display: none;
 }
 
 .choice__icon-ground {

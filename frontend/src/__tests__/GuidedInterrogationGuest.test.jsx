@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GuidedInterrogationGuest from "../components/GuidedInterrogationGuest.jsx";
 import { fetchBodyLocations } from "../api/clips.js";
 import { readTranscript } from "../transcript/transcript.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -66,6 +67,9 @@ function fakeChannel(overrides = {}) {
 }
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   fetchBodyLocations.mockResolvedValue([
     bodyLocation("HEAD", "Head"),

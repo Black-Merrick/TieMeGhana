@@ -11,6 +11,7 @@ import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
 import { PeerState } from "../webrtc/peerChannel.js";
 import usePeerChannel from "../hooks/usePeerChannel.js";
 import App from "../App.jsx";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../hooks/usePeerChannel.js", () => ({ default: vi.fn() }));
 vi.mock("../components/EmergencyTriage.jsx", () => ({
@@ -50,6 +51,9 @@ const TOKEN = "k3Jx9_-Qm2LpV8wZr5TnYA";
 const send = vi.fn();
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   send.mockClear();
   saveDoctorRole();

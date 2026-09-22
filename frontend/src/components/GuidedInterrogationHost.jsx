@@ -292,7 +292,7 @@ function YesNoAnswer({ onChoose }) {
         head. If they nod or shake, tap what you saw. Whichever comes first is
         what gets recorded, and the record says who answered.
       </p>
-      <YesNoChoice onChoose={onChoose} />
+      <YesNoChoice onChoose={onChoose} signed />
     </div>
   );
 }

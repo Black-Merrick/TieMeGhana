@@ -274,7 +274,7 @@ function YesNoAnswer({ onChoose }) {
         The patient can tap Yes or No, or nod or shake their head. If they nod,
         tap what you saw. Either way, what is tapped here is what gets recorded.
       </p>
-      <YesNoChoice onChoose={onChoose} />
+      <YesNoChoice onChoose={onChoose} signed />
     </div>
   );
 }
