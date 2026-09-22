@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   announcedEmergency,
+  announcedLiteracy,
   announcedPath,
   announcedPrescription,
 } from "../pairing/announcedScreen.js";
 import { saveGuestResume } from "../pairing/resume.js";
 import DoctorConsultationGuest from "./DoctorConsultationGuest.jsx";
 import EmergencyTriageGuest from "./EmergencyTriageGuest.jsx";
+import LiteracyCheck from "./LiteracyCheck.jsx";
 import GuidedInterrogationGuest from "./GuidedInterrogationGuest.jsx";
 import JoinAnother from "./JoinAnother.jsx";
 import PrescriptionGuest from "./PrescriptionGuest.jsx";
@@ -65,6 +67,11 @@ export default function PatientDevice({
 }) {
   const [path, setPath] = useState(PATHS.has(rememberedPath) ? rememberedPath : null);
   const [emergency, setEmergency] = useState(rememberedEmergency === true);
+  // Whether the doctor is asking the literacy question. Not remembered across
+  // a reload: it is true only while there is no answer, and the doctor's device
+  // says so again the moment this phone reconnects.
+  const [asked, setAsked] = useState(false);
+  const [answered, setAnswered] = useState(false);
   const [reference, setReference] = useState(rememberedPrescription);
   const [looking, setLooking] = useState(rememberedPrescription !== null && rememberedOpen);
   const referenceRef = useRef(rememberedPrescription);
@@ -81,6 +88,14 @@ export default function PatientDevice({
 
     const inEmergency = announcedEmergency(message);
     if (inEmergency !== undefined) setEmergency(inEmergency);
+
+    if (announcedLiteracy(message)) setAsked(true);
+    // Answered, by whichever device answered it: the doctor's next message
+    // says which consultation this is, and the question is over.
+    if (PATHS.has(announced)) {
+      setAsked(false);
+      setAnswered(false);
+    }
 
     // A prescription this phone has not seen: opened, and remembered so a
     // reload comes back to it. One it already has changes nothing.
@@ -131,6 +146,42 @@ export default function PatientDevice({
       <>
         {reconnecting}
         <PrescriptionGuest reference={reference} over={over} onBack={() => look(false)} />
+      </>
+    );
+  }
+
+  // The literacy question, asked on this phone as well as on the doctor's
+  // screen. FR 2.1: a Deaf patient cannot be asked whether they read by being
+  // shown words on a device across the room. Either device may answer it, and
+  // the doctor's device records whichever came first. See ADR 060.
+  if (asked && !path && !over) {
+    return (
+      <>
+        {away}
+        {answered ? (
+          <section className="pairing pairing--card" data-testid="literacy-answered">
+            <p className="literacy__eyebrow">
+              <span className="shell__dot shell__dot--connected" aria-hidden="true" />
+              Answer sent
+            </p>
+            <h2 className="pairing__title">Thank you</h2>
+            <p className="pairing__status" role="status">
+              <span className="pairing__pulse" aria-hidden="true" />
+              Your doctor is starting the consultation.
+            </p>
+          </section>
+        ) : (
+          <LiteracyCheck
+            onOwnPhone
+            onDecided={(chosen) => {
+              setAnswered(true);
+              channel.send({
+                type: "literacy-answer",
+                value: chosen === "literate",
+              });
+            }}
+          />
+        )}
       </>
     );
   }

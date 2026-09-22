@@ -10,7 +10,7 @@ import { isPrescriptionReference } from "../prescription/currentPrescription.js"
  * would otherwise stay on the wrong screen for as long as the doctor stayed on
  * the right one. Undefined when the message says nothing about it. See ADR 053.
  */
-const CARRIES_SCREEN = new Set(["emergency", "path", "question", "resume"]);
+const CARRIES_SCREEN = new Set(["emergency", "literacy", "path", "question", "resume"]);
 const CARRIES_PATH = new Set(["emergency", "path", "question"]);
 
 export function announcedEmergency(message) {
@@ -38,4 +38,17 @@ export function announcedPrescription(message) {
 export function announcedPath(message) {
   if (!message || !CARRIES_PATH.has(message.type)) return undefined;
   return message.path;
+}
+
+/**
+ * Whether the doctor's device is asking the literacy question right now.
+ *
+ * It is a question for the patient, FR 2.1, so it belongs on the patient's own
+ * phone as much as on the doctor's screen: a Deaf patient cannot be asked
+ * whether they read by being shown words on a device across the room. Announced
+ * only while there is no answer yet, so a phone that reconnects mid visit is
+ * sent the consultation rather than the question again. See ADR 060.
+ */
+export function announcedLiteracy(message) {
+  return message?.type === "literacy";
 }

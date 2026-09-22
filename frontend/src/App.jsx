@@ -72,6 +72,7 @@ import {
   OutputLanguage,
   endVisit,
   loadVisit,
+  saveLiteracyPath,
   saveOutputLanguage,
 } from "./visit/visit.js";
 
@@ -240,14 +241,19 @@ export default function App() {
           resume,
           prescription,
         });
-      } else if (resume) {
-        session.channel.send({
-          type: "resume",
-          resume,
-          emergency: mirroredEmergency,
-          prescription,
-        });
+        return;
       }
+
+      // The literacy question is a question for the patient, FR 2.1, so it is
+      // put on their own phone as well as on this screen. Sent last, and
+      // carrying the way back, so a phone that has just connected reads this
+      // rather than a bare `resume`. See ADR 060.
+      session.channel.send({
+        type: "literacy",
+        resume,
+        emergency: false,
+        prescription,
+      });
       return;
     }
 
@@ -292,6 +298,25 @@ export default function App() {
     session.code,
     session.token,
   ]);
+
+  // The patient answered the literacy question on their own phone.
+  //
+  // Recorded here, because this device owns the visit: the phone has none to
+  // write into, and two windows of one browser sharing storage while this is
+  // tested on a laptop must not write each other's. Only while there is no
+  // answer yet, so a tap that was already on its way when the doctor recorded
+  // one of their own cannot overwrite it. Whichever came first is the answer,
+  // as it is for a guided question. See ADR 060.
+  useEffect(() => {
+    const message = session.channel.lastMessage;
+    if (message?.type !== "literacy-answer" || visit) return;
+    if (typeof message.value !== "boolean") return;
+
+    const path = message.value ? LiteracyPath.LITERATE : LiteracyPath.GUIDED;
+    saveLiteracyPath(path);
+    setVisit(loadVisit());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.channel.lastMessage]);
 
   // The literacy check, which is what the app opens into before a visit
   // exists. `visit` alone would be enough, since the prescription builder is

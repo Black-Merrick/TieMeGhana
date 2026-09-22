@@ -2927,3 +2927,59 @@ an `svg`, meaning the drawing. Its intent was that an option leads with a mark
 and never with words alone, so it now accepts either the sign or the drawing.
 Weakening it to pass would have given up the one property this screen cannot
 lose: acting on an answer to a question nobody was asked.
+
+---
+
+## ADR 060: The literacy question is asked on the patient's phone too
+
+**Status:** accepted, built.
+
+**Context.** In a paired visit the literacy check appeared only on the doctor's
+device. The patient's phone said "You are connected to your doctor. Waiting for
+the doctor to begin." That is the wrong way round: FR 2.1 to FR 2.3 make this a
+question *for the patient*, about whether they read, and it is the most
+important branch in the app. Asking a Deaf patient whether they read by holding
+a screen across the room at them, and then recording an answer on that screen,
+is the failure the literacy check exists to prevent.
+
+**Decision.** The doctor's device announces `{type:"literacy"}` while a paired
+phone is connected and no answer exists yet, and the phone shows the same
+question: the sign video, the printed question (ADR 047), and the two answers
+carrying the YES and NO signs (ADR 059). Either device may answer it. It is the
+same pattern as emergency mode and the prescription: the doctor's device is the
+authority, the message carries the way back and whatever else says where the
+phone should be, and the phone follows.
+
+**One component, two devices.** `LiteracyCheck` takes `onOwnPhone` rather than
+being copied into a guest version, because the difference is two small things
+and both follow from whose device it is:
+
+- The notice about unfilmed footage is staff facing, an instruction to ask in
+  person. On the patient's own phone it would be words about them, to them, for
+  no purpose they can act on.
+- The answer is not written there. The doctor's device owns the visit; the phone
+  reports the tap and that device records it. This also keeps one browser's two
+  windows from writing each other's visits while the app is tested on a single
+  laptop, which is how the team tests it.
+
+**Whichever came first is the answer.** The doctor can still tap what they
+observed, as FR 2.7 allows for a guided question. A `literacy-answer` arriving
+when a visit already exists is ignored rather than applied, so a tap that was
+already on its way cannot overwrite an answer the doctor has just recorded. Only
+a boolean is believed.
+
+**Nothing new is remembered.** The phone does not store that it was asked. The
+question is announced exactly while there is no answer, so a phone that reloads
+or reconnects is told again if the question is still open, and is sent its path
+if it is not. That is one less thing that can be stale.
+
+**Verified** on two real devices: the question and both signs appear on the
+phone, the staff notice does not, a tap there opens the guided consultation on
+the doctor's device, and the phone follows to it.
+
+**A test artefact worth recording.** The first run showed both signs failing on
+the phone. The cause was entirely my setup: the throwaway backend was copied
+without `.env`, so it had no bucket credentials, fell back to local media paths,
+and had no `media/` directory either. The app was right and the harness was
+wrong, which is the failure mode to be most careful about when a screenshot is
+the evidence.

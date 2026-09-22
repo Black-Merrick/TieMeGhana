@@ -24,8 +24,16 @@ import YesNoChoice from "./YesNoChoice.jsx";
  * is the question, the text is a second rendering of the same question for
  * whoever can use it, and neither the answer options nor the routing depend on
  * anyone reading anything.
+ *
+ * `onOwnPhone` is the same screen on the patient's own device in a paired
+ * visit. Two things differ, and both follow from whose device it is. The notice
+ * about unfilmed footage is staff facing, an instruction to ask in person, so
+ * it is not shown to the patient. And the answer is not recorded here: the
+ * doctor's device owns the visit, so the phone reports the tap and that device
+ * writes it, which is also what keeps one browser's two windows from writing
+ * each other's visits while this is tested on one laptop. See ADR 060.
  */
-export default function LiteracyCheck({ onDecided }) {
+export default function LiteracyCheck({ onDecided, onOwnPhone = false }) {
   const [promptClip, setPromptClip] = useState(null);
   const [status, setStatus] = useState("loading");
 
@@ -55,8 +63,9 @@ export default function LiteracyCheck({ onDecided }) {
     const path = canReadAndWrite ? LiteracyPath.LITERATE : LiteracyPath.GUIDED;
 
     // Saved before the parent routes, so a reload mid consultation does not
-    // ask the patient the same question twice. FR 2.2.
-    saveLiteracyPath(path);
+    // ask the patient the same question twice. FR 2.2. Never on the patient's
+    // phone, which has no visit of its own to save it into.
+    if (!onOwnPhone) saveLiteracyPath(path);
     onDecided(path);
   };
 
@@ -96,7 +105,7 @@ export default function LiteracyCheck({ onDecided }) {
       {/* Staff facing, not patient facing. Until the prompt is filmed the app
           cannot ask the question itself, so it says so rather than pretending
           the patient understood a blank screen. */}
-      {status === "unavailable" ? (
+      {status === "unavailable" && !onOwnPhone ? (
         <p
           className="notice notice--warn literacy__unavailable"
           data-testid="literacy-unavailable"
