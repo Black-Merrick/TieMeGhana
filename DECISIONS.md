@@ -2658,3 +2658,108 @@ database, because `backend/.env` now points there and I had not blanked
 data was not touched, but it is the same mistake as the two before it and it is
 recorded for the same reason. Backend tests are run with
 `DATABASE_URL= R2_BUCKET= R2_ACCOUNT_ID= LANGUAGE_PROVIDER=stub`.
+
+
+---
+
+## ADR 056: Replacing the clip library is a command, and one recording can serve a phrase and an alert
+
+**Status:** accepted, built and run.
+
+**Context.** The library held placeholder footage: files of one byte, of
+seventeen bytes, copies of one test recording under six different glosses, and
+a bucket with fifty-six objects of which most were unreachable from any row.
+Real filming then arrived, sixty-two recordings at 88 MB. `import_clips` could
+add them but not remove what they replace: it matches by name, so a recording
+nobody wants keeps playing under a gloss the new folder does not mention, and
+every stored object it ever wrote stays in the bucket, paid for and listed.
+Doing it by hand across a database, a bucket and a second database is exactly
+the kind of task that goes wrong quietly.
+
+**Decision.** A command, `replace_clip_library <folder>`, that owns the whole
+operation, and refuses to do any of it until asked twice. With no `--yes` it
+prints the database and the bucket it is about to change, everything it would
+delete, every recording it would import with the kind guessed from the name,
+and stops. That first line is the point: storage and database are chosen by
+environment variables, so the same command is local or production depending on
+what it inherits, and being pointed at production while someone believed
+otherwise is the one mistake it could make.
+
+What it deletes, and what it will not:
+
+- **Every row's footage**, from the bucket and from the row, and the approval
+  with it. An approval is a consultant vouching for a particular recording, so
+  it cannot survive that recording being thrown away.
+- **Objects under `clips/` that no row points at.** Django renames rather than
+  overwrites when a name is taken, so a library replaced a few times leaves
+  copies nothing can reach.
+- **The stitched cache**, which holds sentences encoded from the old clips and
+  is addressed by the files they were made from. Every entry is stale or
+  unreachable, and it rebuilds on demand.
+- **Rows left with no footage**, *unless* they are part of the seeded catalogue,
+  which is the team's record of what still needs filming, or a reviewed alias
+  points at them, because that alias is a consultant's judgment that two words
+  are one sign and deleting the clip would take it with it.
+- **Never** `medicines/`, which holds photographs attached to real
+  prescriptions.
+
+**Two names for one recording.** Two of the sixty-two pairs were byte for byte
+identical (`afternoon.mp4` with `evening.mp4`, `of.mp4` with `off.mp4`). That is
+usually a mistake, a take reused or a file copied to the wrong name, and its
+consequence is a patient shown a sign that says something else. So identical
+files import but are left awaiting review, and `--identical-ok` is how a
+consultant says the two really are one sign in GhSL. On this library the team
+confirmed both pairs, and they were approved.
+
+**One recording, a phrase and an alert.** The footage is named for the sentence
+it says (`I_am_pregnant.mp4`) and Emergency Visual Triage looks its cards up by
+a clinical identifier (`PREGNANCY`). Importing by filename alone would have made
+the sentence a phrase clip and left the alert card without video, which is a
+regression nobody asked for. `ALERT_PHRASES` in `clips/emergency.py` names the
+link as data, and the command gives each alert its sentence's recording. Each
+row holds its own copy of the file rather than sharing one by reference, because
+an alert carries its own review and a shared reference would mean deleting the
+phrase silently emptied the alert. It costs a few hundred kilobytes. Footage
+named for the alert itself, if anybody films it, wins over the derived copy.
+
+**A test that passed locally and was wrong in the bucket.** The copy was first
+stored under the phrase's own filename, and the test asserting the two rows hold
+different objects passed, because local file storage renames around a name that
+is taken. R2 is configured with `file_overwrite: True`, so there it overwrote
+instead, and the first production run left `PREGNANCY` and `I_AM_PREGNANT`
+pointing at one object: both played, and the hazard the design was written to
+avoid was live anyway. Found by listing the bucket afterwards and comparing it
+with the rows, which is why that check is worth doing rather than trusting a
+green suite. The copy is now named after the alert (`pregnancy.mp4`), which
+cannot collide on either backend, and the test pins both names rather than only
+that they differ.
+
+**The kind is corrected, not only guessed.** `kind_for_gloss` guesses word,
+phrase or letter from a filename, but only for a new row, so a sentence once
+filed as a word would keep that kind and be matched a token at a time and never
+play. The command corrects an existing row where the filename is unambiguous,
+and leaves an alert or a prompt alone, because those are chosen by the feature
+that uses them rather than by a name.
+
+**One bucket, two databases.** Neon serves Render and local development runs on
+`db.sqlite3` against the same bucket, so the command is run once, against Neon,
+and the rows are then copied to the local database with `dumpdata` and
+`loaddata` in a transaction. Running it twice would delete the objects the first
+run uploaded, since the second database's rows do not point at them. The
+sequence is in DEPLOY.md.
+
+**Result.** 88 MB of footage became 7.6 MB, sixty-four clips ready for use
+where there had been ten, and the bucket went from fifty-six objects, mostly
+unreachable, to sixty-four that every one of them is pointed at. Verified by
+resolving sentences against the new library: the four phrases match as phrases,
+`where is your pains` reaches `WHERE_IS_YOUR_PAIN` through the plural rule of
+ADR 055, `no pain` is now signable where the negation used to stop it, and
+every clip has a real duration.
+
+**Known limits.** The alphabet is still unfilmed, so fingerspelling cannot
+complete and any word with no sign still refuses the sentence: thirty-six letter
+clips are the single largest remaining gap, and the body location grid needs all
+sixteen of its signs before it will show at all. Seven rows that held only
+placeholder footage were deleted with it (`ABOUT`, `APPEAR`, `ASK`, `FEELING`,
+`HOW_ARE_YOU_DOING`, `WHAT_IS_YOUR_NAME`, `WHO_ARE_YOU`); they are worth
+refilming, and the importer creates the rows again when they are.

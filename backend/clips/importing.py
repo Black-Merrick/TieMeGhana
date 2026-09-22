@@ -231,7 +231,7 @@ def _validated_reviewer(approve: bool, reviewer: str) -> str:
     return reviewer
 
 
-def _kind_for(gloss: str) -> str:
+def kind_for_gloss(gloss: str) -> str:
     """
     Guess a new clip's kind from its filename.
 
@@ -301,7 +301,7 @@ def _apply_import(
 
     is_new = clip is None
     if is_new:
-        clip = SignClip(gloss=gloss, kind=_kind_for(gloss))
+        clip = SignClip(gloss=gloss, kind=kind_for_gloss(gloss))
 
     # Made small on the way in, once, so every device that ever fetches it pays
     # for the small one. The checksum below is of what was uploaded, not of what
