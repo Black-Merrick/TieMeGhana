@@ -248,7 +248,7 @@ describe("learning the way back", () => {
     render(<PairingJoinScreen />);
 
     await waitFor(() =>
-      expect(loadGuestResume()).toEqual({ token: TOKEN, path: "literate", ended: false }),
+      expect(loadGuestResume()).toEqual({ token: TOKEN, path: "literate", emergency: false, prescription: null, prescriptionOpen: false, ended: false }),
     );
   });
 
@@ -604,5 +604,41 @@ describe("this phone having no network while it joins", () => {
     await joinedWith(noNetwork);
 
     expect(await screen.findByTestId("pairing-join-failed")).toBeInTheDocument();
+  });
+});
+
+describe("emergency mode on the doctor's device", () => {
+  it("is remembered, so a reload comes back to the emergency screen", async () => {
+    usePeerChannel.mockReturnValue({
+      ...connection(PeerState.CONNECTED),
+      lastMessage: { type: "emergency", emergency: true, path: "literate", resume: TOKEN },
+    });
+
+    render(<PairingJoinScreen />);
+
+    await waitFor(() => expect(loadGuestResume()).toMatchObject({ token: TOKEN, emergency: true }));
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+  });
+
+  it("is forgotten when the doctor leaves it", async () => {
+    saveGuestResume({ token: TOKEN, path: "literate", emergency: true });
+    usePeerChannel.mockReturnValue({
+      ...connection(PeerState.CONNECTED),
+      lastMessage: { type: "path", path: "literate", emergency: false },
+    });
+
+    render(<PairingJoinScreen />);
+
+    await waitFor(() => expect(loadGuestResume().emergency).toBe(false));
+  });
+
+  it("opens on the emergency screen when that is what it remembered", async () => {
+    saveGuestResume({ token: TOKEN, path: "guided", emergency: true });
+    usePeerChannel.mockReturnValue(connection(PeerState.CONNECTING));
+
+    render(<PairingJoinScreen />);
+
+    expect(await screen.findByTestId("emergency-triage-guest")).toBeInTheDocument();
+    expect(screen.getByTestId("patient-reconnecting-banner")).toBeInTheDocument();
   });
 });

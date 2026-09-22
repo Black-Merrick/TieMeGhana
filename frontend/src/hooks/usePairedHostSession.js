@@ -142,13 +142,22 @@ export default function usePairedHostSession({ enabled }) {
       });
   }, [enabled, attempt, adopt]);
 
-  // Declared before the connection's own hook on purpose. React runs an
-  // unmounting component's cleanups in declaration order, and the connection
-  // closes in its own cleanup, so this one has to run first or the message
-  // would be sent into a connection that was already gone.
+  // Declared before the connection's own hook on purpose. React runs its
+  // cleanups in declaration order, and the connection closes in its own
+  // cleanup, so this one has to run first or the message would be sent into a
+  // connection that was already gone.
+  //
+  // Only when the visit is turned off, which `enabledRef` says by the time this
+  // runs. Not whenever the app unmounts: that is also what a screen crashing, or
+  // a development server reloading a module, looks like from in here, and the
+  // phone was told the consultation had ended when nothing had ended. A page
+  // that is really going away closes the connection itself (`pagehide`) and the
+  // phone waits for it to come back, which is the right thing for a reload.
   useEffect(() => {
     if (!enabled) return undefined;
-    return () => sendRef.current?.({ type: "ended" });
+    return () => {
+      if (!enabledRef.current) sendRef.current?.({ type: "ended" });
+    };
   }, [enabled]);
 
   const channel = usePeerChannel({

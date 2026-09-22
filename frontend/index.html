@@ -11,9 +11,25 @@
       something sixteen pixels across.
     -->
     <link rel="icon" type="image/png" sizes="64x64" href="/icon-64.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <!--
+      What an iPhone or iPad uses for the home screen icon: opaque and square,
+      from tools/build_icons.py. iOS fills a transparent icon with black, so the
+      launcher icon above, which has clear corners, is not used for it.
+    -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b3d2e" />
+
+    <!--
+      iOS does not read all of the web app manifest. Older versions open a home
+      screen icon as an ordinary Safari tab, with the address bar, unless told it
+      is an app, and label it with the page title unless given a name. Newer
+      ones read the manifest but still honour these, so they are stated.
+    -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Tie Me Ghana" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta
       name="description"
       content="Hospital communication for Deaf and Hard of Hearing patients in Ghana."

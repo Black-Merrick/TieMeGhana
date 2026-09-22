@@ -26,6 +26,11 @@ const STORAGE_KEY = "tiemeghana.prescription";
 /** Matches the shape the API generates: url safe base64, per ADR 044. */
 const REFERENCE = /^[A-Za-z0-9_-]{16,64}$/;
 
+/** Whether a value is shaped like a prescription reference. */
+export function isPrescriptionReference(value) {
+  return typeof value === "string" && REFERENCE.test(value);
+}
+
 /**
  * Read the prescription that was on screen, or null if there was none.
  *

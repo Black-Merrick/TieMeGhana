@@ -423,3 +423,58 @@ real key in it is a key published to everyone who clones the repository.
 
 If a key is ever committed, rotating it is the fix. Removing it from the
 working tree is not, because it stays in the history.
+
+
+## Replacing the clip library
+
+When real footage replaces what is there, one command does the lot: it deletes
+the old recordings from the database and from the bucket, imports the folder,
+compresses each file on the way in, guesses word, phrase or letter from the
+name, and gives each emergency alert the recording of the sentence it says.
+
+    cd backend
+    python manage.py replace_clip_library ../clips \
+        --approve --reviewer "Name of the GhSL consultant" --identical-ok --yes
+
+Run it **without `--yes` first**. It prints the database and the bucket it is
+about to change, and everything it would delete and import, and stops. That
+first line is the one to read: media storage is chosen by `R2_BUCKET` and
+`R2_ACCOUNT_ID` and the database by `DATABASE_URL`, so the same command points
+at production or at a local copy depending only on the environment it inherits.
+
+- `--approve --reviewer "..."` is a consultant vouching for the signs. Without
+  it everything imports and nothing can reach a patient until someone approves
+  it in the admin, which is the safe default.
+- `--identical-ok` approves files that share their bytes with another file. Two
+  names for one recording is usually a mistake (a take reused, a file copied to
+  the wrong name), so without this flag those clips import but wait for review.
+  Pass it only when the consultant says the two really are one sign in GhSL.
+- Naming: `hurt.mp4` is a word, `i_am_pregnant.mp4` a phrase (underscores, or
+  spaces, mean a sentence), `a.mp4` a fingerspelling letter.
+
+**It is one bucket and two databases.** Neon serves Render, and local
+development uses `backend/db.sqlite3` against the same bucket. Run the command
+**once**, against Neon, then copy the rows to the local database so both point
+at the same objects. Running it twice would delete the objects the first run
+uploaded.
+
+    # from backend/, with .env holding the Neon URL
+    python manage.py dumpdata clips.SignClip clips.ClipAlias --indent 2 > /tmp/library.json
+
+    # into the local database, replacing its clip rows in one transaction
+    DATABASE_URL= python manage.py shell -c "
+    from django.core.management import call_command
+    from django.db import transaction
+    from clips.models import ClipAlias, SignClip
+    with transaction.atomic():
+        ClipAlias.objects.all().delete()
+        SignClip.objects.all().delete()
+        call_command('loaddata', '/tmp/library.json')
+    "
+
+While the command runs, the clips it has deleted are gone and the new ones are
+not up yet, so the app shows "the sign video did not load" for a few minutes.
+Do it when nobody is demonstrating.
+
+Afterwards, check `python manage.py check_media_cors --origin https://tiemeghana.netlify.app`
+still reports CORS is on, since offline replay depends on it.

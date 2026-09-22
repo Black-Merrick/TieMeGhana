@@ -73,7 +73,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
      cannot drift into two different reply forms. */
   const patientReply = (
     <PatientReply
-      busy={spoken.status === "working" || spoken.status === "playing"}
+      busy={spoken.showing}
       onReply={replyToDoctor}
       speakStatus={spoken.status}
       onReplay={spoken.canReplay ? spoken.replay : null}
@@ -90,7 +90,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
       {/* Covers the screen while the patient's answer is being spoken. One tap
           has to mean one answer: a second one queued underneath would reach
           the doctor as two sentences with nothing to say which was which. */}
-      {spoken.status === "working" || spoken.status === "playing" ? (
+      {spoken.showing ? (
         <SpeakingOverlay
           text={spoken.result?.spoken_text ?? null}
           status={spoken.status}

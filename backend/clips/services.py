@@ -11,6 +11,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from clips.inflection import base_form, blocking_reading, readings
 from clips.models import ClipAlias, ClipKind, SignClip, gloss_tokens
 from clips.safety import TokenRisk, classify
 
@@ -306,7 +307,16 @@ def resolve_sign_sequences(texts: Sequence[str]) -> list[SignSequence]:
         return [SignSequence(source_text=text, segments=()) for text in texts]
 
     wanted = {token.upper() for token in every_token}
-    word_clips = _resolvable_clips_by_gloss(ClipKind.WORD, wanted)
+
+    # The plural and "-s" readings of each word are fetched in the same query as
+    # the words themselves, so reaching BRING from "brings" costs nothing extra.
+    # They are looked up but not yet used: a word's own clip, and then a reviewed
+    # alias, come first. See ADR 055.
+    readings_of = {token: readings(token) for token in set(every_token)}
+    also_wanted = {
+        reading.upper() for found in readings_of.values() for reading in found
+    }
+    word_clips = _resolvable_clips_by_gloss(ClipKind.WORD, wanted | also_wanted)
 
     # Reviewed aliases fill the gaps a literal gloss lookup leaves, so a doctor
     # writing "doing" reaches the FEELING sign when a consultant has recorded
@@ -315,6 +325,19 @@ def resolve_sign_sequences(texts: Sequence[str]) -> list[SignSequence]:
     unmatched_terms = wanted - word_clips.keys()
     if unmatched_terms:
         word_clips |= _reviewed_alias_clips(unmatched_terms)
+
+    # Then, for a word still without a sign, the sign of the word it is the
+    # plural or "-s" form of. GhSL does not mark either, so GOES is GO and
+    # BRINGS is BRING. Under the typed word's own name, so the rest of the
+    # resolver finds it as it would any other, while the sequence still reports
+    # the word that was typed and the gloss that will be shown.
+    for token, found in readings_of.items():
+        if token.upper() in word_clips:
+            continue
+        for reading in found:
+            if reading.upper() in word_clips:
+                word_clips[token.upper()] = word_clips[reading.upper()]
+                break
 
     # The alphabet is only needed for tokens that had no sign of their own, so
     # fully covered text costs one query rather than two.
@@ -358,11 +381,15 @@ def _resolve_tokens(
     """
     longest = max((len(phrase) for phrase in phrase_clips), default=0)
 
+    # Phrases are matched on each word's base form, so "what is your names"
+    # reaches WHAT_IS_YOUR_NAME. The segment still names the words as typed.
+    comparable = [base_form(token) for token in tokens]
+
     segments: list[SignSegment] = []
     position = 0
 
     while position < len(tokens):
-        phrase = _longest_phrase_at(tokens, position, phrase_clips, longest)
+        phrase = _longest_phrase_at(comparable, position, phrase_clips, longest)
 
         if phrase is not None:
             length, clip = phrase
@@ -416,7 +443,7 @@ def _resolvable_phrase_clips() -> dict[tuple[str, ...], SignClip]:
     letting the two drift.
     """
     return {
-        gloss_tokens(clip.gloss): clip
+        tuple(base_form(token) for token in gloss_tokens(clip.gloss)): clip
         for clip in SignClip.objects.resolvable().filter(kind=ClipKind.PHRASE)
     }
 
@@ -443,6 +470,14 @@ def _resolve_token(
 
     # Both checks below come before fingerspelling, deliberately.
     risk = classify(token)
+
+    # The plural or "-s" form of a word that stops a sentence is that word for
+    # this purpose. "Stops" and "avoids" are the same instruction as "stop" and
+    # "avoid", "halves" and "doubles" the same quantity as "half" and "double",
+    # and none of them is to be fingerspelled to a patient who may not read it
+    # because the list of blocking words holds only the base form.
+    if risk == TokenRisk.CONTENT and blocking_reading(token):
+        risk = TokenRisk.BLOCKING
 
     # A blocking word is never spelled. Fingerspelling a negation to a patient
     # who may not be print literate is not a rendering of "no", and assuming

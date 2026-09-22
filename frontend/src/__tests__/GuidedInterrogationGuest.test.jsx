@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GuidedInterrogationGuest from "../components/GuidedInterrogationGuest.jsx";
 import { fetchBodyLocations } from "../api/clips.js";
 import { readTranscript } from "../transcript/transcript.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -15,9 +16,10 @@ vi.mock("../api/clips.js", async (importOriginal) => {
  *
  * No useCaption, no gate of its own: everything here arrives already safe
  * to show, per GuidedInterrogationHost's own tests. What these tests pin is
- * FR 2.7's other half: this screen never offers Yes/No buttons, only a
- * body-location grid, and it keeps its own independent transcript rather
- * than depending on the doctor's device for its FR 4.2 copy.
+ * that the patient answers here by a tap, Yes or No and where it hurts, that a
+ * question the doctor has already answered stops being offered, and that this
+ * screen keeps its own independent transcript rather than depending on the
+ * doctor's device for its FR 4.2 copy.
  */
 
 function caption(overrides = {}) {
@@ -65,6 +67,9 @@ function fakeChannel(overrides = {}) {
 }
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   fetchBodyLocations.mockResolvedValue([
     bodyLocation("HEAD", "Head"),
@@ -134,17 +139,146 @@ describe("receiving a question", () => {
   });
 });
 
-describe("FR 2.7, a Yes/No question is never answered here", () => {
-  it("shows a notice that the doctor is confirming, not buttons", async () => {
-    const channel = fakeChannel({
-      lastMessage: { type: "question", result: caption(), awaitingLocation: false },
+describe("a Yes/No question, answered here", () => {
+  const yesNoQuestion = (overrides = {}) => ({
+    type: "question",
+    result: caption(),
+    awaitingLocation: false,
+    id: "q1abc",
+    ...overrides,
+  });
+
+  async function watching(channel = fakeChannel({ lastMessage: yesNoQuestion() })) {
+    const view = render(<GuidedInterrogationGuest channel={channel} />);
+    await watchQuestion();
+    return { ...view, channel };
+  }
+
+  it("offers Yes and No for the patient to tap", async () => {
+    await watching();
+
+    expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+    expect(screen.getByTestId("choice-no")).toBeInTheDocument();
+    expect(screen.getByTestId("tap-yes-or-no")).toHaveTextContent(/nod or shake/i);
+  });
+
+  it("sends the tap for the question it was on, as the patient's own", async () => {
+    const { channel } = await watching();
+
+    fireEvent.click(screen.getByTestId("choice-yes"));
+
+    expect(channel.send).toHaveBeenCalledWith({
+      type: "answer",
+      kind: "yesno",
+      value: "Yes",
+      answeredBy: "patient",
+      for: "q1abc",
     });
-    render(<GuidedInterrogationGuest channel={channel} />);
+  });
+
+  it("sends No the same way", async () => {
+    const { channel } = await watching();
+
+    fireEvent.click(screen.getByTestId("choice-no"));
+
+    expect(channel.send).toHaveBeenCalledWith(expect.objectContaining({ value: "No", for: "q1abc" }));
+  });
+
+  it("records its own copy, as the patient's", async () => {
+    await watching();
+
+    fireEvent.click(screen.getByTestId("choice-yes"));
+
+    expect(readTranscript()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: "to_doctor", text: "Yes", answeredBy: "patient" }),
+      ]),
+    );
+  });
+
+  it("shows the answer as sent at once, and the talking face", async () => {
+    await watching();
+
+    fireEvent.click(screen.getByTestId("choice-yes"));
+
+    expect(screen.getByTestId("speaking-overlay")).toBeInTheDocument();
+    expect(screen.getByTestId("sent-reply-working")).toBeInTheDocument();
+  });
+
+  it("goes back to waiting once answered, so it cannot be answered twice", async () => {
+    await watching();
+
+    fireEvent.click(screen.getByTestId("choice-yes"));
+
+    expect(screen.getByTestId("stage-idle")).toBeInTheDocument();
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+  });
+
+  it("stops offering it when the doctor's device says it has been answered", async () => {
+    const { rerender } = await watching();
+
+    rerender(
+      <GuidedInterrogationGuest
+        channel={fakeChannel({ lastMessage: { type: "answered", id: "q1abc" } })}
+      />,
+    );
+
+    expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stage-idle")).toBeInTheDocument();
+  });
+
+  it("ignores an answered notice for some other question", async () => {
+    const { rerender } = await watching();
+
+    rerender(
+      <GuidedInterrogationGuest
+        channel={fakeChannel({ lastMessage: { type: "answered", id: "older" } })}
+      />,
+    );
+
+    expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+  });
+
+  it("does not leave a tap waiting when it was too late to count", async () => {
+    // The doctor recorded a nod a moment before. This phone's tap is told so,
+    // and must not sit on "sending" for ever.
+    const { channel, rerender } = await watching();
+    fireEvent.click(screen.getByTestId("choice-yes"));
+    expect(screen.getByTestId("speaking-overlay")).toBeInTheDocument();
+
+    rerender(
+      <GuidedInterrogationGuest
+        channel={fakeChannel({
+          send: channel.send,
+          lastMessage: { type: "answered", id: "q1abc", stale: true },
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(screen.queryByTestId("speaking-overlay")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("sent-reply")).not.toBeInTheDocument();
+  });
+
+  it("is offered again after a reload, from the question sent again", async () => {
+    await watching(fakeChannel({ lastMessage: yesNoQuestion({ resent: true }) }));
+
+    expect(screen.getByTestId("choice-yes")).toBeInTheDocument();
+  });
+
+  it("is locked while the doctor's device is being found again", async () => {
+    render(
+      <GuidedInterrogationGuest channel={fakeChannel({ lastMessage: yesNoQuestion() })} offline />,
+    );
     await watchQuestion();
 
-    expect(
-      screen.getByTestId("waiting-on-doctor-confirmation"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("choice-yes").closest(".offline-lock")).toHaveAttribute("inert");
+  });
+
+  it("falls back to waiting on the doctor for a question with no name, from an older device", async () => {
+    // Nothing to say the tap is for, so it is not offered.
+    await watching(fakeChannel({ lastMessage: yesNoQuestion({ id: undefined }) }));
+
+    expect(screen.getByTestId("waiting-on-doctor-confirmation")).toBeInTheDocument();
     expect(screen.queryByTestId("choice-yes")).not.toBeInTheDocument();
   });
 });

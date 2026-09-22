@@ -425,7 +425,17 @@ export function createPeerChannel({
     send(message) {
       const encoded = JSON.stringify(message);
       if (dataChannel?.readyState === "open") {
-        dataChannel.send(encoded);
+        try {
+          dataChannel.send(encoded);
+        } catch {
+          // The channel went out from under it between the check and the
+          // send, or its queue is full. Nothing here is worth taking the page
+          // down for, and `send` is called from effects, where a throw
+          // unmounts the whole app. Kept to go out if the channel comes back,
+          // which it does not for a closed one, and that is a drop the
+          // connection state already reports.
+          outbox.push(encoded);
+        }
       } else {
         outbox.push(encoded);
       }

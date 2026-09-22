@@ -52,6 +52,17 @@ export default function SignSequencePlayer({
   // One file for the whole sentence, when the backend could produce it.
   const stitched = sequence?.stitched_video_url ?? null;
 
+  // The shape of the clip on screen, learned from the video itself once its
+  // dimensions are known, so the stage is the shape of what is in it rather
+  // than a letterbox around it. Null until then, and the stylesheet's own
+  // default applies. See .player__stage.
+  const [shape, setShape] = useState(null);
+  const noteShape = (event) => {
+    const { videoWidth, videoHeight } = event.currentTarget;
+    if (videoWidth > 0 && videoHeight > 0) setShape(`${videoWidth} / ${videoHeight}`);
+  };
+  const stageStyle = shape ? { "--clip-shape": shape } : undefined;
+
   const [index, setIndex] = useState(0);
   const [active, setActive] = useState(0);
   const [playingSequence, setPlayingSequence] = useState(sequence);
@@ -127,7 +138,7 @@ export default function SignSequencePlayer({
   if (stitched) {
     return (
       <div className="player">
-        <div className="player__stage">
+        <div className="player__stage" style={stageStyle}>
           <video
             key={corsFor(stitched) ?? "plain"}
             data-testid="sign-video"
@@ -135,6 +146,7 @@ export default function SignSequencePlayer({
             src={stitched}
             crossOrigin={corsFor(stitched)}
             onEnded={onFinished}
+            onLoadedMetadata={noteShape}
             controls={controls}
             loop={loop}
             playsInline
@@ -170,7 +182,7 @@ export default function SignSequencePlayer({
 
   return (
     <div className="player">
-      <div className="player__stage">
+      <div className="player__stage" style={stageStyle}>
         {[0, 1].map((buffer) => {
           const isActive = buffer === active;
           // The active buffer shows the current clip. The standby buffer holds
@@ -192,6 +204,7 @@ export default function SignSequencePlayer({
               src={clip?.video_url}
               crossOrigin={corsFor(clip?.video_url)}
               onEnded={isActive ? handleEnded : undefined}
+              onLoadedMetadata={isActive ? noteShape : undefined}
               controls={controls && isActive}
               loop={loop}
               playsInline

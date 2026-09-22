@@ -50,7 +50,14 @@ const blankItem = () => ({
   preview: null,
 });
 
-export default function PrescriptionBuilder({ onLeave }) {
+export default function PrescriptionBuilder({
+  onLeave,
+  // In a paired visit: called with the reference once a prescription is issued
+  // (or found already issued), so the patient's phone can be given it, and
+  // whether that phone is there. Both null on a shared device.
+  onIssued = null,
+  patientPhone = null,
+}) {
   const [items, setItems] = useState([blankItem()]);
   // "editing", "issuing", "issued", or "restoring" while a reference found in
   // storage is being fetched back.
@@ -86,6 +93,9 @@ export default function PrescriptionBuilder({ onLeave }) {
 
         setPlaylist(restored);
         setStatus("issued");
+        // A reload on the issued screen: the phone is given it again if it was
+        // not already. The same reference changes nothing.
+        onIssued?.(restored.reference ?? reference);
       })
       .catch(() => {
         if (cancelled) return;
@@ -99,6 +109,8 @@ export default function PrescriptionBuilder({ onLeave }) {
     return () => {
       cancelled = true;
     };
+    // Once, on opening. `onIssued` is only told what was found.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = (index, field, value) => {
@@ -180,6 +192,7 @@ export default function PrescriptionBuilder({ onLeave }) {
       setPlaylist(issued);
       setStatus("issued");
       saveCurrentPrescription(issued.reference);
+      onIssued?.(issued.reference);
       vibrate(VibrationPattern.TRANSCRIPT_SAVED);
 
       // FR 6.2. Pulled into the cache now, on the hospital connection, rather
@@ -223,6 +236,27 @@ export default function PrescriptionBuilder({ onLeave }) {
           The patient scans this with their own phone. It works afterwards
           without a connection.
         </p>
+
+        {/* In a paired visit it is already on the patient's phone, and the
+            doctor is told, so the patient is not sent to scan a code on a
+            screen they are looking at. Said either way: a doctor who thinks it
+            arrived, and is wrong, is worse off than one who was never told. */}
+        {patientPhone === "connected" ? (
+          <p className="prescription__ok" data-testid="issued-on-phone">
+            It is on the patient&apos;s phone now. They can play and save the
+            videos there.
+          </p>
+        ) : null}
+        {patientPhone === "away" ? (
+          <p
+            className="prescription__warning"
+            role="status"
+            data-testid="issued-phone-away"
+          >
+            The patient&apos;s phone is not connected. It will be given the
+            prescription when it is back. They can also scan this code.
+          </p>
+        ) : null}
 
         {/* Two columns rather than one column and a scroll. The doctor is
             holding the phone up to be scanned while reading the medicines back

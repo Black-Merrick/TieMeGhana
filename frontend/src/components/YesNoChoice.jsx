@@ -1,6 +1,9 @@
 import { useState } from "react";
 
 import { VibrationPattern, vibrate } from "../feedback/vibration.js";
+import useYesNoSigns from "../hooks/useYesNoSigns.js";
+import { singleClipSequence } from "../signs/sequence.js";
+import SignSequencePlayer from "./SignSequencePlayer.jsx";
 
 /**
  * The app's single Yes and No control, SRS section 4.4.
@@ -18,8 +21,18 @@ import { VibrationPattern, vibrate } from "../feedback/vibration.js";
  * A patient who does not read sees a large green tick or a large red cross,
  * which is what they act on. The label is secondary, smaller, and never the
  * only thing in the button.
+ *
+ * With `signed`, each option shows the GhSL sign for it instead of the drawing,
+ * where that sign has been filmed and approved. A tick is a convention the
+ * patient has to already share; the sign is their own language, and FR 2.1 asks
+ * the literacy check to put its question without depending on text. The drawing
+ * stays as the fallback, so an unfilmed or unapproved sign leaves the button
+ * exactly as it was rather than empty. Off by default: the same control asks
+ * the doctor whether the patient has a phone, and that is an English question
+ * about logistics, not something to put to a patient in GhSL. See ADR 059.
  */
-export default function YesNoChoice({ onChoose, disabled = false }) {
+export default function YesNoChoice({ onChoose, disabled = false, signed = false }) {
+  const signs = useYesNoSigns({ enabled: signed });
   // Section 4.2 requires an immediate, unambiguous response to every tap.
   // Holding the choice locally is what lets the chosen option stay highlighted
   // even while the parent is still deciding what to do about it.
@@ -47,7 +60,9 @@ export default function YesNoChoice({ onChoose, disabled = false }) {
         aria-pressed={chosen === true}
         data-testid="choice-yes"
       >
-        <YesIcon />
+        <ChoiceMark clip={signed ? signs.yes : null} testid="choice-yes-sign">
+          <YesIcon />
+        </ChoiceMark>
         <span className="choice__label">
           Yes <span className="choice__label-twi" lang="tw">/ Aane</span>
         </span>
@@ -62,12 +77,35 @@ export default function YesNoChoice({ onChoose, disabled = false }) {
         aria-pressed={chosen === false}
         data-testid="choice-no"
       >
-        <NoIcon />
+        <ChoiceMark clip={signed ? signs.no : null} testid="choice-no-sign">
+          <NoIcon />
+        </ChoiceMark>
         <span className="choice__label">
           No <span className="choice__label-twi" lang="tw">/ Daabi</span>
         </span>
       </button>
     </div>
+  );
+}
+
+/**
+ * The sign, or the drawing it falls back to.
+ *
+ * Silent and looping with no controls of its own, like the emergency alert
+ * cards: the card is the tap target, and a video's controls inside a button
+ * swallow the tap.
+ */
+function ChoiceMark({ clip, testid, children }) {
+  if (!clip?.video_url) return children;
+
+  return (
+    <span className="choice__clip" data-testid={testid}>
+      <SignSequencePlayer
+        sequence={singleClipSequence(clip)}
+        controls={false}
+        loop
+      />
+    </span>
   );
 }
 

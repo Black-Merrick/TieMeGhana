@@ -8,6 +8,7 @@ import { fetchBodyLocations, fetchCriticalAlerts } from "../api/clips.js";
 import { fetchPlaylist } from "../api/prescriptions.js";
 import { saveDoctorRole } from "../pairing/role.js";
 import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
+import { forgetYesNoSigns } from "../hooks/useYesNoSigns.js";
 
 vi.mock("../api/clips.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -25,6 +26,9 @@ vi.mock("../api/prescriptions.js", async (importOriginal) => {
 });
 
 beforeEach(() => {
+  // The YES and NO signs are fetched once and shared, so one case's
+  // clips must not still be there for the next.
+  forgetYesNoSigns();
   localStorage.clear();
   // Every test below is about a doctor's device. The first screen a device
   // that has not been chosen sees is covered in AppRole.test.jsx.

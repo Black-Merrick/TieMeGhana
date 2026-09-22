@@ -279,7 +279,7 @@ whether these exist.
 | --- | --- |
 | Visual or vibration based queue call alternative | Reuses the vibration vocabulary and the tap pattern already built |
 | Expansion to Ga and Ewe | The language provider is an interface, and clip lookup is keyed on gloss, not on Twi |
-| Patient's own phone, two device visits | Built, `wip` until tried on real devices. Peer to peer WebRTC, six character code, asked before the literacy check, both paths. A reload of either device is rejoined by itself and each stays on its page. ADR 053 has the known limits: no TURN so some networks will not connect, the pairing cache is per process |
+| Patient's own phone, two device visits | Built, `wip` until tried on real devices. Peer to peer WebRTC, six character code, asked before the literacy check, both paths. A reload of either device is rejoined by itself and each stays on its page. Emergency mode opened by the doctor is mirrored onto the phone, whose taps are spoken on the doctor's device. The prescription the doctor issues is given to the phone, with its videos to play and save. ADR 053 has the known limits: no TURN so some networks will not connect, the pairing cache is per process |
 | Extension to lecture halls, churches, public service counters | The captioning plus guided question and answer model is not hospital specific |
 
 ---
@@ -292,10 +292,10 @@ solves, so they are tracked explicitly.
 | Dependency | Needed by | Status |
 | --- | --- | --- |
 | Khaya AI API key from GhanaNLP | ~~Sprint 2~~ | **resolved 2026-09-12.** All three endpoints verified live. Free tier is metered, so `LANGUAGE_PROVIDER=stub` in dev per ADR 015 |
-| **GhSL footage, about 45 clips.** The list, and the reasoning behind it, are in "The filming list" below | **the critical path.** Everything else in P0 and P1 is built and tested. Drop files in `backend/footage/` and run `import_clips`, see its README | open |
+| **GhSL footage.** The list, and the reasoning behind it, are in "The filming list" below | **the critical path.** 62 real recordings arrived 2026-09-22 and replaced the placeholders: 58 words, 4 phrases, and the two emergency alerts, 88 MB compressed to 7.6 MB. `replace_clip_library` does a whole library at once, ADR 056 and DEPLOY.md; `import_clips` adds to one. **What is left is the alphabet**, 36 letter clips, without which fingerspelling cannot complete and any word with no sign still refuses the sentence, and the 16 body locations, which the grid withholds until all of them are filmed | open, much reduced |
 | GhSL fluent consultant review of the emergency alerts | Before any public demo. Covers both the three signs themselves and ADR 040, the judgment that an unfilmed alert is still worth offering | open |
-| Two GhSL clips for the critical alerts, `cannot_breathe` and `pregnancy` | Emergency Triage works without them, per ADR 040, on the drawn icons alone. Once filmed, each clip becomes the card itself, which is what FR 5.3 asks for | open |
-| **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant. **One specific question found while building ADR 049:** `morning` and `night` are blocking, `afternoon` and `evening` are not, and nothing about the four differs clinically. Should they be classified alike, and if so, blocking? | open |
+| Two GhSL clips for the critical alerts, `cannot_breathe` and `pregnancy` | Filmed 2026-09-22 as `i_cannot_breathe.mp4` and `I_am_pregnant.mp4`, and each card is now the clip itself, which is what FR 5.3 asks for. One recording serves both the alert and the phrase a doctor can write, per ADR 056 | **resolved 2026-09-22** |
+| **Review of the safety word lists** in `clips/safety.py` | ADR 033 classifies words by what their absence does. The lists are seeded with the obvious cases and are a clinical judgment, not an engineering one. Needs the team's Deaf member and a GhSL consultant. **One specific question found while building ADR 049:** `morning` and `night` are blocking, `afternoon` and `evening` are not, and nothing about the four differs clinically. Should they be classified alike, and if so, blocking? All four are now filmed, so today the question only decides what happens when a clip is withdrawn. **A second question, from the footage of 2026-09-22:** `afternoon.mp4` and `evening.mp4` are one recording, as are `of.mp4` and `off.mp4`. The team confirmed each pair is one sign; worth a consultant's second look, since `of` and `off` sharing a sign is the surprising one | open |
 | **Reviewed aliases** for common phrasings, per ADR 034 | Lets "how are you doing" reach the FEELING sign. Each entry needs a named consultant | open |
 | A Cloudflare R2 bucket, for any deployment | Free below 10 GB and free of egress charges. Media on a container filesystem is lost on every restart, so this is required rather than preferred. Wired up in ADR 050; the four values and where to click for them are in `SETUP_GUIDE.md` | open |
 | Rate limiting on prescription issuing | ADR 044's known limitation, mitigated 2026-09-18: `PrescriptionIssueThrottle` caps issuing at 60/hour per IP, so a runaway script can no longer create rows without bound. Not a disclosure either way, since each row is readable only by its own unguessable reference | **resolved 2026-09-18** |
@@ -304,6 +304,14 @@ solves, so they are tracked explicitly.
 ---
 
 ## The filming list
+
+**As of 2026-09-22, 62 clips are filmed and approved** (ADR 056): 58 words, 4
+phrases, and both emergency alerts. The list below is what the resolver was
+measured to need, and what is still missing from it is the alphabet and the body
+locations. Seven glosses that only ever held placeholder footage were removed
+with the old library and are worth refilming: `ABOUT`, `APPEAR`, `ASK`,
+`FEELING`, `HOW_ARE_YOU_DOING`, `WHAT_IS_YOUR_NAME`, `WHO_ARE_YOU`.
+
 
 Measured rather than estimated. The resolver was run against one real
 prescription, "Paracetamol, one tablet, twice a day", under four footage

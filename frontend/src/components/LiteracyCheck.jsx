@@ -109,7 +109,7 @@ export default function LiteracyCheck({ onDecided }) {
         </p>
       ) : null}
 
-      {status !== "loading" ? <YesNoChoice onChoose={choose} /> : null}
+      {status !== "loading" ? <YesNoChoice onChoose={choose} signed /> : null}
     </section>
   );
 }

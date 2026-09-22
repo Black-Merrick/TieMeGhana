@@ -6,6 +6,7 @@ import { CaptionStage } from "./CaptionResult.jsx";
 import JoinAnother from "./JoinAnother.jsx";
 import SentReplyStatus from "./SentReplyStatus.jsx";
 import SpeakingOverlay from "./SpeakingOverlay.jsx";
+import YesNoChoice from "./YesNoChoice.jsx";
 import TranscriptView from "./TranscriptView.jsx";
 import useSpeechFeedback from "../hooks/useSpeechFeedback.js";
 import useTranscript from "../hooks/useTranscript.js";
@@ -22,10 +23,12 @@ import { Direction } from "../transcript/transcript.js";
  * back to its own device's storage, the same as the single device path
  * does, just fed by the network instead of a local API call.
  *
- * A Yes/No question is answered on the doctor's device, per FR 2.7 (see
- * GuidedInterrogationHost). This screen shows a notice instead of buttons
- * for those. "Where does it hurt" is answered here, exactly as it always
- * was the patient's own direct tap.
+ * Both kinds of question are answered here by a tap: Yes or No, and "where does
+ * it hurt". The doctor can still record what they saw a patient do, a nod or a
+ * shake of the head (FR 2.7), and whichever comes first is the answer: the
+ * doctor's device says when a question has been answered, and this screen stops
+ * offering it. A tap here is recorded as the patient's own (see
+ * GuidedInterrogationHost).
  */
 export default function GuidedInterrogationGuest({
   channel,
@@ -36,6 +39,8 @@ export default function GuidedInterrogationGuest({
   const transcript = useTranscript();
   const [result, setResult] = useState(null);
   const [awaitingLocation, setAwaitingLocation] = useState(false);
+  // Which question is on screen, so a Yes or No says what it is for.
+  const [questionId, setQuestionId] = useState(null);
   const [bodyLocations, setBodyLocations] = useState(null);
   const [ended, setEnded] = useState(false);
   // Following the tapped location while the doctor's device speaks it. See
@@ -56,6 +61,7 @@ export default function GuidedInterrogationGuest({
       speech.reset();
       setResult(message.result);
       setAwaitingLocation(Boolean(message.awaitingLocation));
+      setQuestionId(typeof message.id === "string" ? message.id : null);
       // Not for one sent again after a reconnect: this phone already has it in
       // its own record, and would otherwise show the same question twice.
       if (message.resent) return;
@@ -64,6 +70,19 @@ export default function GuidedInterrogationGuest({
         text: message.result.transcript,
         caption: message.result.caption,
       });
+    } else if (message.type === "answered") {
+      // A tap of this phone's own that was not spoken, because the question
+      // had already been answered, is not left waiting. Said whether or not
+      // this phone is still showing that question: tapping cleared it.
+      if (message.stale) speech.cancel();
+
+      // The doctor's device has the answer, from whichever device gave it. A
+      // question this phone is not showing is not its business.
+      if (!message.id || message.id === questionId) {
+        setResult(null);
+        setAwaitingLocation(false);
+        setQuestionId(null);
+      }
     } else if (message.type === "ended") {
       setEnded(true);
     }
@@ -84,6 +103,31 @@ export default function GuidedInterrogationGuest({
     });
     setResult(null);
     setAwaitingLocation(false);
+  };
+
+  /**
+   * FR 2.6 and FR 2.7, the patient's own Yes or No.
+   *
+   * Recorded here as it is tapped, like every other answer this phone gives,
+   * and sent for the doctor's device to speak and record as the patient's.
+   */
+  const chooseYesNo = (yes) => {
+    const value = yes ? "Yes" : "No";
+    transcript.record({
+      direction: Direction.TO_DOCTOR,
+      text: value,
+      answeredBy: "patient",
+    });
+    speech.begin(value);
+    channel.send({
+      type: "answer",
+      kind: "yesno",
+      value,
+      answeredBy: "patient",
+      for: questionId,
+    });
+    setResult(null);
+    setQuestionId(null);
   };
 
   if (ended || forceEnded) {
@@ -137,6 +181,8 @@ export default function GuidedInterrogationGuest({
                   locations={bodyLocations}
                   onChoose={chooseLocation}
                 />
+              ) : questionId ? (
+                <YesNoAnswer onChoose={chooseYesNo} disabled={speech.busy} />
               ) : (
                 <WaitingOnDoctorConfirmation />
               )
@@ -206,5 +252,22 @@ function WaitingOnDoctorConfirmation() {
     >
       The doctor is confirming what they observed.
     </p>
+  );
+}
+
+/**
+ * Yes and No, the same control the doctor's device has (SRS section 4.4). The
+ * doctor may also record a nod, so the line under it says so and the patient
+ * is not left wondering whether to do both.
+ */
+function YesNoAnswer({ onChoose, disabled }) {
+  return (
+    <div className="answer" data-testid="yes-no-answer">
+      <p className="asking__instruction" data-testid="tap-yes-or-no">
+        Tap Yes or No. You can also nod or shake your head, and the doctor will
+        record what they see.
+      </p>
+      <YesNoChoice onChoose={onChoose} disabled={disabled} signed />
+    </div>
   );
 }

@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 
 import { WHERE_DOES_IT_HURT } from "../api/clips.js";
 import useCaption from "../hooks/useCaption.js";
-import { clearLastQuestion, saveLastQuestion } from "../pairing/lastQuestion.js";
+import {
+  clearLastQuestion,
+  loadLastQuestion,
+  saveLastQuestion,
+} from "../pairing/lastQuestion.js";
 import CaptionProblem from "./CaptionProblem.jsx";
 import CaptionResult from "./CaptionResult.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
@@ -29,13 +33,30 @@ import { Direction } from "../transcript/transcript.js";
  * patient's device once it has cleared the gate, never before, so the
  * patient's screen can never show anything this device has not already
  * decided is safe. And a Yes/No question keeps its buttons here, because
- * FR 2.7 is specific that the answer is the doctor's own confirmation of
- * what they personally observed, not something a device across the room can
- * stand in for; only "where does it hurt" moves to the patient, since that
- * one already was the patient's own direct answer.
+ * FR 2.7 is specific that the doctor can record what they personally
+ * observed, a nod or a shake of the head, which no device across the room can
+ * stand in for.
+ *
+ * The patient can also tap Yes or No on their own phone. That is their own
+ * direct answer, like the body location, and is recorded as the patient's
+ * (`answeredBy`), so the record still says who said what. Whichever comes
+ * first is the answer: the other device is told the question has been
+ * answered, and a tap that arrives after that is not recorded.
  */
 
 const ANSWERED_BY = { PATIENT: "patient", DOCTOR: "doctor" };
+
+/** What a phone may answer a Yes/No question with. Nothing else is believed. */
+const YES_NO = new Set(["Yes", "No"]);
+
+/**
+ * A name for one question, so an answer can say which question it is for.
+ * Without it a tap on a Yes/No the doctor had already answered, or on one
+ * from before a reload, would be recorded against whatever came next.
+ */
+function newQuestionId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export default function GuidedInterrogationHost({
   outputLanguage,
@@ -48,6 +69,10 @@ export default function GuidedInterrogationHost({
   useSpeakingReports(channel, spoken);
 
   const [shownFor, setShownFor] = useState(null);
+  // The question the phone has just been told is answered, so it is sent after
+  // the report of the answer being spoken and not on top of it: the connection
+  // hands the phone only the newest of two messages that arrive together.
+  const [answeredQuestion, setAnsweredQuestion] = useState(null);
 
   const [awaitingLocation, setAwaitingLocation] = useState(
     () => loadCurrentExchange()?.awaitingLocation ?? false,
@@ -76,16 +101,43 @@ export default function GuidedInterrogationHost({
     clear();
     // Answered, so there is nothing to show a returning phone: it would find
     // a question that has already been dealt with waiting for it.
+    const answered = loadLastQuestion()?.id ?? null;
     clearLastQuestion();
+    if (answered) setAnsweredQuestion({ id: answered });
   };
 
-  // The patient's device tapped a body location and sent it back. FR 3.5
-  // still applies on two devices: the spoken confirmation has to play where
-  // the doctor can hear it, which is here, never on the tapping device.
+  // Tells the phone which question has been answered, so it stops offering
+  // Yes and No for it. Declared after `useSpeakingReports`, so it goes out after
+  // the "working" report the same answer produced.
+  useEffect(() => {
+    if (!answeredQuestion) return;
+    channel.send({ type: "answered", id: answeredQuestion.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answeredQuestion]);
+
+  // The patient's device tapped a body location, or Yes or No, and sent it
+  // back. FR 3.5 still applies on two devices: the spoken confirmation has to
+  // play where the doctor can hear it, which is here, never on the tapping
+  // device.
   useEffect(() => {
     const message = channel.lastMessage;
-    if (message?.type === "answer") {
+    if (message?.type !== "answer") return;
+
+    if (message.kind !== "yesno") {
       recordAnswer(message.value, message.answeredBy);
+      return;
+    }
+
+    // Yes or No is for the question it was tapped on, and only while that
+    // question is still open: the one kept for a returning phone, which is
+    // cleared the moment the question is answered by either device.
+    const open = loadLastQuestion();
+    if (open?.id && open.id === message.for && !open.awaitingLocation && YES_NO.has(message.value)) {
+      recordAnswer(message.value, ANSWERED_BY.PATIENT);
+    } else if (typeof message.for === "string") {
+      // Already answered, or not a question this device asked. Said so, so the
+      // phone stops waiting for it to be spoken.
+      channel.send({ type: "answered", id: message.for, stale: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel.lastMessage]);
@@ -122,6 +174,7 @@ export default function GuidedInterrogationHost({
       result: caption,
       awaitingLocation,
       path: "guided",
+      id: newQuestionId(),
     };
     channel.send(question);
     // Kept, so a phone that reloads is shown it again when it comes back.
@@ -130,7 +183,7 @@ export default function GuidedInterrogationHost({
 
   return (
     <section className="consult">
-      {spoken.status === "working" || spoken.status === "playing" ? (
+      {spoken.showing ? (
         <SpeakingOverlay
           text={spoken.result?.spoken_text ?? null}
           status={spoken.status}
@@ -235,10 +288,11 @@ function YesNoAnswer({ onChoose }) {
   return (
     <div className="answer">
       <p className="asking__instruction" data-testid="nod-instruction">
-        The patient can tap Yes or No, or nod or shake their head. If they nod,
-        tap what you saw. Either way, what is tapped here is what gets recorded.
+        The patient can tap Yes or No on their own phone, or nod or shake their
+        head. If they nod or shake, tap what you saw. Whichever comes first is
+        what gets recorded, and the record says who answered.
       </p>
-      <YesNoChoice onChoose={onChoose} />
+      <YesNoChoice onChoose={onChoose} signed />
     </div>
   );
 }

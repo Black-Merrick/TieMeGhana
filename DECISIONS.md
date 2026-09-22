@@ -1995,10 +1995,11 @@ these two devices directly" and offers to try again or to carry on with one
 shared device. It never quietly falls back to sending the consultation some
 other way.
 
-**Who answers what (FR 2.7).** A Yes/No question is the *doctor's*
-confirmation of the patient's answer, so it stays on the doctor's device, as
-it does on one shared device. A where-does-it-hurt question is the patient's
-own tap, so the body-location grid is on the patient's phone. On the literate
+**Who answers what (FR 2.7).** *Revised: see the addendum on Yes and No
+below.* A Yes/No question was first the *doctor's* confirmation of the
+patient's answer, kept on the doctor's device as on one shared device, and only
+a where-does-it-hurt question was the patient's own tap, so the body-location
+grid is on the patient's phone. On the literate
 path the patient types or taps a reply on their phone, and it is **spoken on
 the doctor's device** (FR 3.5), where the doctor is listening; the audio never
 crosses the wire, only `{text, sourceLanguage}` does, and the doctor's device
@@ -2218,6 +2219,229 @@ suite:
    app defect: real devices are unaffected, and the verification runs pass
    `--disable-features=WebRtcHideLocalIpsWithMdns`.
 
+**Addendum: emergency mode follows onto the patient's phone.**
+
+When the doctor opens Emergency Visual Triage in a paired visit, from either
+the "Reads and writes" or the "Guided Interrogation" path, the patient's phone
+goes to the emergency screen too, and goes back to the consultation when the
+doctor leaves it. The reason is FR 5: the patient points at what is wrong, and
+the doctor's device should not have to be held out to them to do it.
+
+- **The doctor's device is the authority, and the phone follows.** `App` sends
+  `{type:"emergency", emergency, path, resume}` whenever emergency mode opens or
+  closes while a phone is connected, and on every (re)connect. Leaving sends
+  `path` and then the last question again (`resent`), which is what puts the
+  phone back on the consultation as it was; the phone drops the consultation
+  screen while it is away and the resend is what rebuilds it.
+- **Carried on every state message, not only the one that announces it.** The
+  connection hands a screen only the newest message, so `emergency` (a boolean)
+  rides on `path`, `question` and `resume` as well, and while emergency is open
+  it is sent last with no question behind it. A phone that missed the
+  announcement because something else was sent in the same instant is corrected
+  by the next state message rather than staying on the wrong screen for as long
+  as the doctor stays on the right one. It is remembered on the phone
+  (`tiemeghana.guest-resume`), so a reload comes back to the emergency screen
+  while the doctor's device is found again, and the reconnect takes the same
+  ~1.5 seconds as any other.
+- **The sound is still the doctor's (FR 3.5).** A tap on the phone is sent as
+  `{type:"triage", kind, id}`: which button, never the words. The doctor's
+  device looks the words up itself (the alerts it loaded, the fixed pain scale,
+  the body map), so a message that names something it does not offer is dropped
+  and answered with a `speaking: failed`, never read aloud to whoever is
+  treating the patient. A tap is then spoken by the same `announce` a tap on
+  that device uses, through the same reviewed-Twi gate, and recorded in the
+  doctor's transcript as the patient's.
+- **The phone gets the same feedback as every other screen it has** (section 4.2):
+  the tap shown as sent at once, the talking face while the doctor's device
+  speaks, the two and one vibrations, "Say it again" (`replay`, no second
+  language call, ADR 015) and Stop. The doctor's screen says "the patient's
+  answer" rather than "your answer" while it is the one speaking.
+- **The doctor's own screen still works.** A patient who cannot use a phone is
+  exactly who emergency mode is for, so tapping on the doctor's device carries
+  on as it always did, and the doctor is told whether the phone is showing the
+  screen ("shows this screen too", or "is not connected"). Emergency stays
+  reachable with no visit and asks nothing about pairing; on a shared device
+  nothing changed.
+- **No text input, on either device (FR 5.4).** The phone has no voice picker
+  (the voice is the listener's) and no way to leave (the doctor ends it); if the
+  doctor's device goes away the phone's usual "reconnecting" line and the way
+  out it carries still apply.
+- **The two screens are one layout.** `TriagePanels` is the alerts, pain scale
+  and body, used by both; `useTriageVocabulary` loads the alerts and the fixed
+  phrases for both, and now asks again a bounded number of times if they fail
+  (2, 5, 10, then 20 seconds). Found while testing: on a phone pulled onto the
+  screen by the doctor's device a single failed request left "Critical alerts
+  could not be loaded" up for good, with no way to recover it. The pain scale and
+  body are drawn locally and never wait on it.
+
+Verified in two real browsers against a throwaway backend on both paths: the
+phone follows in about 0.4 seconds; its alert, pain and body taps are spoken on
+the doctor's device and reported back; the phone never asks the language
+service to speak; both devices survive a reload in emergency and stay on it;
+the doctor's own taps still work; leaving returns the phone to the question it
+was on.
+
+**Addendum: a screen that fails must not end the visit.**
+
+Reported from real use: the doctor pressed Emergency, the page went blank and
+the patient's phone showed "This consultation has ended". No clean browser
+reproduced it against the same servers, but the two symptoms together are what
+an error while a screen renders looks like, and the app had nothing to stop one.
+The emergency screen is fetched the first time it is opened, and a failed fetch
+(the development server rebuilding, a network that dropped just then) is such an
+error. With no error boundary it unmounted the whole app, and the connection
+held in `App` said `ended` on its way out. Reproduced deliberately in a real
+browser by making that file unreachable. Now:
+
+- **`ScreenErrorBoundary`** wraps the screens in `App` and the patient's phone.
+  A failing screen is replaced by a message ("This screen could not open"), with
+  Try again, a way back, and the error's own text tucked under "Details", so a
+  report of it says what happened. The connection and the visit carry on behind
+  it. It clears when another screen is opened.
+- **`ended` is sent only when the visit is turned off** (the next patient
+  starts, or the doctor takes the shared device), not whenever the app unmounts.
+  An unmount is also what a crash or a hot reload looks like, and the phone was
+  being told the consultation was over when it was not. A page that is really
+  going away closes its connection (`pagehide`) and the phone waits for it.
+- **The phone is sent to emergency only once the doctor's emergency screen is
+  actually showing.** Otherwise a phone could be sent to a screen the doctor's
+  device failed to open, and the patient would tap into one nobody was hearing.
+- **Split-out screens retry** their fetch (three tries) before failing, since
+  `lazy` remembers a failure for good and one bad moment made the screen
+  unopenable until a reload.
+- **`send` no longer throws** when the data channel refuses a message. It is
+  called from effects, where a throw unmounts the app.
+
+**Addendum: the prescription is given to the patient's phone.**
+
+When the doctor issues a prescription in a paired visit, it is on the patient's
+phone: the medicines to play, their videos to save, and the QR code. Before,
+the patient had to scan a code off the doctor's screen with the same phone the
+doctor was already connected to.
+
+- **Only the reference is sent.** It identifies nobody (ADR 044) and the server
+  already holds the prescription behind it. The phone fetches the medicines by
+  it and opens the same screen a scanned code opens (`PrescriptionPlayback`), so
+  the medicines, the replay, the offline caching (FR 6.2) and the saving are one
+  implementation, and a clip a consultant withdraws stops playing here too
+  (ADR 043). Nothing about the consultation crosses the connection that did not
+  before.
+- **It rides on every state message** (`prescription` beside `emergency`, on
+  `path`, `question`, `emergency` and `resume`), for the reason `emergency`
+  does: the connection hands a screen only the newest message. The doctor's
+  device keeps the reference apart from the prescription on its own screen
+  (`tiemeghana.sent-prescription`), which is forgotten when the doctor presses
+  Done, because the phone's copy is the patient's to keep. It is sent on every
+  connect and when it changes, and forgotten when the next patient starts.
+- **It opens once, then stays out of the way.** A reference the phone has not
+  seen opens the medicines. The same one sent again on a reconnect changes
+  nothing, so a patient who went back to the conversation is not pulled off it
+  each time the connection blips; a different one (the doctor issued another)
+  opens. A bar at the top of every other screen ("Your medicines are ready")
+  is the way back. Where the patient was is remembered, so a reload comes back
+  to the medicines or to the conversation as they left it. Emergency mode takes
+  precedence and the medicines are there when it is over. When the consultation
+  ends the medicines stay, and say so: they are the one thing the patient takes
+  home, and the doctor pressing New patient must not take them away.
+- **The doctor is told** whether it is on the phone ("It is on the patient's
+  phone now") or not ("The phone is not connected... they can also scan this
+  code"). A reload on the issued screen gives the phone it again.
+- **Saving works across origins now.** `<a download>` is honoured only for a
+  file on the page's own origin. The clips live on the storage bucket, so on the
+  deployed site the tap merely opened the video. Saving now fetches the file,
+  makes a blob on this origin, and saves that (`saveFile`), which needs the
+  bucket's CORS to allow the site, as offline replay already does. Each save
+  says what became of it (saving, saved and where to look, or could not be saved
+  here with a link to open the video), and gives up after 45 seconds rather than
+  saying "Saving" for ever on a stalled connection. The plain link remains for
+  when scripting is off.
+
+Verified in two real browsers: the medicines open on the phone within 100 ms of
+issuing; the video plays; a real click saves `my-prescription.mp4`, byte for byte,
+to the phone's downloads; the phone keeps it through the doctor pressing Done,
+either device reloading, and the visit ending. One limit of the test: this
+library has too few signs to stitch a medicine, so the phone's copy of the
+playlist was given real video files; the issuing, the sending and the phone's
+screens were real. Cross-origin saving was checked against another local
+origin; the deployed bucket needs its CORS policy on, as in DEPLOY.md.
+
+**Addendum: the patient taps Yes and No on their own phone.**
+
+The first version left Yes/No to the doctor's device, on a reading of FR 2.7 as
+the doctor confirming what they observed. In use that left the patient holding a
+phone that said "the doctor is confirming what they observed" and offered
+nothing to tap, while the doctor's own screen said the patient could tap.
+Corrected: the phone shows the same Yes and No control (SRS section 4.4) for
+every non-location question, and the doctor's buttons stay for what the doctor
+sees a patient do, a nod or a shake of the head. FR 2.7's point survives because
+the record says who answered: a phone's tap is recorded as `answeredBy: patient`
+and the doctor's as `doctor`, so a transcript still cannot imply the patient
+tapped something they did not.
+
+- **Whichever comes first is the answer.** Each question the doctor's device
+  sends carries an `id`, and a tap says which question it is `for`. The doctor's
+  device accepts it only while that question is still the open one (the one it
+  keeps for a returning phone, cleared the moment either device answers it), and
+  only for the values Yes and No. Anything else, a tap on a question already
+  answered, or one from before a reload, is not recorded and is answered with
+  `{type:"answered", stale:true}` so the phone does not sit on "sending".
+- **The other device is told.** When a question is answered by either device the
+  doctor's device sends `{type:"answered", id}`, after the report of the answer
+  being spoken and not on top of it (the connection hands a screen only the
+  newest of two messages that arrive together), and the phone stops offering it.
+  A tap that came too late is cancelled on the phone, with nothing claimed
+  about it.
+- **The same feedback as every other answer** (section 4.2): the tap shown as
+  sent at once, the talking face while the doctor's device speaks it, the
+  vibrations, and the answer spoken on the doctor's device (FR 3.5). A phone
+  reloaded on a waiting question is offered Yes and No again from the question
+  sent again, and its tap counts. A question from an older device with no `id` is
+  not offered, since there is nothing to say a tap is for.
+
+Verified in two real browsers on the guided path: Yes and No appear on the phone
+after the question; the patient's tap is spoken on the doctor's device and
+recorded as the patient's on both; the doctor recording a nod first takes the
+buttons off the phone and the phone records nothing of its own; a reload of the
+phone with a question waiting offers them again and the tap counts.
+
+**Addendum: the talking face lasts as long as the sentence, and installing on an iPhone.**
+
+*The talking face.* The face is the patient's only evidence that their answer is
+being said aloud, and it went as soon as the audio stopped. With the development
+service that is a fraction of a second of silence, and on the phone a report of
+"spoken" arriving just after "playing" ended it as quickly. `feedback/speechHold.js`
+estimates how long the sentence would take to say (0.5 s plus 0.35 s a word, at
+least 1.8 s, at most 10 s), and once the sound has started the face stays until
+that time has passed, on both the doctor's device (`useSpokenResponse.showing`)
+and the phone (`useSpeechFeedback`). It is a floor, never a cut-off: audio longer
+than the estimate keeps it up until it ends, a failure, a blocked sound or Stop
+takes it away at once, and where the start of the sound was not seen (the report
+of it collapsed into the next) only the 1.8 s minimum applies. The overlay
+covers the screen, so a second tap still cannot land on top of the first for the
+whole of that time. Measured in two real browsers with the silent development
+audio: "Yes" 1.9 s, five words 2.4 s, sixteen words 6.2 s.
+
+*Installing on an iPhone.* Safari on iOS has no install dialog; it is Share, then
+"Add to Home Screen", by hand, and only from Safari. What was wrong: the button
+was only in the doctor's bar, so a patient's phone at `/join`, the device most
+likely to be an iPhone, had none; the instructions opened as a panel hung off the
+button, which on a phone sits in a bar at the foot of the screen and had no room
+to open; Chrome or Firefox on an iPhone were given the same steps although only
+Safari can add to the home screen; the touch icon had transparent corners, which
+iOS fills with black; and older iOS opens a home screen icon as an ordinary
+Safari tab without the `apple-mobile-web-app-capable` tags. Now: the button is in
+the patient's header; the instructions are a sheet over the screen, rendered into
+the document body so no bar can clip it; they are for the device detected
+(Safari on iOS: Share, Add to Home Screen, Add, with the Share icon drawn;
+another browser on iOS: open the address in Safari, with a copy button; Android
+and computers as before; all of them where it cannot tell); an opaque 180 px
+`apple-touch-icon.png` is built from the logo's tile by `tools/build_icons.py`;
+the iOS web app tags and a manifest `id` and `scope` are set. It also says the
+installed app starts fresh, because on iOS a home screen app does not share
+Safari's storage: install before a consultation, not in the middle of one.
+Verified in a real browser presenting an iPhone's user agent; **not on a real
+iPhone**, which needs the deployed HTTPS site.
+
 **Known limits, stated rather than hidden.**
 
 - A reload is rejoined by itself, but only while the visit lives, at most four
@@ -2351,3 +2575,355 @@ objects and both reading and writing the bucket's CORS policy are refused. The
 policy to paste, and why each part is there, are in DEPLOY.md, and
 `manage.py check_media_cors` reports whether it has taken effect. As of this
 writing it has not, and the command says so.
+
+
+---
+
+## ADR 055: A plural or "-s" form of a word reaches the sign for the word
+
+**Status:** accepted, built.
+
+**Context.** GhSL, like most sign languages, does not mark plural on a noun or
+the third person on a verb: the sign for GO is the sign for GOES, and BRING is
+BRING whether one thing is brought or several. The clip library is filmed once
+per sign, and the resolver matched a typed or spoken word to a gloss exactly, so
+"brings" with only `BRING` filmed was fingerspelled letter by letter, which a
+patient who does not read print may not follow, or refused outright when the
+word could not be spelled. A doctor cannot be expected to know which form each
+clip happens to be named after.
+
+**Decision.** When a word has no clip of its own and no reviewed alias, the
+resolver looks for a clip under the word it is the plural or "-s" form of, and
+shows that one. The order is: the word's own clip, then a reviewed alias (ADR
+034), then the reading, then the safety rules, then fingerspelling. "Brings"
+shows BRING, "goes" shows GO, "pains" shows PAIN, "allergies" ALLERGY, "watches"
+WATCH, "children" CHILD. Typed and spoken text are the same thing by the time
+they reach the resolver, so both are covered. The sequence still reports the
+word as typed and the gloss that will be shown, so the doctor's read-back says
+"brings" and "BRING".
+
+**What it is not.** It is one rule, for the one ending English adds for a plural
+or a third person singular, and nothing else: no "-ing", no "-ed", no root
+guessing, and nothing in the other direction (typing "go" does not look for a
+clip named GOES). Each candidate is only ever another reading of the same word
+and still has to be a filmed, approved word clip with exactly that gloss, so the
+ADR 033 property that an unreviewed sign never reaches a patient is untouched
+(tested for the reading as well as for a typed word).
+
+**Nothing that carries clinical meaning is rewritten.** This is the part that
+needed care, because a clinical app that quietly turns one word into another is
+worse than one that spells it out.
+
+- A word the safety classifier knows is never reduced. "Times" does not become
+  "time": "three times a day" would lose its frequency to a clip for TIME and
+  pass the gate as a complete sentence. The same holds for negations, numbers,
+  quantities, severities and the droppable words.
+- The other way round, the plural of a word that stops a sentence is that word
+  for safety when there is no clip: "stops", "avoids", "refuses", "doubles",
+  "halves", "nights" and "mornings" are refused like the word they are, and not
+  fingerspelled. Before this they were spelled, because the blocking list holds
+  only base forms. With a clip (STOP filmed) "stops" shows STOP and the sentence
+  is safe, since nothing is missing.
+- Words that end like a plural and are not one are left alone: `-ss`, `-us`,
+  `-is`, `-ous`, `-ics` endings (class, virus, diagnosis, nervous, arthritis),
+  anything shorter than four letters or reducing to fewer than three ("toes" is
+  not "to", "yes" is not "ye"), a short list of others ("news" is not "new",
+  "diabetes", "series"), and any word that is not plain English letters, so Twi
+  is never touched.
+- Irregular plurals are limited to the few a clinic says: children, men, women,
+  teeth, feet, mice, and has to have.
+
+**Whole phrases.** A phrase clip is named by its words (WHAT_IS_YOUR_NAME) and
+is matched on each word's base form, on both sides, so "what is your names"
+reaches it and a phrase named with a plural matches the singular.
+
+**Cost.** None extra: the readings are fetched in the same query as the words,
+so the resolver is still four queries however long the sentence, pinned by an
+existing test.
+
+**Known limits.** Which reading is right for an ambiguous form is chosen by
+order and by which clip exists ("leaves" reaches LEAVE before LEAF), where a
+consultant might choose otherwise; a form that is really a different sign in
+GhSL can be given its own clip or a reviewed alias, and either wins over the
+reading. The lists of exceptions are a starting point for the team's Deaf member
+and consultant to extend, like the safety lists themselves.
+
+**Verified** against a copy of the real clip library: "hurts" shows HURT,
+"appears" APPEAR, "asks" ASK, "how are you doings" the HOW_ARE_YOU_DOING phrase,
+and "stops" and "halves" stop the sentence.
+
+**A slip, recorded.** The first backend test run of this work went to the Neon
+database, because `backend/.env` now points there and I had not blanked
+`DATABASE_URL`. Django only creates and drops its own `test_neondb`, so the real
+data was not touched, but it is the same mistake as the two before it and it is
+recorded for the same reason. Backend tests are run with
+`DATABASE_URL= R2_BUCKET= R2_ACCOUNT_ID= LANGUAGE_PROVIDER=stub`.
+
+
+---
+
+## ADR 056: Replacing the clip library is a command, and one recording can serve a phrase and an alert
+
+**Status:** accepted, built and run.
+
+**Context.** The library held placeholder footage: files of one byte, of
+seventeen bytes, copies of one test recording under six different glosses, and
+a bucket with fifty-six objects of which most were unreachable from any row.
+Real filming then arrived, sixty-two recordings at 88 MB. `import_clips` could
+add them but not remove what they replace: it matches by name, so a recording
+nobody wants keeps playing under a gloss the new folder does not mention, and
+every stored object it ever wrote stays in the bucket, paid for and listed.
+Doing it by hand across a database, a bucket and a second database is exactly
+the kind of task that goes wrong quietly.
+
+**Decision.** A command, `replace_clip_library <folder>`, that owns the whole
+operation, and refuses to do any of it until asked twice. With no `--yes` it
+prints the database and the bucket it is about to change, everything it would
+delete, every recording it would import with the kind guessed from the name,
+and stops. That first line is the point: storage and database are chosen by
+environment variables, so the same command is local or production depending on
+what it inherits, and being pointed at production while someone believed
+otherwise is the one mistake it could make.
+
+What it deletes, and what it will not:
+
+- **Every row's footage**, from the bucket and from the row, and the approval
+  with it. An approval is a consultant vouching for a particular recording, so
+  it cannot survive that recording being thrown away.
+- **Objects under `clips/` that no row points at.** Django renames rather than
+  overwrites when a name is taken, so a library replaced a few times leaves
+  copies nothing can reach.
+- **The stitched cache**, which holds sentences encoded from the old clips and
+  is addressed by the files they were made from. Every entry is stale or
+  unreachable, and it rebuilds on demand.
+- **Rows left with no footage**, *unless* they are part of the seeded catalogue,
+  which is the team's record of what still needs filming, or a reviewed alias
+  points at them, because that alias is a consultant's judgment that two words
+  are one sign and deleting the clip would take it with it.
+- **Never** `medicines/`, which holds photographs attached to real
+  prescriptions.
+
+**Two names for one recording.** Two of the sixty-two pairs were byte for byte
+identical (`afternoon.mp4` with `evening.mp4`, `of.mp4` with `off.mp4`). That is
+usually a mistake, a take reused or a file copied to the wrong name, and its
+consequence is a patient shown a sign that says something else. So identical
+files import but are left awaiting review, and `--identical-ok` is how a
+consultant says the two really are one sign in GhSL. On this library the team
+confirmed both pairs, and they were approved.
+
+**One recording, a phrase and an alert.** The footage is named for the sentence
+it says (`I_am_pregnant.mp4`) and Emergency Visual Triage looks its cards up by
+a clinical identifier (`PREGNANCY`). Importing by filename alone would have made
+the sentence a phrase clip and left the alert card without video, which is a
+regression nobody asked for. `ALERT_PHRASES` in `clips/emergency.py` names the
+link as data, and the command gives each alert its sentence's recording. Each
+row holds its own copy of the file rather than sharing one by reference, because
+an alert carries its own review and a shared reference would mean deleting the
+phrase silently emptied the alert. It costs a few hundred kilobytes. Footage
+named for the alert itself, if anybody films it, wins over the derived copy.
+
+**A test that passed locally and was wrong in the bucket.** The copy was first
+stored under the phrase's own filename, and the test asserting the two rows hold
+different objects passed, because local file storage renames around a name that
+is taken. R2 is configured with `file_overwrite: True`, so there it overwrote
+instead, and the first production run left `PREGNANCY` and `I_AM_PREGNANT`
+pointing at one object: both played, and the hazard the design was written to
+avoid was live anyway. Found by listing the bucket afterwards and comparing it
+with the rows, which is why that check is worth doing rather than trusting a
+green suite. The copy is now named after the alert (`pregnancy.mp4`), which
+cannot collide on either backend, and the test pins both names rather than only
+that they differ.
+
+**The kind is corrected, not only guessed.** `kind_for_gloss` guesses word,
+phrase or letter from a filename, but only for a new row, so a sentence once
+filed as a word would keep that kind and be matched a token at a time and never
+play. The command corrects an existing row where the filename is unambiguous,
+and leaves an alert or a prompt alone, because those are chosen by the feature
+that uses them rather than by a name.
+
+**One bucket, two databases.** Neon serves Render and local development runs on
+`db.sqlite3` against the same bucket, so the command is run once, against Neon,
+and the rows are then copied to the local database with `dumpdata` and
+`loaddata` in a transaction. Running it twice would delete the objects the first
+run uploaded, since the second database's rows do not point at them. The
+sequence is in DEPLOY.md.
+
+**Result.** 88 MB of footage became 7.6 MB, sixty-four clips ready for use
+where there had been ten, and the bucket went from fifty-six objects, mostly
+unreachable, to sixty-four that every one of them is pointed at. Verified by
+resolving sentences against the new library: the four phrases match as phrases,
+`where is your pains` reaches `WHERE_IS_YOUR_PAIN` through the plural rule of
+ADR 055, `no pain` is now signable where the negation used to stop it, and
+every clip has a real duration.
+
+**Known limits.** The alphabet is still unfilmed, so fingerspelling cannot
+complete and any word with no sign still refuses the sentence: thirty-six letter
+clips are the single largest remaining gap, and the body location grid needs all
+sixteen of its signs before it will show at all. Seven rows that held only
+placeholder footage were deleted with it (`ABOUT`, `APPEAR`, `ASK`, `FEELING`,
+`HOW_ARE_YOU_DOING`, `WHAT_IS_YOUR_NAME`, `WHO_ARE_YOU`); they are worth
+refilming, and the importer creates the rows again when they are.
+
+---
+
+## ADR 057: The clip warm up stands aside for the clip somebody is watching
+
+**Status:** accepted, built and measured.
+
+**Context.** Reported from real use, with the new library in place: a sign took
+so long to appear that "Getting ready to sign" sat on both devices for many
+seconds, and the obvious objection was the right one, since the app is supposed
+to have saved the clips on the device already.
+
+Measured rather than guessed, in real Chrome against the real bucket:
+
+| | |
+| --- | --- |
+| A clip already in the cache | **11 ms** |
+| A clip fetched with nothing else going on | ~800 ms |
+| A clip fetched while the warm up was running | **2.4 s**, and 20 s+ once the warm up was in full flow |
+| The whole library warmed | 19 of 64 clips after 82 seconds |
+
+The connection was about 150 KB a second, and the same from cdnjs and jsdelivr
+as from the bucket, so it is the line rather than anything about R2. The library
+had just gone from ten mostly placeholder files, about a megabyte, to
+sixty-four real recordings at 7.6 MB (ADR 056). The warm up of ADR 052 pulls all
+of them, three at a time, and never yielded. Throughput is the same however many
+files are asked for at once, so those three downloads were taking the whole
+connection from the one clip a patient was waiting for. The caching was working
+perfectly; it was the warming that was in the way of the thing it exists to
+make fast.
+
+**Decision.** A player claims the connection while its video is still loading,
+and the warm up waits. `signs/playbackPriority.js` is a counter with
+`claimPlayback()` and `whenNobodyIsWatching()`; `useVideoReadiness` claims while
+its phase is `preparing` or `buffering` and releases on `ready`, on `failed`, or
+on unmount, which covers every player in the app including the stitched path and
+the patient's phone. The warm up's workers await it before taking the next clip.
+
+Nothing is cancelled. Downloads already in flight finish, and the queue simply
+stops being fed, which is why the measured figure is about half a second rather
+than the ~800 ms of an idle line: up to three partial clips are still arriving.
+Cancelling them would free the connection a little sooner and throw away the
+bytes already paid for, which on this connection is the worse trade.
+
+**A claim expires after twenty seconds.** A video element on a stalled
+connection reports neither success nor failure, and without an expiry one of
+those would hold the warm up off for the rest of the session. The library being
+stocked slowly is a worse outcome than a brief overlap.
+
+**Result**, three runs each way, same script, same conditions: **2.4 s, 1.3 s and
+3.4 s before; 0.46 s, 0.48 s and 0.60 s after.** A clip already stored is
+unchanged at 11 ms.
+
+**A bug this found.** Adding an await inside the warm up's worker loop made an
+existing race likely: another worker could empty the queue while this one was
+standing aside, so `queue.shift()` returned `undefined` and it fetched
+`undefined` as a URL. It was reachable before this change too, through the quota
+check's await, just far less often. The worker now stops when the queue has been
+drained under it.
+
+**Known limit, and what would actually fix it.** The whole library is 7.6 MB, so
+on a 150 KB per second line it still takes over a minute to stock, and during
+that minute each new sign costs about half a second rather than 11 ms. Nothing
+here changes that: it is 7.6 MB over a slow line. The only real levers are
+filming shorter takes or encoding smaller, and encoding smaller trades against
+the legibility of fingers in motion, which is a clinical judgment and not one to
+take quietly. `MAX_DIMENSION` and `CRF` in `clips/compression.py` are where it
+would be done.
+
+---
+
+## ADR 058: The sign stage takes the shape of the clip in it
+
+**Status:** accepted, built.
+
+**Context.** Reported from real use once the real footage was in: "not all the
+sign can be seen". The screenshot showed the emergency alert cards with the
+signer's head cut off at the top and the hands cut off at the bottom, which on
+a card whose whole job is to say "cannot breathe" leaves a torso.
+
+The footage is filmed on a phone held upright, 406 by 720. Two rules assumed
+otherwise, both written when the library was placeholders:
+
+- `.player__stage` was a fixed `4 / 3` box with `object-fit: contain`. Nothing
+  was lost, but an upright clip was letterboxed into a narrow strip in the
+  middle of a black rectangle, so the hands were small.
+- `.alerts__clip video` was a fixed `4 / 3` box with `object-fit: **cover**`,
+  which fills the box by cropping. That is what took the head and the hands.
+
+**Decision.** The stage is shaped by the clip rather than by an assumption
+about it. `SignSequencePlayer` reads `videoWidth` and `videoHeight` on
+`loadedmetadata` and sets `--clip-shape` on the stage; the stylesheet uses it
+as the stage's `aspect-ratio`, falling back to `4 / 3` until it is known and if
+a video never reports its size. Nothing anywhere assumes upright footage: a
+landscape clip gets a landscape stage from the same code.
+
+**Bounded by height, not width.** An upright clip given the full width of a
+desktop column would be taller than the window and push the caption and the
+answers off the screen. The stage is `height: min(52vh, 26rem)` with the width
+following from the shape, centred. Measured after: 235 by 416 on both a 1280
+wide desktop and a 390 wide phone, filling the stage exactly, with no bars.
+
+**The emergency cards hug the player.** They hold a whole `SignSequencePlayer`,
+not a bare video, so styling the video inside them fought the player's own
+layout: the first attempt produced a 126 by 224 video floating in a 271 by 416
+black wrapper. The card is now `width: fit-content` around the stage, and caps
+the stage at `14rem` tall, because those two cards sit side by side and both
+have to be reachable without scrolling. The card went from 470px tall showing a
+cropped torso to 278px tall showing the whole sign.
+
+**`cover` is never right for a sign.** A photograph of a medicine box cropped
+to a thumbnail loses nothing that matters, and those rules are unchanged. A
+sign cropped loses the hands, which is the part that carries the meaning.
+
+---
+
+## ADR 059: Yes and No are shown as the signs for them
+
+**Status:** accepted, built.
+
+**Context.** The app asks a patient to answer yes or no in four places: the
+literacy check, a guided question on a shared device, the same question on the
+doctor's device, and the same question on the patient's own phone. Until the
+footage existed, each option carried a drawn tick or cross, which ADR 047
+accepted as the mark a patient acts on. A tick is a convention the patient has
+to already share, though, and FR 2.1 asks the literacy check in particular to
+put its question without depending on text. With `yes.mp4` and `no.mp4` now
+filmed and approved (ADR 056), the button can say it in the patient's own
+language.
+
+**Decision.** `YesNoChoice` takes a `signed` prop. Where it is set, each option
+plays the GhSL clip for that answer in place of the drawing, silent, looping and
+without controls, exactly as the emergency alert cards do; the bilingual label
+stays underneath. The clips are fetched by gloss through the ordinary endpoint,
+so the review gate applies: a sign that is missing, unfilmed or unapproved is a
+404, and the option keeps its drawing. Neither the tap target nor the answer
+recorded changes.
+
+**Not everywhere the control appears.** `DeviceChoice` asks the doctor whether
+the patient has their own phone. That is an English question about logistics,
+and putting it to the doctor in GhSL would be decoration pretending to be
+communication, so `signed` is off by default and set at the four places a
+patient is the one answering.
+
+**Fetched once and shared.** The two clips appear on the literacy check, on
+every guided question, and on the phone, and a request per screen is a round
+trip each on a connection that has none to spare. The module holds one promise
+for the session, with `forgetYesNoSigns()` for tests, the same shape as
+`forgetMediaCors`. Tests that render these screens call it, because a cache that
+outlives a case would hand the next one clips its own mock never returned.
+
+**The waiting message is hidden on a card sized player.** At about six rems
+wide, "Waiting for the rest of the video" wrapped to five lines over the clip
+and read as a fault rather than as a wait. The motion stays, which is the part
+that says the app is alive without being read, and the button's own label says
+which answer it is. The full wording belongs on the main stage, where there is
+room. The same rule covers the emergency alert cards, which had the problem
+already.
+
+**A test restated rather than deleted.** One case asserted each option contains
+an `svg`, meaning the drawing. Its intent was that an option leads with a mark
+and never with words alone, so it now accepts either the sign or the drawing.
+Weakening it to pass would have given up the one property this screen cannot
+lose: acting on an answer to a question nobody was asked.
