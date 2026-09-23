@@ -5304,3 +5304,113 @@ body {
     grid-template-areas: "brand install";
   }
 }
+
+/* Whose half of the screen this is, on a shared device.
+   ----------------------------------------------------
+   The device is turned between two people, and nothing on it said which half
+   belonged to whom except a small chip inside each card. This states it on the
+   surface: a heading over each column and a rule down the middle.
+
+   Only on the shared device. In a paired visit the patient's half is on their
+   own phone, so `consult--shared` is not set and none of this applies. */
+.side {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0 0.15rem 0.1rem;
+}
+
+.side__label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--colour-primary);
+}
+
+/* Shape as well as colour, so the two are told apart in bright sunlight on a
+   ward and by a colour blind clinician. */
+.side__mark {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 0.15rem;
+  border: 2px solid var(--colour-primary);
+  background: var(--colour-primary);
+}
+
+.side--patient .side__label {
+  /* Darker than --colour-amber, which is a border and icon colour and does not
+     carry enough contrast against white for small uppercase text. */
+  color: #8a5a12;
+}
+
+.side--patient .side__mark {
+  border-color: #8a5a12;
+  background: transparent;
+}
+
+.side__hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--colour-muted);
+}
+
+/* Stacked: a rule between the two halves, since there is no middle to draw a
+   line down. It goes above whichever half comes second, which is not always
+   the same one: on a phone the patient's half is deliberately first, so that
+   the video is on screen when the page opens rather than the doctor's
+   keyboard. A rule above the first half would be a line under the topbar
+   dividing nothing. */
+.consult--shared .consult__patient {
+  border-top: 1px solid var(--colour-line);
+  padding-top: 1.125rem;
+}
+
+@media (max-width: 52rem) {
+  .consult--shared .consult__patient {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .consult--shared .consult__doctor {
+    border-top: 1px solid var(--colour-line);
+    padding-top: 1.125rem;
+  }
+}
+
+@media (min-width: 62rem) {
+  /* Side by side: the rule goes between them instead, and is placed at the
+     centre of the grid rather than on either column's edge, so it sits on the
+     join however the gap changes. */
+  .consult--shared {
+    position: relative;
+    column-gap: 2.5rem;
+  }
+
+  .consult--shared::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-0.5px);
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--colour-line) 2rem,
+      var(--colour-line) calc(100% - 2rem),
+      transparent
+    );
+  }
+
+  .consult--shared .consult__doctor,
+  .consult--shared .consult__patient {
+    border-top: 0;
+    padding-top: 0;
+  }
+}

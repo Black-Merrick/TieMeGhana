@@ -5,6 +5,7 @@ import useCaption from "../hooks/useCaption.js";
 import AnswerOptionGrid from "./AnswerOptionGrid.jsx";
 import CaptionProblem from "./CaptionProblem.jsx";
 import CaptionResult from "./CaptionResult.jsx";
+import ConsultSide from "./ConsultSide.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
 import SpeakingOverlay from "./SpeakingOverlay.jsx";
 import SpokenResponse from "./SpokenResponse.jsx";
@@ -149,7 +150,7 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
   };
 
   return (
-    <section className="consult">
+    <section className="consult consult--shared">
       {/* Covers the screen while the patient's answer is being spoken. One tap
           has to mean one answer: a second one queued underneath would reach
           the doctor as two sentences with nothing to say which was which. */}
@@ -165,6 +166,7 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
           the patient watches and answers on the right. The patient's half is
           all taps here rather than typing, per section 4.3. */}
       <div className="consult__doctor">
+        <ConsultSide side="doctor" />
         <DoctorUtteranceForm
           onSend={askFreely}
           busy={status === "working"}
@@ -194,6 +196,7 @@ export default function GuidedInterrogation({ outputLanguage, onOutputLanguageCh
       </div>
 
       <div className="consult__patient">
+        <ConsultSide side="patient" />
         {status === "working" ? (
           <p className="consultation__working" data-testid="working-indicator">
             <span className="consultation__pulse" aria-hidden="true" />

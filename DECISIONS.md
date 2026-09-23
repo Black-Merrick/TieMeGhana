@@ -2983,3 +2983,45 @@ without `.env`, so it had no bucket credentials, fell back to local media paths,
 and had no `media/` directory either. The app was right and the harness was
 wrong, which is the failure mode to be most careful about when a screenshot is
 the evidence.
+
+---
+
+## ADR 061: The shared device says which half belongs to whom
+
+**Status:** accepted, built.
+
+**Context.** On one device the doctor types on the left and the patient reads
+and answers on the right, and nothing on the screen said so. Each card carried
+a small role chip — "DOCTOR · Message for the patient", "PATIENT · Your reply" —
+but a chip inside a card is not a division of the screen: it is small, it
+scrolls away with the card, and it asks the reader to work out the rule from an
+example. The device is physically turned between two people several times in a
+consultation, and one of them may not read English at all.
+
+**Decision.** The division is stated on the surface. A heading over each column
+names the side and says what it is for, and a rule runs down the middle between
+them. SRS section 4.1 asks for the state of the consultation to be permanently
+visible rather than inferred, and on a shared device the most basic piece of
+that state is physical: which half is mine.
+
+**Shape as well as colour.** The doctor's mark is a filled square and the
+patient's is an outlined one, in different colours. Colour alone fails in bright
+sunlight on a ward and for a colour blind clinician, which is the same reasoning
+the pain scale already uses for its faces.
+
+**Only where two people share a screen.** In a paired visit the patient's half
+is on their own phone. There is no line to draw on the doctor's screen, and a
+heading saying "Patient" over a column the patient cannot see would be a claim
+about where they are that is not true. The modifier is set by the two shared
+device screens and not by the two host screens, and a test pins that.
+
+**The rule moves with the layout.** Side by side it is drawn at the centre of
+the grid with a pseudo-element, so it sits on the join however the gap changes,
+rather than on one column's edge where it would be off centre by half the gap.
+Stacked, it becomes a horizontal rule — above whichever half comes *second*,
+which is not always the same one: below 52rem the patient's half is deliberately
+first, so that the video is on screen when the page opens rather than the
+doctor's keyboard. The first version put the rule above the patient's half at
+every width, which on a phone drew a line under the topbar dividing nothing.
+Caught by measuring the rendered page at four widths rather than by looking at
+the desktop one.
