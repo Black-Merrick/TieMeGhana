@@ -3015,6 +3015,14 @@ heading saying "Patient" over a column the patient cannot see would be a claim
 about where they are that is not true. The modifier is set by the two shared
 device screens and not by the two host screens, and a test pins that.
 
+**Heavy enough to be seen.** The first version drew the rule in
+`--colour-line`, the card border colour, faded out at both ends. On the screen
+it was there and in the room it was not: reported as "I can't see it well". It
+is now a solid two pixel line in `--colour-divide`, a colour of its own rather
+than a card's edge reused, because this one divides a device between two people
+and has to read across a room and in ward lighting. The same weight is used for
+the stacked rule.
+
 **The rule moves with the layout.** Side by side it is drawn at the centre of
 the grid with a pseudo-element, so it sits on the join however the gap changes,
 rather than on one column's edge where it would be off centre by half the gap.

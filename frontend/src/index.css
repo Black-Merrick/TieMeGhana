@@ -39,6 +39,11 @@
   --colour-cream: #fffdf5;
   --colour-inset: #f8fafc;
   --colour-line: #e6ebef;
+  /* The seam between the doctor's half of a shared screen and the patient's.
+     Deliberately heavier than --colour-line, which is a card's edge: this one
+     divides the device between two people and has to be seen across a room and
+     in ward lighting, not merely separate two boxes. */
+  --colour-divide: #9dbdb0;
   /* Fields get a darker hairline than cards do. A card's edge only has to
      separate it from the page, but a box someone is meant to type into has to
      announce itself, and at the card border's weight it read as a flat panel
@@ -5366,7 +5371,7 @@ body {
    keyboard. A rule above the first half would be a line under the topbar
    dividing nothing. */
 .consult--shared .consult__patient {
-  border-top: 1px solid var(--colour-line);
+  border-top: 2px solid var(--colour-divide);
   padding-top: 1.125rem;
 }
 
@@ -5377,7 +5382,7 @@ body {
   }
 
   .consult--shared .consult__doctor {
-    border-top: 1px solid var(--colour-line);
+    border-top: 2px solid var(--colour-divide);
     padding-top: 1.125rem;
   }
 }
@@ -5397,15 +5402,10 @@ body {
     top: 0;
     bottom: 0;
     left: 50%;
-    width: 1px;
-    transform: translateX(-0.5px);
-    background: linear-gradient(
-      to bottom,
-      transparent,
-      var(--colour-line) 2rem,
-      var(--colour-line) calc(100% - 2rem),
-      transparent
-    );
+    width: 2px;
+    transform: translateX(-1px);
+    border-radius: 2px;
+    background: var(--colour-divide);
   }
 
   .consult--shared .consult__doctor,
