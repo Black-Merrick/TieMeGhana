@@ -334,7 +334,7 @@ const children = [
         ),
       ]),
       bullet(
-        "Open both devices, let the clip library finish downloading, and check the toast says the videos are saved. A cold device fetches 7.6 MB before anything plays smoothly.",
+        "Open both devices, let the clip library finish downloading, and check the toast says the videos are saved. A cold device fetches 8.5 MB before anything plays smoothly.",
       ),
       bullet(
         "Pair the two devices once and leave them paired. The code lasts ten minutes; if it lapses, re-pair before you are admitted, not on camera.",
@@ -369,10 +369,10 @@ const children = [
           para("Two devices paired directly, reconnecting by themselves in about 1.6 seconds", { spacing: { after: 40 } }),
           para("Emergency Visual Triage, mirrored to the patient's phone", { spacing: { after: 40 } }),
           para("Prescriptions with QR, saved to the phone, playable offline", { spacing: { after: 40 } }),
-          para("64 reviewed GhSL clips; refusal when a sentence cannot be signed safely", { spacing: { after: 0 } }),
+          para("70 reviewed GhSL clips; refusal when a sentence cannot be signed safely", { spacing: { after: 0 } }),
         ],
         [
-          para("The fingerspelling alphabet is not filmed yet — 36 clips. Until then, a word with no sign stops the sentence instead of being spelled out.", { spacing: { after: 60 } }),
+          para("The fingerspelling alphabet is still unusable — one letter of 35 is filmed. Spelling a word needs every one of its letters, so until the rest exist a word with no sign stops the sentence instead of being spelled out.", { spacing: { after: 60 } }),
           para("The body-location grid needs all 16 signs before it will show. We withhold it deliberately rather than offer three body parts when the pain is in a fourth.", { spacing: { after: 60 } }),
           para("Clinical sign-off on the sign library and on the word-safety lists is pending a GhSL consultant.", { spacing: { after: 60 } }),
           para("Some hospital networks will not allow two devices to connect directly. The app says so and offers to share one device rather than route the consultation elsewhere.", { spacing: { after: 0 } }),
@@ -512,7 +512,7 @@ const children = [
 
   h2("If it goes wrong on the day"),
   bullet(
-    "A clip does not play: say \"that one is fetching — the library is 7.6 MB and this device is cold\" and carry on with the next beat. Do not wait in silence.",
+    "A clip does not play: say \"that one is fetching — the library is 8.5 MB and this device is cold\" and carry on with the next beat. Do not wait in silence.",
   ),
   bullet(
     "The two devices will not pair: say \"this network is blocking the direct connection, which is the honest failure we designed for\", switch to the shared-device demo, and keep moving.",
@@ -528,8 +528,8 @@ const children = [
   table(
     ["Figure", "What it is"],
     [
-      ["64", "Reviewed GhSL clips live: 58 words, 4 phrases, 2 emergency alerts"],
-      ["88 MB to 7.6 MB", "The whole library, compressed on upload, so a device can hold it"],
+      ["70", "Reviewed GhSL clips live: 58 words, 9 phrases, 2 emergency alerts, 1 letter"],
+      ["102 MB to 8.5 MB", "The whole library, compressed on upload, so a device can hold it"],
       ["1,932", "Automated tests: 654 on the backend, 1,278 on the frontend"],
       ["61", "Written architecture decisions, including the mistakes"],
       ["1.6 seconds", "For a refreshed device to rejoin a consultation by itself"],
@@ -543,9 +543,14 @@ const children = [
 
   h2("Sentences that are safe to demonstrate"),
   para(
-    "These resolve against the 64 clips we have. Anything outside this vocabulary may correctly refuse.",
+    "These resolve against the 70 clips we have. Anything outside this vocabulary may correctly refuse.",
   ),
   bullet("\"where is your pain\" — plays as one filmed phrase"),
+  bullet("\"where does it hurt\" — one filmed phrase"),
+  bullet("\"do you have fever\" — one filmed phrase"),
+  bullet("\"are you vomiting\" — one filmed phrase"),
+  bullet("\"do you feel dizzy\" — one filmed phrase"),
+  bullet("\"do you have allergies\" — one filmed phrase"),
   bullet("\"do you have a similar problem before\" — one filmed phrase"),
   bullet("\"my pain is after morning\" — word by word"),
   bullet("\"no pain\" — shows that a negation is signable, not dropped"),
