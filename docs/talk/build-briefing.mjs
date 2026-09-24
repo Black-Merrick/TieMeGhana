@@ -369,7 +369,7 @@ const children = [
           para("Two devices paired directly, reconnecting by themselves in about 1.6 seconds", { spacing: { after: 40 } }),
           para("Emergency Visual Triage, mirrored to the patient's phone", { spacing: { after: 40 } }),
           para("Prescriptions with QR, saved to the phone, playable offline", { spacing: { after: 40 } }),
-          para("107 reviewed GhSL clips; refusal when a sentence cannot be signed safely", { spacing: { after: 0 } }),
+          para("108 reviewed GhSL clips; refusal when a sentence cannot be signed safely", { spacing: { after: 0 } }),
         ],
         [
           para("The fingerspelling alphabet is still unusable — 9 letters of 26 are filmed (Q and S to Z; R is missing), plus 7 digits. Spelling a word needs every one of its letters, so until the rest exist a word with no sign stops the sentence instead of being spelled out.", { spacing: { after: 60 } }),
@@ -528,7 +528,7 @@ const children = [
   table(
     ["Figure", "What it is"],
     [
-      ["107", "Reviewed GhSL clips live: 72 words, 17 phrases, 16 letters and digits, 2 emergency alerts"],
+      ["108", "Reviewed GhSL clips live: 73 words, 17 phrases, 16 letters and digits, 2 emergency alerts"],
       ["160 MB to 13.2 MB", "The whole library, compressed on upload, so a device can hold it"],
       ["1,932", "Automated tests: 654 on the backend, 1,278 on the frontend"],
       ["61", "Written architecture decisions, including the mistakes"],
@@ -543,7 +543,7 @@ const children = [
 
   h2("Sentences that are safe to demonstrate"),
   para(
-    "These resolve against the 107 clips we have. Anything outside this vocabulary may correctly refuse.",
+    "These resolve against the 108 clips we have. Anything outside this vocabulary may correctly refuse.",
   ),
   bullet("\"where is your pain\" — plays as one filmed phrase"),
   bullet("\"where does it hurt\" — one filmed phrase"),
