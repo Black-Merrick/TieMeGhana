@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tie Me Ghana — how it is built</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+
+    <!-- 1 -->
+    <section class="slide slide--title">
+      <p class="eyebrow">MTN Ghana Tekyerema Pa Hackathon 2026</p>
+      <h1>Tie&nbsp;Me&nbsp;Ghana</h1>
+      <p>
+        Hospital communication for Deaf and Hard of Hearing patients.
+        How it is built, how it works, and how the two devices talk to each other.
+      </p>
+      <div class="foot"><span>Pilot. Not yet approved for clinical use.</span><span>September 2026</span></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide">
+      <p class="eyebrow">The problem</p>
+      <h1>The literacy trap</h1>
+      <p class="lead">
+        A Deaf patient cannot hear their name called, cannot explain what happened
+        after an accident, and cannot count on an interpreter for a walk-in visit.
+      </p>
+      <div class="cols" style="margin-top:.16in">
+        <div>
+          <div class="card card--stop">
+            <h3>Pen and paper is not the fallback</h3>
+            <p>
+              Fluency in Ghanaian Sign Language does not imply fluency in written
+              English. Writing a question down excludes exactly the people the
+              system exists to serve.
+            </p>
+          </div>
+          <p style="margin-top:.16in">
+            The problem was identified by the Deaf member of our own team, from
+            personal experience. The published research corroborates it rather
+            than originates it.
+          </p>
+        </div>
+        <div>
+          <div class="card">
+            <h3>What that forces on the design</h3>
+            <ul>
+              <li>The first question cannot be asked in writing.</li>
+              <li>Every answer must reach the clinician <strong>as sound</strong>, because their eyes are on the patient.</li>
+              <li>A missing word can change a dose. Silence is safer than a guess.</li>
+              <li>It has to work on a hospital connection, and afterwards with none.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>2</span></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide">
+      <p class="eyebrow">What it does</p>
+      <h1>Two directions, and one branch</h1>
+      <div class="cols-3" style="margin-top:.10in">
+        <div class="card">
+          <h3>Doctor → patient</h3>
+          <p>
+            Typed or spoken English or Twi is captioned, then tokenised and matched
+            against reviewed GhSL clips, played as one sign video. A word with no
+            sign is fingerspelled.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Patient → doctor</h3>
+          <p>
+            Every reply, typed or tapped, is <strong>spoken aloud</strong> in Twi or
+            English on the doctor's device. The doctor hears the answer without
+            looking at the screen.
+          </p>
+        </div>
+        <div class="card">
+          <h3>The branch</h3>
+          <p>
+            A sign-video question asks whether the patient reads. Literate: free
+            captioning and typed replies. Otherwise: Guided Interrogation, a
+            reviewed question bank answered by tapping.
+          </p>
+        </div>
+      </div>
+      <div class="cols" style="margin-top:.24in">
+        <div class="card card--warn">
+          <h3>Emergency Visual Triage</h3>
+          <p>
+            Reachable before any question is answered. Pain scale, body map, critical
+            alerts. Needs no footage and no literacy answer, because a patient who
+            cannot breathe is not asked whether they read first.
+          </p>
+        </div>
+        <div class="card">
+          <h3>The prescription</h3>
+          <p>
+            Medicines become sign video plus a photograph of the box, taken home by
+            QR code or saved to the phone as a file that plays with no network.
+          </p>
+        </div>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>3</span></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide slide--section">
+      <p class="eyebrow">Part one</p>
+      <h1>The architecture</h1>
+      <p>Four pieces, and one deliberate absence.</p>
+      <div class="foot"><span>Tie Me Ghana</span><span>4</span></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide">
+      <p class="eyebrow">Architecture</p>
+      <h1>What runs where</h1>
+      <div class="cols-3" style="margin-top:.06in">
+        <div class="card">
+          <h3>The app · Netlify</h3>
+          <p>React 19 and Vite 7, shipped as a PWA. Installable, and it keeps the
+             sign videos on the device so a prescription replays at home.</p>
+        </div>
+        <div class="card">
+          <h3>The API · Render</h3>
+          <p>Django 5.2 and DRF. Five apps: <code>clips</code>,
+             <code>consultations</code>, <code>prescriptions</code>,
+             <code>pairing</code>, <code>core</code>.</p>
+        </div>
+        <div class="card">
+          <h3>Data · Neon + R2</h3>
+          <p>Postgres on Neon for the clip library and prescriptions. Cloudflare R2
+             for the video itself, because a container filesystem is lost on every
+             restart.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:.26in">
+        <h2>The absence</h2>
+        <p>
+          <strong>No consultation content is ever stored on the server.</strong>
+          Captions, answers and transcripts live on the devices. The API holds the
+          clip library, issues prescriptions, and brokers a pairing handshake. It
+          has no endpoint that could accept a transcript, and a test asserts that.
+        </p>
+        <p>
+          There is no login. Nothing here reads <code>request.user</code>, and an
+          account would defeat a patient replaying their own prescription months
+          later on their own phone.
+        </p>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>5</span></div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide">
+      <p class="eyebrow">Doctor → patient</p>
+      <h1>From a sentence to a sign video</h1>
+      <div class="flow">
+        <div class="step"><b>Text</b><span>Typed, or spoken and transcribed</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>Caption</b><span>Translated to Twi, shown as text</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>Tokenise</b><span>Contractions expanded, possessives dropped</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>Resolve</b><span>Each token to a reviewed clip</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>Gate</b><span>Safe to show, or refused</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>Play</b><span>One stitched video</span></div>
+      </div>
+
+      <div class="cols" style="margin-top:.20in">
+        <div class="card">
+          <h3>Resolution order</h3>
+          <ul>
+            <li><strong>Phrase</strong> — a whole sentence filmed as one clip wins over stitching its words.</li>
+            <li><strong>Word</strong> — the gloss itself.</li>
+            <li><strong>Reviewed alias</strong> — a consultant's judgment that two words are one sign.</li>
+            <li><strong>Plural reading</strong> — "brings" reaches BRING, because GhSL does not mark plural.</li>
+            <li><strong>Fingerspelling</strong> — letter by letter.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Two queries, whatever the sentence</h3>
+          <p>
+            Lookups are batched: word glosses and their readings in one query,
+            aliases only for what missed, the alphabet only if something needs
+            spelling, and the phrase clips. A test pins the count so a long
+            sentence cannot become a query per word.
+          </p>
+        </div>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>6</span></div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide">
+      <p class="eyebrow">The safety gate</p>
+      <h1>A missing word can change the dose</h1>
+      <p class="lead">
+        A word that cannot be signed used to be simply absent, and absence changes
+        meaning. "Do you have no pain" becomes "pain". "Take two tablets" becomes
+        "tablets".
+      </p>
+      <div class="cols-3" style="margin-top:.16in">
+        <div class="card">
+          <h3>Droppable</h3>
+          <p>Articles and copulas. GhSL does not use them, so leaving one out is
+             more natural, not broken. Reported to the doctor anyway.</p>
+        </div>
+        <div class="card card--stop">
+          <h3>Blocking</h3>
+          <p>Negations, quantities, frequencies, severities. If one cannot be
+             signed <strong>the sentence is refused</strong> rather than shown
+             without it. Never fingerspelled.</p>
+        </div>
+        <div class="card card--warn">
+          <h3>Content</h3>
+          <p>Carries the meaning. Fingerspelled if the alphabet is filmed;
+             otherwise the sentence is reported as incomplete.</p>
+        </div>
+      </div>
+      <p style="margin-top:.20in">
+        The doctor reads back what the patient will actually see — the glosses, not
+        the typed words — before anything is shown. An unreviewed clip can never
+        reach a patient: the resolver only ever sees clips a GhSL-fluent consultant
+        has approved and that have footage.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>7</span></div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide">
+      <p class="eyebrow">The clip library</p>
+      <h1>Filmed once, reviewed, made small</h1>
+      <div class="stat-row">
+        <div class="stat"><b>70</b><span>clips ready for clinical use</span></div>
+        <div class="stat"><b>102 MB</b><span>of footage as filmed</span></div>
+        <div class="stat"><b>8.5 MB</b><span>after compression on upload</span></div>
+        <div class="stat"><b>4</b><span>kinds: word, phrase, letter, alert</span></div>
+      </div>
+      <div class="cols" style="margin-top:.14in">
+        <div class="card">
+          <h3>Every clip is gated twice</h3>
+          <ul>
+            <li>It must be <strong>filmed</strong> — a row can exist before its footage does, so the library doubles as the list of what still needs recording.</li>
+            <li>It must be <strong>approved</strong> by a named GhSL consultant. New footage resets the approval, because the approval was for the recording, not the word.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Replacing the library is one command</h3>
+          <p>
+            <code>replace_clip_library</code> deletes the old footage from the
+            database and the bucket, imports a folder, compresses on the way in,
+            and guesses word, phrase or letter from the filename. It prints what
+            it would change and stops unless told <code>--yes</code>.
+          </p>
+        </div>
+      </div>
+      <p class="note">
+        Two files with identical bytes are imported but left awaiting review: two
+        different signs are usually not one recording.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>8</span></div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide slide--section">
+      <p class="eyebrow">Part two</p>
+      <h1>How the two devices talk</h1>
+      <p>A visit can run on the doctor's device and the patient's own phone.</p>
+      <div class="foot"><span>Tie Me Ghana</span><span>9</span></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide">
+      <p class="eyebrow">Pairing</p>
+      <h1>The server introduces them, then gets out of the way</h1>
+      <div class="flow">
+        <div class="step"><b>1 · Code</b><span>Doctor's device asks the API for a six-character code</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>2 · Typed</b><span>The patient types it on their own phone</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>3 · Handshake</b><span>Each leaves a connection description for the other</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>4 · Direct</b><span>A WebRTC data channel, device to device</span></div>
+      </div>
+      <div class="cols" style="margin-top:.20in">
+        <div class="card">
+          <h3>What the server sees</h3>
+          <ul>
+            <li>A six-character code, ten minutes, one pairing.</li>
+            <li>Two connection descriptions: how to reach a device, not anything said.</li>
+            <li>A rendezvous token for reconnecting, at most four hours.</li>
+          </ul>
+          <p style="margin-top:.06in">All of it in a process cache with a timeout. No models, no migrations, nothing written to disk.</p>
+        </div>
+        <div class="card card--warn">
+          <h3>No relay, and an honest failure</h3>
+          <p>
+            A TURN server would route the consultation through a third party, which
+            is the thing this design refuses. Some networks will therefore not
+            connect. The app says so and offers to share one device, rather than
+            quietly sending the consultation another way.
+          </p>
+        </div>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>10</span></div>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide">
+      <p class="eyebrow">The wire protocol</p>
+      <h1>What actually crosses the channel</h1>
+      <table>
+        <thead><tr><th>Message</th><th>Direction</th><th>What it carries</th></tr></thead>
+        <tbody>
+          <tr><td><code>literacy</code></td><td>doctor → phone</td><td>Ask the literacy question here too</td></tr>
+          <tr><td><code>literacy-answer</code></td><td>phone → doctor</td><td>Yes or no; the doctor's device records it</td></tr>
+          <tr><td><code>path</code></td><td>doctor → phone</td><td>Which consultation this is: literate or guided</td></tr>
+          <tr><td><code>question</code></td><td>doctor → phone</td><td>A caption that has already cleared the safety gate</td></tr>
+          <tr><td><code>answer</code> / <code>reply</code></td><td>phone → doctor</td><td>A tap or typed reply, to be spoken on the doctor's device</td></tr>
+          <tr><td><code>answered</code></td><td>doctor → phone</td><td>This question is closed; whichever device answered first won</td></tr>
+          <tr><td><code>speaking</code></td><td>doctor → phone</td><td>working / playing / spoken / stopped / blocked / failed</td></tr>
+          <tr><td><code>emergency</code></td><td>doctor → phone</td><td>Follow to the emergency screen, and back</td></tr>
+          <tr><td><code>triage</code></td><td>phone → doctor</td><td>Which button was tapped — never the words</td></tr>
+          <tr><td><code>ended</code></td><td>doctor → phone</td><td>The visit is over</td></tr>
+        </tbody>
+      </table>
+      <p class="note">
+        The channel hands a screen only its newest message, so every message that
+        says <em>where the phone should be</em> also carries the path, the way back,
+        and whether emergency mode is open. A message that collapses into another
+        cannot leave the phone on the wrong screen.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>11</span></div>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide">
+      <p class="eyebrow">Who answers what</p>
+      <h1>The split is clinical, not technical</h1>
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h3>On the doctor's device</h3>
+            <ul>
+              <li>The safety gate. Nothing reaches the phone until it has cleared.</li>
+              <li><strong>The sound.</strong> A reply is spoken where the doctor is standing; audio never crosses the channel, only the text does.</li>
+              <li>Recording what the doctor personally observed — a nod, a shake of the head.</li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h3>On the patient's phone</h3>
+            <ul>
+              <li>The literacy question, with the sign video and both answer signs.</li>
+              <li>Yes and No, where it hurts, the emergency taps, a typed reply.</li>
+              <li>Its own transcript, which stays on that phone until its owner deletes it.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:.18in">
+        Either device may answer a yes-or-no question. <strong>Whichever comes first
+        is the answer</strong>, and the record says who gave it, so a transcript can
+        never imply the patient tapped something they never touched.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>12</span></div>
+    </section>
+
+    <!-- 13 -->
+    <section class="slide">
+      <p class="eyebrow">When it breaks</p>
+      <h1>A reload is not the end of a visit</h1>
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h3>Coming back</h3>
+            <p>
+              Once connected, the doctor's device mints a rendezvous token, registers
+              it, and hands it over. Both keep it. A refresh on either side reconnects
+              by itself under that token, with no new code.
+            </p>
+            <p style="margin-top:.06in">
+              <span class="tag">Measured</span>
+              1.6 s for the patient, 1.6 s for the doctor, 1.7 s for a first pairing.
+            </p>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h3>What made it fast</h3>
+            <ul>
+              <li>Post the connection description as soon as a usable address has arrived and gone quiet, rather than waiting out the whole gathering budget.</li>
+              <li>Look for the other device every 300 ms at first, not every 1.5 s.</li>
+              <li>Treat "not found" on a token as <em>not yet</em>, not as failure.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:.16in">
+        The doctor's screen never moves while the phone is away. It says the phone is
+        away, and the phone rejoins on its own. Only the doctor starting a new patient
+        ends the visit.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>13</span></div>
+    </section>
+
+    <!-- 14 -->
+    <section class="slide">
+      <p class="eyebrow">Offline</p>
+      <h1>The connection is the scarce thing</h1>
+      <div class="stat-row">
+        <div class="stat"><b>11 ms</b><span>a clip already on the device</span></div>
+        <div class="stat"><b>~0.5 s</b><span>a clip fetched now</span></div>
+        <div class="stat"><b>~150 KB/s</b><span>the line we measured</span></div>
+        <div class="stat"><b>8.5 MB</b><span>the whole library</span></div>
+      </div>
+      <div class="cols" style="margin-top:.12in">
+        <div class="card">
+          <h3>Warming the library</h3>
+          <p>
+            On first open, every clip is pulled onto the device by a service worker,
+            highest value first: prompts, then emergency alerts, then the alphabet,
+            then everything else.
+          </p>
+        </div>
+        <div class="card card--warn">
+          <h3>The bug that taught us the rule</h3>
+          <p>
+            The warm-up was taking the whole connection from the clip a patient was
+            waiting for — over twenty seconds for one sign. It now <strong>stands
+            aside</strong> while any video is loading. An optimisation must never be
+            the reason someone is kept waiting.
+          </p>
+        </div>
+      </div>
+      <p class="note">
+        The prescription is the payoff: the patient's phone keeps the videos, and
+        saves them as a file that plays months later with no network at all.
+      </p>
+      <div class="foot"><span>Tie Me Ghana</span><span>14</span></div>
+    </section>
+
+    <!-- 15 -->
+    <section class="slide slide--section">
+      <p class="eyebrow">Part three</p>
+      <h1>How it was built</h1>
+      <p>And how we keep it honest.</p>
+      <div class="foot"><span>Tie Me Ghana</span><span>15</span></div>
+    </section>
+
+    <!-- 16 -->
+    <section class="slide">
+      <p class="eyebrow">The method</p>
+      <h1>Decisions are written down, and verified in real browsers</h1>
+      <div class="stat-row">
+        <div class="stat"><b>61</b><span>architecture decision records</span></div>
+        <div class="stat"><b>654</b><span>backend tests</span></div>
+        <div class="stat"><b>1,278</b><span>frontend tests</span></div>
+        <div class="stat"><b>90</b><span>commits on the branch</span></div>
+      </div>
+      <div class="cols" style="margin-top:.14in">
+        <div class="card">
+          <h3>Every non-obvious choice has an ADR</h3>
+          <p>
+            What was decided, what it cost, and what it rules out. Including the
+            mistakes: a clip overwritten in the bucket, a test that passed locally
+            and failed in CI, a cache that leaked between tests.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Tested where it actually runs</h3>
+          <p>
+            Two real headless browsers over real WebRTC for pairing; the real bucket
+            for offline replay; timings measured rather than estimated. A green unit
+            suite is not evidence that two devices connect.
+          </p>
+        </div>
+      </div>
+      <p class="note">CI runs lint, both test suites, a migration check and a build on every push.</p>
+      <div class="foot"><span>Tie Me Ghana</span><span>16</span></div>
+    </section>
+
+    <!-- 17 -->
+    <section class="slide">
+      <p class="eyebrow">Honestly</p>
+      <h1>What is not done</h1>
+      <div class="cols">
+        <div>
+          <div class="card card--warn">
+            <h3>The alphabet is not filmed</h3>
+            <p>
+              Thirty-six letter clips. Until they exist, fingerspelling cannot
+              complete, so any word with no sign still refuses the sentence. It is
+              the single highest-value footage left, because twenty-six clips cover
+              every medicine name that will ever be prescribed.
+            </p>
+          </div>
+          <div class="card card--warn" style="margin-top:.14in">
+            <h3>The body-location grid</h3>
+            <p>Withheld until all sixteen are filmed: a patient offered three body
+               parts when the pain is in a fourth taps the nearest one, and that
+               wrong answer looks exactly like a right one.</p>
+          </div>
+        </div>
+        <div>
+          <div class="card card--stop">
+            <h3>Needs a clinician's review</h3>
+            <ul>
+              <li>The safety word lists are a starting point, not a clinical judgment.</li>
+              <li>Every sign in the library, and the two pairs that share one recording.</li>
+              <li>The emergency alerts, before any public demo.</li>
+            </ul>
+          </div>
+          <div class="card" style="margin-top:.14in">
+            <h3>Known limits</h3>
+            <ul>
+              <li>No TURN, so some networks will not pair.</li>
+              <li>Anyone who types the code while it is showing joins the visit.</li>
+              <li>The pairing cache is per process: the API must run as one.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span>Tie Me Ghana</span><span>17</span></div>
+    </section>
+
+    <!-- 18 -->
+    <section class="slide slide--title">
+      <p class="eyebrow">In one sentence</p>
+      <h1>The server never learns<br />what was said.</h1>
+      <p>
+        Everything else — the clip library, the safety gate, the direct connection,
+        the offline copy — exists to make that possible without making the
+        consultation worse.
+      </p>
+      <div class="foot"><span>Tie Me Ghana · Pilot, not yet approved for clinical use</span><span>18</span></div>
+    </section>
+
+  </body>
+</html>

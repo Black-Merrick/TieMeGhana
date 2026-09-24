@@ -2927,3 +2927,109 @@ an `svg`, meaning the drawing. Its intent was that an option leads with a mark
 and never with words alone, so it now accepts either the sign or the drawing.
 Weakening it to pass would have given up the one property this screen cannot
 lose: acting on an answer to a question nobody was asked.
+
+---
+
+## ADR 060: The literacy question is asked on the patient's phone too
+
+**Status:** accepted, built.
+
+**Context.** In a paired visit the literacy check appeared only on the doctor's
+device. The patient's phone said "You are connected to your doctor. Waiting for
+the doctor to begin." That is the wrong way round: FR 2.1 to FR 2.3 make this a
+question *for the patient*, about whether they read, and it is the most
+important branch in the app. Asking a Deaf patient whether they read by holding
+a screen across the room at them, and then recording an answer on that screen,
+is the failure the literacy check exists to prevent.
+
+**Decision.** The doctor's device announces `{type:"literacy"}` while a paired
+phone is connected and no answer exists yet, and the phone shows the same
+question: the sign video, the printed question (ADR 047), and the two answers
+carrying the YES and NO signs (ADR 059). Either device may answer it. It is the
+same pattern as emergency mode and the prescription: the doctor's device is the
+authority, the message carries the way back and whatever else says where the
+phone should be, and the phone follows.
+
+**One component, two devices.** `LiteracyCheck` takes `onOwnPhone` rather than
+being copied into a guest version, because the difference is two small things
+and both follow from whose device it is:
+
+- The notice about unfilmed footage is staff facing, an instruction to ask in
+  person. On the patient's own phone it would be words about them, to them, for
+  no purpose they can act on.
+- The answer is not written there. The doctor's device owns the visit; the phone
+  reports the tap and that device records it. This also keeps one browser's two
+  windows from writing each other's visits while the app is tested on a single
+  laptop, which is how the team tests it.
+
+**Whichever came first is the answer.** The doctor can still tap what they
+observed, as FR 2.7 allows for a guided question. A `literacy-answer` arriving
+when a visit already exists is ignored rather than applied, so a tap that was
+already on its way cannot overwrite an answer the doctor has just recorded. Only
+a boolean is believed.
+
+**Nothing new is remembered.** The phone does not store that it was asked. The
+question is announced exactly while there is no answer, so a phone that reloads
+or reconnects is told again if the question is still open, and is sent its path
+if it is not. That is one less thing that can be stale.
+
+**Verified** on two real devices: the question and both signs appear on the
+phone, the staff notice does not, a tap there opens the guided consultation on
+the doctor's device, and the phone follows to it.
+
+**A test artefact worth recording.** The first run showed both signs failing on
+the phone. The cause was entirely my setup: the throwaway backend was copied
+without `.env`, so it had no bucket credentials, fell back to local media paths,
+and had no `media/` directory either. The app was right and the harness was
+wrong, which is the failure mode to be most careful about when a screenshot is
+the evidence.
+
+---
+
+## ADR 061: The shared device says which half belongs to whom
+
+**Status:** accepted, built.
+
+**Context.** On one device the doctor types on the left and the patient reads
+and answers on the right, and nothing on the screen said so. Each card carried
+a small role chip — "DOCTOR · Message for the patient", "PATIENT · Your reply" —
+but a chip inside a card is not a division of the screen: it is small, it
+scrolls away with the card, and it asks the reader to work out the rule from an
+example. The device is physically turned between two people several times in a
+consultation, and one of them may not read English at all.
+
+**Decision.** The division is stated on the surface. A heading over each column
+names the side and says what it is for, and a rule runs down the middle between
+them. SRS section 4.1 asks for the state of the consultation to be permanently
+visible rather than inferred, and on a shared device the most basic piece of
+that state is physical: which half is mine.
+
+**Shape as well as colour.** The doctor's mark is a filled square and the
+patient's is an outlined one, in different colours. Colour alone fails in bright
+sunlight on a ward and for a colour blind clinician, which is the same reasoning
+the pain scale already uses for its faces.
+
+**Only where two people share a screen.** In a paired visit the patient's half
+is on their own phone. There is no line to draw on the doctor's screen, and a
+heading saying "Patient" over a column the patient cannot see would be a claim
+about where they are that is not true. The modifier is set by the two shared
+device screens and not by the two host screens, and a test pins that.
+
+**Heavy enough to be seen.** The first version drew the rule in
+`--colour-line`, the card border colour, faded out at both ends. On the screen
+it was there and in the room it was not: reported as "I can't see it well". It
+is now a solid two pixel line in `--colour-divide`, a colour of its own rather
+than a card's edge reused, because this one divides a device between two people
+and has to read across a room and in ward lighting. The same weight is used for
+the stacked rule.
+
+**The rule moves with the layout.** Side by side it is drawn at the centre of
+the grid with a pseudo-element, so it sits on the join however the gap changes,
+rather than on one column's edge where it would be off centre by half the gap.
+Stacked, it becomes a horizontal rule — above whichever half comes *second*,
+which is not always the same one: below 52rem the patient's half is deliberately
+first, so that the video is on screen when the page opens rather than the
+doctor's keyboard. The first version put the rule above the patient's half at
+every width, which on a phone drew a line under the topbar dividing nothing.
+Caught by measuring the rendered page at four widths rather than by looking at
+the desktop one.

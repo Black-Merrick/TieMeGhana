@@ -1,0 +1,124 @@
+/* Slides for a team talk, printed to PDF by Chrome. 16:9 at PowerPoint's size,
+   so a slide fills a projector without letterboxing. */
+@page { size: 13.333in 7.5in; margin: 0; }
+
+:root {
+  --ink: #0f1f1a;
+  --green: #0a4a3a;
+  --deep: #0b3d2e;
+  --muted: #5d6f68;
+  --line: #d8e2de;
+  --wash: #f4f8f6;
+  --amber: #b26a00;
+  --amber-wash: #fdf6e7;
+  --red: #a4301c;
+  --red-wash: #fdf2f0;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  color: var(--ink);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.slide {
+  position: relative;
+  width: 13.333in;
+  height: 7.5in;
+  padding: 0.62in 0.8in 0.55in;
+  page-break-after: always;
+  break-after: page;
+  overflow: hidden;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.slide:last-child { page-break-after: auto; }
+
+.eyebrow {
+  font-size: 10.5pt;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin: 0 0 0.10in;
+}
+
+h1 { font-size: 30pt; line-height: 1.12; margin: 0 0 0.16in; letter-spacing: -0.02em; }
+h2 { font-size: 15.5pt; margin: 0 0 0.10in; letter-spacing: -0.01em; }
+p  { font-size: 12.5pt; line-height: 1.5; margin: 0 0 0.10in; }
+.lead { font-size: 14pt; color: var(--muted); max-width: 10.4in; }
+
+ul { margin: 0; padding-left: 1.05em; }
+li { font-size: 12.5pt; line-height: 1.5; margin-bottom: 0.085in; }
+li strong { color: var(--deep); }
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.42in;
+        align-items: start; align-content: start; }
+.cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.30in; align-items: start; }
+
+.card {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--green);
+  border-radius: 7px;
+  padding: 0.20in 0.24in;
+  background: var(--wash);
+}
+.card h3 { margin: 0 0 0.06in; font-size: 12.5pt; color: var(--deep); }
+.card p, .card li { font-size: 11pt; margin-bottom: 0.05in; }
+.card--warn { border-left-color: var(--amber); background: var(--amber-wash); }
+.card--stop { border-left-color: var(--red); background: var(--red-wash); }
+
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.26in; margin: 0.12in 0; }
+.stat { border-top: 3px solid var(--green); padding-top: 0.10in; }
+.stat b { display: block; font-size: 25pt; line-height: 1; color: var(--deep); letter-spacing: -0.02em; }
+.stat span { font-size: 10.5pt; color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: 11pt; }
+th, td { text-align: left; padding: 0.065in 0.10in; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--green); font-size: 9.5pt; letter-spacing: 0.08em; text-transform: uppercase; }
+code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 10.5pt; background: #eef3f1; padding: 0.4mm 1.2mm; border-radius: 3px; }
+
+.foot {
+  position: absolute;
+  left: 0.8in; right: 0.8in; bottom: 0.28in;
+  display: flex; justify-content: space-between;
+  font-size: 9pt; color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 0.08in;
+}
+
+/* Title slide */
+.slide--title { background: var(--deep); color: #fff; justify-content: center; }
+.slide--title h1 { font-size: 46pt; margin-bottom: 0.18in; }
+.slide--title .eyebrow { color: #7fd8b8; }
+.slide--title p { color: #cfe4dc; font-size: 15pt; max-width: 9in; }
+.slide--title .foot { color: #7f9b91; border-top-color: #1d5745; }
+
+/* Section divider */
+.slide--section { background: var(--green); color: #fff; justify-content: center; }
+.slide--section h1 { font-size: 38pt; color: #fff; }
+.slide--section .eyebrow { color: #7fd8b8; }
+.slide--section p { color: #cfe4dc; font-size: 14pt; max-width: 9in; }
+.slide--section .foot { color: #7f9b91; border-top-color: #1d5745; }
+
+/* Flow diagram */
+.flow { display: flex; align-items: stretch; gap: 0.12in; margin: 0.10in 0; }
+.flow .step {
+  flex: 1; border: 1px solid var(--line); border-radius: 7px;
+  padding: 0.14in 0.13in; background: #fff; text-align: center;
+}
+.flow .step b { display: block; font-size: 10.5pt; color: var(--deep); margin-bottom: 0.04in; }
+.flow .step span { font-size: 9.5pt; color: var(--muted); line-height: 1.35; display: block; }
+.flow .arrow { align-self: center; color: var(--green); font-size: 15pt; font-weight: 700; }
+
+.note { font-size: 10.5pt; color: var(--muted); margin-top: 0.18in; }
+.tag { display: inline-block; font-size: 9pt; font-weight: 700; letter-spacing: .06em;
+       text-transform: uppercase; color: var(--green); background: #e6f1ec;
+       border-radius: 20px; padding: 0.7mm 2.4mm; }

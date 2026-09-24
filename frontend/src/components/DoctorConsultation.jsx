@@ -1,5 +1,6 @@
 import CaptionProblem from "./CaptionProblem.jsx";
 import CaptionResult from "./CaptionResult.jsx";
+import ConsultSide from "./ConsultSide.jsx";
 import DoctorUtteranceForm from "./DoctorUtteranceForm.jsx";
 import PatientReply from "./PatientReply.jsx";
 import QuickReplies from "./QuickReplies.jsx";
@@ -86,7 +87,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
   );
 
   return (
-    <section className="consult">
+    <section className="consult consult--shared">
       {/* Covers the screen while the patient's answer is being spoken. One tap
           has to mean one answer: a second one queued underneath would reach
           the doctor as two sentences with nothing to say which was which. */}
@@ -104,6 +105,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
           sides need to be visible at once. On a phone they stack, video
           first. */}
       <div className="consult__doctor">
+        <ConsultSide side="doctor" />
         <DoctorUtteranceForm
           onSend={send}
           busy={status === "working"}
@@ -118,6 +120,7 @@ export default function DoctorConsultation({ outputLanguage, onOutputLanguageCha
       </div>
 
       <div className="consult__patient">
+        <ConsultSide side="patient" />
         {status === "working" ? (
           <p className="consultation__working" data-testid="working-indicator">
             <span className="consultation__pulse" aria-hidden="true" />

@@ -11,7 +11,7 @@ import { loadSentPrescription, saveSentPrescription } from "../pairing/sentPresc
 import { loadHostResume, saveHostResume } from "../pairing/resume.js";
 import { saveDoctorRole } from "../pairing/role.js";
 import { loadScreen, saveScreen } from "../visit/screen.js";
-import { LiteracyPath, saveLiteracyPath } from "../visit/visit.js";
+import { LiteracyPath, loadVisit, saveLiteracyPath } from "../visit/visit.js";
 import { PeerState } from "../webrtc/peerChannel.js";
 import usePeerChannel from "../hooks/usePeerChannel.js";
 import App from "../App.jsx";
@@ -552,6 +552,69 @@ describe("a prescription issued with the patient's phone attached", () => {
   });
 });
 
+describe("the patient answering the literacy question on their own phone", () => {
+  const answerFromPhone = (value) => ({ type: "literacy-answer", value });
+
+  function paired(lastMessage = null) {
+    saveDeviceMode("paired");
+    saveHostResume(TOKEN);
+    connection = PeerState.CONNECTED;
+    usePeerChannel.mockImplementation(() => ({
+      state: connection,
+      send,
+      close,
+      lastMessage,
+    }));
+    return render(<App />);
+  }
+
+  it("records the answer and opens the literate consultation", async () => {
+    paired(answerFromPhone(true));
+
+    expect(await screen.findByRole("button", { name: /send to patient/i })).toBeInTheDocument();
+  });
+
+  it("records a no as the guided path", async () => {
+    paired(answerFromPhone(false));
+
+    expect(await screen.findByTestId("ask-where-it-hurts")).toBeInTheDocument();
+  });
+
+  it("remembers it, so a reload does not ask again", async () => {
+    paired(answerFromPhone(true));
+
+    await screen.findByRole("button", { name: /send to patient/i });
+    expect(loadVisit().literacyPath).toBe(LiteracyPath.LITERATE);
+  });
+
+  it("tells the phone which consultation it is", async () => {
+    paired(answerFromPhone(false));
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "path", path: "guided" }),
+      ),
+    );
+  });
+
+  it("does not overwrite an answer the doctor already recorded", async () => {
+    // A tap already on its way when the doctor recorded what they saw. FR 2.7:
+    // whichever came first is the answer.
+    saveLiteracyPath(LiteracyPath.LITERATE);
+    paired(answerFromPhone(false));
+
+    await screen.findByRole("button", { name: /send to patient/i });
+    expect(loadVisit().literacyPath).toBe(LiteracyPath.LITERATE);
+  });
+
+  it("believes only a yes or a no", async () => {
+    paired({ type: "literacy-answer", value: "literate" });
+
+    expect(await screen.findByTestId("literacy-check")).toBeInTheDocument();
+    expect(loadVisit()).toBeNull();
+  });
+});
+
 describe("reloading a paired visit", () => {
   it("does not pretend the patient's phone is still there", async () => {
     // A reload drops the direct connection. Falling back to the shared
@@ -748,13 +811,37 @@ describe("a reload before the literacy question was answered", () => {
   });
 
   it("gives the phone its way back as soon as it is connected, before any path exists", async () => {
+    // Carried on whatever the phone is being told at the time. Before the
+    // literacy question is answered that is the question itself, since ADR 060
+    // puts it on the patient's own phone too, and it carries the token like
+    // every other message that says where the phone should be.
     saveDeviceMode("paired");
     saveHostResume(TOKEN);
     connection = PeerState.CONNECTED;
 
     render(<App />);
 
-    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: "resume", resume: TOKEN, emergency: false }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ resume: TOKEN, emergency: false }),
+      ),
+    );
+  });
+
+  it("asks the literacy question on the patient's phone as well", async () => {
+    // FR 2.1. A Deaf patient cannot be asked whether they read by being shown
+    // words on a device across the room.
+    saveDeviceMode("paired");
+    saveHostResume(TOKEN);
+    connection = PeerState.CONNECTED;
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "literacy", resume: TOKEN }),
+      ),
+    );
   });
 });
 

@@ -478,3 +478,44 @@ Do it when nobody is demonstrating.
 
 Afterwards, check `python manage.py check_media_cors --origin https://tiemeghana.netlify.app`
 still reports CORS is on, since offline replay depends on it.
+
+## Adding clips to an existing library
+
+Replacing is for the day the footage changes wholesale. Adding a few new
+recordings to a library that is already live is a different command, and the
+destructive one must not be used for it: `replace_clip_library` deletes every
+object in the bucket before it imports, so running it to add six files would
+take the other sixty-four down and put them back up under new bytes.
+
+`import_clips` is the additive one. It never deletes, it compresses on the way
+in, and a file whose contents are already imported is left completely alone,
+so an existing approval survives.
+
+    cd backend
+    # a folder holding ONLY the new recordings
+    python manage.py import_clips ../new-clips --approve --reviewer "Name"
+
+Copy the new files into a folder of their own rather than pointing the command
+at the whole `clips/` directory. Both work — the unchanged files are recognised
+by content hash and skipped — but a staging folder means the run cannot touch
+the clips that are already live even if a hash has drifted, and it finishes in
+seconds instead of re-reading a hundred megabytes.
+
+What the report means:
+
+- `new` — no row had that gloss, so one was created. The kind is guessed from
+  the name: underscores mean a phrase, a single character a fingerspelling
+  letter, anything else a word.
+- `replaced, approval reset` — a row already existed and now has footage, or
+  has different footage. Expected when a seeded gloss is filmed for the first
+  time. `--approve` re-approves it in the same run.
+- `unchanged` — same bytes already imported. Nothing was uploaded.
+
+Then copy the rows to the local database with the same dumpdata/loaddata pair
+as above, so `backend/db.sqlite3` and Neon point at the same objects, and check
+CORS again.
+
+**Fingerspelling stays off until the whole alphabet is filmed.** Spelling a
+word requires a clip for every one of its letters, so importing a few letters
+changes nothing a patient can see. It is not a bug, and it is not a reason to
+skip importing them.
