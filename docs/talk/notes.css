@@ -149,3 +149,77 @@ code, .url {
   color: var(--green); background: #e6f1ec;
   border-radius: 20px; padding: 0.8mm 2.6mm;
 }
+
+/* The repeating shape of a screen block. Every screen says the same four
+   things in the same order, so the presenter's eye lands in the same place
+   on every page: what this screen is, what the room sees, the words, the tap.
+   The bridge is the fifth and the one that was missing: the sentence that
+   carries the talk into the next screen, so ten blocks play as one story. */
+
+.onscreen {
+  font-size: 11pt;
+  margin: 0 0 3mm;
+  padding-left: 3mm;
+  border-left: 3px solid var(--line);
+  color: var(--ink);
+}
+.onscreen b { color: var(--deep); }
+
+.seen {
+  font-size: 10.5pt;
+  color: var(--muted);
+  margin: 0 0 2.5mm;
+}
+.seen b { color: var(--green); font-weight: 700; }
+
+.bridge {
+  margin: 0 0 4mm;
+  padding: 2.5mm 5mm;
+  background: var(--wash);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 10.5pt;
+  color: var(--deep);
+  page-break-inside: avoid; break-inside: avoid;
+}
+
+/* Inside a screen block the bridge is the foot of the card, so it reaches the
+   card's own edges instead of sitting in a box within a box. */
+.screen .bridge {
+  margin: 3mm -5mm -3.5mm;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 5px 5px;
+}
+.bridge b {
+  display: block;
+  font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 1mm;
+}
+.bridge i { font-style: normal; }
+.bridge i::before { content: "\201C"; }
+.bridge i::after { content: "\201D"; }
+
+/* The arc, on one page, before any of the detail. */
+.flowmap { margin: 0 0 4mm; }
+.flowmap ol { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+.flowmap li {
+  counter-increment: step;
+  display: flex; gap: 3mm; align-items: baseline;
+  padding: 1.7mm 0;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.flowmap li::before {
+  content: counter(step);
+  flex: none; width: 6mm; height: 6mm; border-radius: 50%;
+  background: #e6f1ec; color: var(--deep);
+  font-size: 8.5pt; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  align-self: center;
+}
+.flowmap .what { flex: none; width: 46mm; font-weight: 700; color: var(--deep); font-size: 10pt; }
+.flowmap .point { flex: 1; font-size: 10pt; color: var(--muted); }
+.flowmap .mins { flex: none; font-size: 9pt; color: var(--muted); font-weight: 700; }
