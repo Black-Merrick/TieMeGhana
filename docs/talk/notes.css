@@ -1,0 +1,151 @@
+/* Speaker notes: A4 portrait, printed to PDF by Chrome. A flowing document
+   rather than fixed slides, because these pages are read in the hand while
+   the demo runs on the screen, not projected. Same palette as the deck. */
+@page { size: A4; margin: 17mm 15mm 15mm; }
+@page :first { margin: 0; }
+
+:root {
+  --ink: #0f1f1a;
+  --green: #0a4a3a;
+  --deep: #0b3d2e;
+  --muted: #5d6f68;
+  --line: #d8e2de;
+  --wash: #f4f8f6;
+  --amber: #b26a00;
+  --amber-wash: #fdf6e7;
+  --red: #a4301c;
+  --red-wash: #fdf2f0;
+  --say: #0a4a3a;
+  --say-wash: #eaf4ef;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  color: var(--ink);
+  font-size: 11pt;
+  line-height: 1.5;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Cover */
+.cover {
+  width: 210mm; height: 297mm;
+  background: var(--deep); color: #fff;
+  padding: 58mm 22mm 20mm;
+  display: flex; flex-direction: column;
+  page-break-after: always; break-after: page;
+}
+.cover .eyebrow { color: #7fd8b8; }
+.cover h1 { font-size: 34pt; color: #fff; margin: 0 0 6mm; letter-spacing: -0.02em; line-height: 1.1; }
+.cover p { color: #cfe4dc; font-size: 13pt; max-width: 140mm; }
+.cover .cover__foot { margin-top: auto; color: #7f9b91; font-size: 10pt;
+  border-top: 1px solid #1d5745; padding-top: 4mm; }
+
+.eyebrow {
+  font-size: 9pt; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--green); margin: 0 0 2mm;
+}
+
+h2 {
+  font-size: 16pt; color: var(--deep); margin: 9mm 0 3mm;
+  letter-spacing: -0.01em; padding-bottom: 1.5mm;
+  border-bottom: 2px solid var(--green);
+  page-break-after: avoid; break-after: avoid;
+}
+h2:first-of-type { margin-top: 0; }
+h3 { font-size: 12pt; color: var(--deep); margin: 5mm 0 2mm;
+     page-break-after: avoid; break-after: avoid; }
+
+p { margin: 0 0 2.5mm; }
+ul, ol { margin: 0 0 2.5mm; padding-left: 5mm; }
+li { margin-bottom: 1.4mm; }
+li strong, p strong { color: var(--deep); }
+.muted { color: var(--muted); }
+
+/* One screen of the demo */
+.screen {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4mm 5mm 3.5mm;
+  margin: 0 0 4mm;
+  background: #fff;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.screen__head {
+  display: flex; align-items: baseline; gap: 3mm;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2mm; margin-bottom: 3mm;
+}
+.screen__no {
+  flex: none; width: 8mm; height: 8mm; border-radius: 50%;
+  background: var(--green); color: #fff;
+  font-size: 11pt; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  align-self: center;
+}
+.screen__head h3 { margin: 0; font-size: 12.5pt; flex: 1; }
+.screen__time { flex: none; font-size: 9pt; font-weight: 700; color: var(--muted); }
+
+.label {
+  font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 2.5mm 0 1mm;
+}
+
+/* The words to read out */
+.say {
+  border-left: 3px solid var(--say);
+  background: var(--say-wash);
+  padding: 2.5mm 4mm;
+  border-radius: 0 5px 5px 0;
+  margin: 0 0 2mm;
+}
+.say p { margin: 0 0 1.5mm; font-size: 11pt; }
+.say p:last-child { margin-bottom: 0; }
+
+.do {
+  font-size: 10pt; color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 2mm; margin: 2.5mm 0 0;
+}
+.do strong { color: var(--green); }
+
+.card {
+  border: 1px solid var(--line); border-left: 4px solid var(--green);
+  border-radius: 6px; padding: 3mm 4mm; background: var(--wash);
+  margin: 0 0 3mm; page-break-inside: avoid; break-inside: avoid;
+}
+.card h3 { margin: 0 0 1.5mm; font-size: 11.5pt; }
+.card p:last-child, .card ul:last-child { margin-bottom: 0; }
+.card--warn { border-left-color: var(--amber); background: var(--amber-wash); }
+.card--stop { border-left-color: var(--red); background: var(--red-wash); }
+
+.qa { page-break-inside: avoid; break-inside: avoid; margin: 0 0 3.5mm; }
+.qa > p.q {
+  font-weight: 700; color: var(--deep); margin: 0 0 1.5mm;
+}
+.qa > p.q::before { content: "Q. "; color: var(--green); }
+
+table { border-collapse: collapse; width: 100%; font-size: 10pt; margin: 0 0 3mm; }
+th, td { text-align: left; padding: 1.6mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--green); font-size: 8.5pt; letter-spacing: 0.08em; text-transform: uppercase; }
+tr { page-break-inside: avoid; break-inside: avoid; }
+
+code, .url {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10pt; background: #eef3f1;
+  padding: 0.4mm 1.4mm; border-radius: 3px;
+  color: var(--deep); word-break: break-all;
+}
+.url--big { font-size: 12pt; font-weight: 700; }
+
+.tag {
+  display: inline-block; font-size: 8pt; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--green); background: #e6f1ec;
+  border-radius: 20px; padding: 0.8mm 2.6mm;
+}

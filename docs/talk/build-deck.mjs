@@ -8,6 +8,10 @@
  * diff.
  *
  *   node docs/talk/build-deck.mjs
+ *   node docs/talk/build-deck.mjs speaker-notes.html tie-me-ghana-speaker-notes.pdf
+ *
+ * The page size comes from the document's own @page rule, so the same printer
+ * handles the 16:9 slides and the A4 notes without knowing which is which.
  */
 
 import { spawn } from "node:child_process";
@@ -18,8 +22,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DECK = resolve(HERE, "deck.html");
-const OUT = resolve(HERE, "tie-me-ghana-architecture.pdf");
+const [source = "deck.html", target = "tie-me-ghana-architecture.pdf"] =
+  process.argv.slice(2);
+const DECK = resolve(HERE, source);
+const OUT = resolve(HERE, target);
 const PORT = 9345;
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
