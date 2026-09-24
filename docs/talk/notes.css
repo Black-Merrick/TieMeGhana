@@ -139,8 +139,13 @@ code, .url {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 10pt; background: #eef3f1;
   padding: 0.4mm 1.4mm; border-radius: 3px;
-  color: var(--deep); word-break: break-all;
+  color: var(--deep);
 }
+/* A word chip breaking across two lines reads as two words, which is exactly
+   the wrong thing on a page telling someone what to type. Only URLs, which
+   have no sensible break point, are allowed to split. */
+code { white-space: nowrap; }
+.url { word-break: break-all; }
 .url--big { font-size: 12pt; font-weight: 700; }
 
 .tag {

@@ -515,6 +515,19 @@ Then copy the rows to the local database with the same dumpdata/loaddata pair
 as above, so `backend/db.sqlite3` and Neon point at the same objects, and check
 CORS again.
 
+**Import in batches of about five against Neon.** Each file is compressed and
+then uploaded to R2 before the next row is written, and a large batch leaves
+the database connection idle long enough for Neon's pooler to close it:
+
+    django.db.utils.OperationalError: consuming input failed: SSL SYSCALL error: EOF detected
+
+Nothing is corrupted when that happens. The files uploaded so far are in the
+bucket and their rows are committed, and because the command skips a file whose
+contents are already imported, re-running it simply carries on from where it
+stopped. Smaller batches avoid the stall in the first place. A run of 38 files
+died after 25; three batches of four or five finished the remaining 13 without
+trouble.
+
 **Fingerspelling stays off until the whole alphabet is filmed.** Spelling a
 word requires a clip for every one of its letters, so importing a few letters
 changes nothing a patient can see. It is not a bug, and it is not a reason to
